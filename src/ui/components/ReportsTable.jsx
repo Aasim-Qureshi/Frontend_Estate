@@ -25,6 +25,7 @@ import {
 import { useRam } from "../context/RAMContext";
 import { useSession } from "../context/SessionContext";
 import { useAuthAction } from "../hooks/useAuthAction"; // Add this import
+import { useValueNav } from "../context/ValueNavContext";
 import EditAssetModal from "./EditAssetModal";
 
 const ReportsTable = () => {
@@ -88,6 +89,8 @@ const ReportsTable = () => {
 
     const { token } = useSession();
     const { executeWithAuth } = useAuthAction(); // Add this hook
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = selectedCompany?.officeId || selectedCompany?.office_id || "";
 
     const { ramInfo } = useRam();
     const tabsNum = ramInfo?.recommendedTabs || 1;
@@ -484,6 +487,9 @@ const ReportsTable = () => {
                 sortBy: "createdAt",
                 sortOrder: "desc",
             });
+            if (selectedCompanyOfficeId) {
+                params.append("companyOfficeId", String(selectedCompanyOfficeId));
+            }
 
             const result = await window.electronAPI.apiRequest(
                 "GET",
@@ -573,7 +579,11 @@ const ReportsTable = () => {
 
     useEffect(() => {
         fetchAllReports();
-    }, [currentPage, pageSize]);
+    }, [currentPage, pageSize, selectedCompanyOfficeId]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedCompanyOfficeId]);
 
     useEffect(() => {
         applyFilters();

@@ -1,13 +1,21 @@
 const httpClient = require("./httpClient")
 
-const uploadAssetDataToDatabase = async (reportId, reportData) => {
+const uploadAssetDataToDatabase = async (reportId, reportData, companyOfficeId = null) => {
     const url = `/report/createReport`;
-    return await httpClient.post(url, { reportId, reportData });
+    const payload = { reportId, reportData };
+    if (companyOfficeId) {
+        payload.companyOfficeId = companyOfficeId;
+    }
+    return await httpClient.post(url, payload);
 };
 
-const createReportWithCommonFields = async (reportId, reportData, commonFields) => {
+const createReportWithCommonFields = async (reportId, reportData, commonFields, companyOfficeId = null) => {
     const url = `/report/createReportWithCommonFields`;
-    return await httpClient.post(url, { reportId, reportData, commonFields });
+    const payload = { reportId, reportData, commonFields };
+    if (companyOfficeId) {
+        payload.companyOfficeId = companyOfficeId;
+    }
+    return await httpClient.post(url, payload);
 };
 
 const updateUrgentReport = async (reportId, reportData = {}, options = {}) => {
@@ -71,22 +79,30 @@ const getAllReports = async (options = {}) => {
 };
 
 
-const reportExistenceCheck = async (reportId) => {
+const reportExistenceCheck = async (reportId, companyOfficeId = null) => {
     const url = `/report/reportExistenceCheck/${reportId}`;
-    return await httpClient.get(url);
+    return await httpClient.get(url, {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
 }
 
-const addCommonFields = async (reportId, inspectionDate, region, city, ownerName) => {
+const addCommonFields = async (reportId, inspectionDate, region, city, ownerName, companyOfficeId = null) => {
     const url = '/report/addCommonFields';
-    return await httpClient.put(url, { reportId, inspectionDate, region, city, ownerName });
+    const payload = { reportId, inspectionDate, region, city, ownerName };
+    if (companyOfficeId) {
+        payload.companyOfficeId = companyOfficeId;
+    }
+    return await httpClient.put(url, payload);
 }
 
-const checkMissingPages = async (reportId) => {
+const checkMissingPages = async (reportId, companyOfficeId = null) => {
     const url = `/report/checkMissingPages/${reportId}`;
-    return await httpClient.get(url);
+    return await httpClient.get(url, {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
 }
 
-const uploadElrajhiBatch = async (validationExcelFile, validationPdfFiles, valuers = null) => {
+const uploadElrajhiBatch = async (validationExcelFile, validationPdfFiles, valuers = null, companyOfficeId = null) => {
     const formData = new FormData();
 
     // field name MUST match Multer config: 'excel'
@@ -99,6 +115,9 @@ const uploadElrajhiBatch = async (validationExcelFile, validationPdfFiles, value
 
     if (Array.isArray(valuers) && valuers.length > 0) {
         formData.append("valuers", JSON.stringify(valuers));
+    }
+    if (companyOfficeId) {
+        formData.append("companyOfficeId", companyOfficeId);
     }
 
     const response = await httpClient.post(
@@ -114,7 +133,7 @@ const uploadElrajhiBatch = async (validationExcelFile, validationPdfFiles, value
     return response.data;
 };
 
-const multiExcelUpload = async (validationExcelFiles, validationPdfFiles, valuers = null) => {
+const multiExcelUpload = async (validationExcelFiles, validationPdfFiles, valuers = null, companyOfficeId = null) => {
     const formData = new FormData();
     validationExcelFiles.forEach((file) => {
         formData.append("excels", file);
@@ -124,6 +143,9 @@ const multiExcelUpload = async (validationExcelFiles, validationPdfFiles, valuer
     });
     if (Array.isArray(valuers) && valuers.length > 0) {
         formData.append("valuers", JSON.stringify(valuers));
+    }
+    if (companyOfficeId) {
+        formData.append("companyOfficeId", companyOfficeId);
     }
 
     const response = await httpClient.post(
@@ -138,8 +160,10 @@ const multiExcelUpload = async (validationExcelFiles, validationPdfFiles, valuer
     return response.data;
 };
 
-const fetchMultiApproachReports = async () => {
-    const response = await httpClient.get("/multi-approach");
+const fetchMultiApproachReports = async (companyOfficeId = null) => {
+    const response = await httpClient.get("/multi-approach", {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
     return response.data;
 };
 
@@ -163,14 +187,19 @@ const deleteMultiApproachAsset = async (reportId, assetIndex) => {
     return response.data;
 };
 
-const fetchLatestUserReport = async () => {
+const fetchLatestUserReport = async (companyOfficeId = null) => {
     const url = `/duplicate-report/latest`;
-    const response = await httpClient.get(url);
+    const response = await httpClient.get(url, {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
     return response.data;
 };
 
-const createDuplicateReport = async (payload) => {
+const createDuplicateReport = async (payload, companyOfficeId = null) => {
     const url = `/duplicate-report`;
+    if (companyOfficeId && payload && typeof payload.append === "function") {
+        payload.append("companyOfficeId", companyOfficeId);
+    }
     const response = await httpClient.post(url, payload, {
         headers: {
             "Content-Type": "multipart/form-data",
@@ -179,9 +208,11 @@ const createDuplicateReport = async (payload) => {
     return response.data;
 }
 
-const fetchDuplicateReports = async ({ page = 1, limit = 10, status = "all" } = {}) => {
+const fetchDuplicateReports = async ({ page = 1, limit = 10, status = "all", companyOfficeId = null } = {}) => {
+  const params = { page, limit, status };
+  if (companyOfficeId) params.companyOfficeId = companyOfficeId;
   const response = await httpClient.get("/duplicate-report", {
-    params: { page, limit, status },
+    params,
   });
   return response.data;
 };
@@ -207,13 +238,17 @@ const deleteDuplicateReportAsset = async (reportId, assetIndex) => {
     return response.data;
 };
 
-const fetchElrajhiBatches = async () => {
-    const response = await httpClient.get("/elrajhi-upload/batches");
+const fetchElrajhiBatches = async (companyOfficeId = null) => {
+    const response = await httpClient.get("/elrajhi-upload/batches", {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
     return response.data;
 };
 
-const fetchElrajhiBatchReports = async (batchId) => {
-    const response = await httpClient.get(`/elrajhi-upload/batches/${batchId}/reports`);
+const fetchElrajhiBatchReports = async (batchId, companyOfficeId = null) => {
+    const response = await httpClient.get(`/elrajhi-upload/batches/${batchId}/reports`, {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
     return response.data;
 };
 
@@ -222,12 +257,16 @@ const fetchElrajhiReportById = async (reportId) => {
     return response.data;
 };
 
-const createManualMultiApproachReport = async (payload) => {
-    const response = await httpClient.post("/multi-approach/manual", payload);
+const createManualMultiApproachReport = async (payload, companyOfficeId = null) => {
+    const finalPayload = { ...(payload || {}) };
+    if (companyOfficeId) {
+        finalPayload.companyOfficeId = companyOfficeId;
+    }
+    const response = await httpClient.post("/multi-approach/manual", finalPayload);
     return response.data;
 };
 
-const submitReportsQuicklyUpload = async (validationExcelFiles, validationPdfFiles, skipPdfUpload = false) => {
+const submitReportsQuicklyUpload = async (validationExcelFiles, validationPdfFiles, skipPdfUpload = false, companyOfficeId = null) => {
     const formData = new FormData();
     validationExcelFiles.forEach((file) => {
         formData.append("excels", file);
@@ -237,6 +276,9 @@ const submitReportsQuicklyUpload = async (validationExcelFiles, validationPdfFil
     });
     if (skipPdfUpload) {
         formData.append("skipPdfUpload", "true");
+    }
+    if (companyOfficeId) {
+        formData.append("companyOfficeId", companyOfficeId);
     }
 
     const response = await httpClient.post(
@@ -251,8 +293,10 @@ const submitReportsQuicklyUpload = async (validationExcelFiles, validationPdfFil
     return response.data;
 };
 
-const fetchSubmitReportsQuickly = async () => {
-    const response = await httpClient.get("/submit-reports-quickly");
+const fetchSubmitReportsQuickly = async (companyOfficeId = null) => {
+    const response = await httpClient.get("/submit-reports-quickly", {
+        params: companyOfficeId ? { companyOfficeId } : {}
+    });
     return response.data;
 };
 

@@ -5,16 +5,20 @@ const registerUser = async (userData) => {
     return await httpClient.post(url, userData);
 };
 
-const getMyReports = async ({ page = 1, limit = 20 }) => {
+const getMyReports = async ({ page = 1, limit = 20, companyOfficeId = null } = {}) => {
+  const params = { page, limit };
+  if (companyOfficeId) params.companyOfficeId = companyOfficeId;
   return await httpClient.get("/report-lookup/mine", {
-    params: { page, limit },
+    params,
   });
 };
 
 
-const lookupReportById = async (report_id) => {
+const lookupReportById = async (report_id, companyOfficeId = null) => {
+  const params = { report_id };
+  if (companyOfficeId) params.companyOfficeId = companyOfficeId;
   return await httpClient.get("/report-lookup/lookup", {
-    params: { report_id },
+    params,
   });
 };
 

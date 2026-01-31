@@ -1,5 +1,6 @@
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, useMemo, use } from "react";
 import { useRam } from "../context/RAMContext";
+import { useValueNav } from "../context/ValueNavContext";
 import {
     Search,
     CheckCircle,
@@ -45,6 +46,11 @@ const AssetCreate = () => {
     const [showControls, setShowControls] = useState(false);
 
     const { ramInfo } = useRam();
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
 
     // Check if form is valid
     const isFormValid = reportId.trim() && assetCount.trim();
@@ -95,7 +101,11 @@ const AssetCreate = () => {
         setDbCheckResult(null); // Clear DB result when checking Taqeem
 
         try {
-            const result = await window.electronAPI.validateReport(reportId);
+            const result = await window.electronAPI.validateReport(
+                reportId,
+                null,
+                selectedCompanyOfficeId || null
+            );
             console.log("Full API response:", result);
 
             // Handle the IPC response exactly like ValidateReport component
@@ -131,7 +141,7 @@ const AssetCreate = () => {
             console.log(`Checking report existence in DB: ${reportId}`);
 
             // Direct API call to your backend
-            const result = await reportExistenceCheck(reportId);
+            const result = await reportExistenceCheck(reportId, selectedCompanyOfficeId || null);
             console.log("DB check result:", result);
 
             setDbCheckResult(result.data);

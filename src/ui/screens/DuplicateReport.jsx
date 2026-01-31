@@ -620,6 +620,10 @@ const DuplicateReport = ({ onViewChange }) => {
     syncCompanies,
     replaceCompanies,
   } = useValueNav();
+  const selectedCompanyOfficeId = useMemo(() => {
+    const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+    return officeId ? String(officeId) : "";
+  }, [selectedCompany]);
 
   const [formData, setFormData, resetFormData] = usePersistentState(
     "duplicate:formData",
@@ -1013,6 +1017,7 @@ const DuplicateReport = ({ onViewChange }) => {
         page: currentPage,
         limit: pageSize,
         status: reportSelectFilter,
+        companyOfficeId: selectedCompanyOfficeId || null,
       });
 
       const rows = normalizeReportsResponse(result);
@@ -1039,7 +1044,7 @@ const DuplicateReport = ({ onViewChange }) => {
     } finally {
       setReportsLoading(false);
     }
-  }, [currentPage, pageSize, reportSelectFilter, normalizeReportsResponse]);
+  }, [currentPage, pageSize, reportSelectFilter, selectedCompanyOfficeId, normalizeReportsResponse]);
 
   useEffect(() => {
     loadReports();
@@ -1065,6 +1070,10 @@ const DuplicateReport = ({ onViewChange }) => {
   useEffect(() => {
     setCurrentPage(1);
   }, [reportSelectFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCompanyOfficeId]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -1614,7 +1623,7 @@ const DuplicateReport = ({ onViewChange }) => {
     try {
       setSubmitting(true);
       setStatus(null);
-      const result = await createDuplicateReport(payload);
+      const result = await createDuplicateReport(payload, selectedCompanyOfficeId || null);
       if (result?.success) {
         setStatus({ type: "success", message: "Report added successfully." });
         setIsValidationCollapsed(false);
@@ -1695,7 +1704,7 @@ const DuplicateReport = ({ onViewChange }) => {
           payload.append("excel", excelFile);
           if (wantsPdfUpload && pdfFile) payload.append("pdf", pdfFile);
 
-          const createRes = await createDuplicateReport(payload);
+          const createRes = await createDuplicateReport(payload, selectedCompanyOfficeId || null);
           if (!createRes?.success) {
             throw new Error(createRes?.message || "Could not save report.");
           }
@@ -1706,6 +1715,7 @@ const DuplicateReport = ({ onViewChange }) => {
             page: 1,
             limit: 50,
             status: "all",
+            companyOfficeId: selectedCompanyOfficeId || null,
             // if your API supports sorting, add it:
             // sort: "createdAt:desc"
           });

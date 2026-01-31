@@ -675,6 +675,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const { executeWithAuth } = useAuthAction();
     const { taqeemStatus, setTaqeemStatus } = useNavStatus();
     const { selectedCompany, companies, loadSavedCompanies } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
     const [excelFiles, setExcelFiles] = useState([]);
     const [pdfFiles, setPdfFiles] = useState([]);
     const [selectedReportActions, setSelectedReportActions] = useState({});
@@ -1022,6 +1026,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 page: pageToUse.toString(),
                 limit: itemsPerPage.toString(),
             });
+            if (selectedCompanyOfficeId) {
+                params.append("companyOfficeId", selectedCompanyOfficeId);
+            }
 
             const result = await window.electronAPI.apiRequest(
                 "GET",
@@ -1055,13 +1062,26 @@ const MultiExcelUpload = ({ onViewChange }) => {
         } finally {
             setReportsLoading(false);
         }
-    }, [setReports, setReportsPagination, setReportsError, token, currentPage, itemsPerPage]);
+    }, [setReports, setReportsPagination, setReportsError, token, currentPage, itemsPerPage, selectedCompanyOfficeId]);
 
     const handlePageChange = useCallback(async (newPage) => {
         if (newPage < 1 || reportsLoading) return;
         setCurrentPage(newPage);
         // The useEffect will handle the actual loading
     }, [reportsLoading]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+        setReports([]);
+        setReportsPagination((prev) => ({
+            ...prev,
+            page: 1,
+            total: 0,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+        }));
+    }, [selectedCompanyOfficeId, setReports, setReportsPagination]);
 
     // Load reports automatically when filter or page size changes
     // Load reports automatically when filter or page size changes
@@ -1682,7 +1702,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 const data = await multiExcelUpload(
                     excelFiles,
                     wantsPdfUpload ? pdfFiles : [],
-                    useDefaultValuers ? [] : buildValuersPayload()
+                    useDefaultValuers ? [] : buildValuersPayload(),
+                    selectedCompanyOfficeId || null
                 );
 
                 if (data.status !== "success") {
@@ -1753,7 +1774,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 const data = await multiExcelUpload(
                     excelFiles,
                     wantsPdfUpload ? pdfFiles : [],
-                    useDefaultValuers ? [] : buildValuersPayload()
+                    useDefaultValuers ? [] : buildValuersPayload(),
+                    selectedCompanyOfficeId || null
                 );
 
                 if (!data || data.status !== "success") {

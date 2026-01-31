@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
     CheckCircle,
     ArrowLeft,
@@ -11,6 +11,7 @@ import {
     User
 } from "lucide-react";
 import { addCommonFields } from "../../api/report";
+import { useValueNav } from "../context/ValueNavContext";
 
 // Saudi Arabia regions and cities data
 const saudiRegions = {
@@ -30,6 +31,12 @@ const saudiRegions = {
 };
 
 const AddCommonFields = () => {
+
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
 
     // Form state
     const [reportId, setReportId] = useState("");
@@ -84,7 +91,14 @@ const AddCommonFields = () => {
             console.log(`Adding common fields to report: ${reportId}`);
             console.log(`Fields - Date: ${inspectionDate}, Region: ${region}, City: ${city}, Owner: ${ownerName}`);
 
-            const result = await addCommonFields(reportId, inspectionDate, region, city, ownerName);
+            const result = await addCommonFields(
+                reportId,
+                inspectionDate,
+                region,
+                city,
+                ownerName,
+                selectedCompanyOfficeId || null
+            );
             console.log("Add common fields result:", result);
 
             setUpdateResult(result.data);

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRam } from "../context/RAMContext";
+import { useValueNav } from "../context/ValueNavContext";
 import {
     Download,
     CheckCircle,
@@ -42,6 +43,11 @@ const GrabMacroIds = () => {
     const [activeProcessType, setActiveProcessType] = useState(null); // 'grab' or 'retry'
 
     const { ramInfo } = useRam();
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
 
     // Get the tabs count to display
     const getTabsCount = () => {
@@ -251,7 +257,7 @@ const GrabMacroIds = () => {
             console.log(`Checking missing pages for report: ${reportId}`);
 
             // Call the API function
-            const result = await checkMissingPages(reportId);
+            const result = await checkMissingPages(reportId, selectedCompanyOfficeId || null);
             console.log("Missing pages check result:", result);
 
             setMissingPagesInfo(result.data);

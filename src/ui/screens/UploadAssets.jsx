@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRam } from "../context/RAMContext";
 import { useNavStatus } from "../context/NavStatusContext";
 import { useSession } from "../context/SessionContext";
+import { useValueNav } from "../context/ValueNavContext";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 import { useAuthAction } from "../hooks/useAuthAction";
 import InsufficientPointsModal from "../components/InsufficientPointsModal";
@@ -38,6 +39,11 @@ const UploadAssets = ({ onViewChange }) => {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   const [submitProgress, setSubmitProgress] = useState({});
+  const { selectedCompany } = useValueNav();
+  const selectedCompanyOfficeId = useMemo(() => {
+    const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+    return officeId ? String(officeId) : "";
+  }, [selectedCompany]);
 
   // Add this useEffect to listen for progress updates
   useEffect(() => {
@@ -419,6 +425,7 @@ const UploadAssets = ({ onViewChange }) => {
                 inspectionDate: inspectionDate || undefined,
                 ownerName: ownerName || undefined,
               },
+              companyOfficeId: selectedCompanyOfficeId || undefined,
             },
             {
               Authorization: `Bearer ${authToken}`,
@@ -714,6 +721,7 @@ const UploadAssets = ({ onViewChange }) => {
             inspectionDate: inspectionDate || undefined,
             ownerName: ownerName || undefined,
           },
+          companyOfficeId: selectedCompanyOfficeId || undefined,
         },
         {
           Authorization: `Bearer ${token}`,

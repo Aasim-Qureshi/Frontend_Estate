@@ -17,6 +17,34 @@ MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
 _mongo_client = AsyncIOMotorClient(MONGO_URI)
 _db = _mongo_client["test"]
 _check_report_coll = _db["report_deletions"]
+_REPORT_SOURCE_COLLECTIONS = [
+    "reports",
+    "duplicatereports",
+    "multiapproachreports",
+    "submitreportsquicklies",
+    "elrajhireports",
+    "urgentreports",
+]
+
+
+async def _resolve_company_office_id(report_id: str) -> str | None:
+    if not report_id:
+        return None
+    report_id_str = str(report_id)
+    for collection_name in _REPORT_SOURCE_COLLECTIONS:
+        try:
+            doc = await _db[collection_name].find_one(
+                {
+                    "report_id": report_id_str,
+                    "company_office_id": {"$exists": True, "$ne": None, "$ne": ""},
+                },
+                {"company_office_id": 1},
+            )
+            if doc and doc.get("company_office_id"):
+                return str(doc["company_office_id"])
+        except Exception:
+            continue
+    return None
 
 
 async def wait_for_report_info_html(page, timeout_seconds=10):
@@ -245,7 +273,7 @@ async def calculate_total_assets(page) -> dict:
 
 
 async def _update_report_check_status(
-    report_id: str, user_id: str | None, updates: dict
+    report_id: str, user_id: str | None, updates: dict, company_office_id: str | None = None
 ) -> None:
     if not report_id or not updates:
         return
@@ -255,8 +283,13 @@ async def _update_report_check_status(
             "user_id": str(user_id) if user_id else None,
             **updates,
         }
+        if company_office_id:
+            payload["company_office_id"] = str(company_office_id)
+        query = {"report_id": str(report_id), "user_id": str(user_id) if user_id else None}
+        if company_office_id:
+            query["company_office_id"] = str(company_office_id)
         await _check_report_coll.update_one(
-            {"report_id": str(report_id), "user_id": str(user_id) if user_id else None},
+            query,
             {"$set": payload},
             upsert=True,
         )
@@ -272,8 +305,30 @@ async def _update_report_check_status(
 async def validate_report(cmd):
     report_id = cmd.get("reportId")
     user_id = cmd.get("userId")
+    company_office_id = cmd.get("companyOfficeId")
     if not report_id:
         return {"status": "FAILED", "error": "Missing reportId in command"}
+
+    if company_office_id:
+        source_company_id = await _resolve_company_office_id(report_id)
+        if source_company_id and str(source_company_id) != str(company_office_id):
+            await _update_report_check_status(
+                report_id,
+                user_id,
+                {
+                    "last_status_check_at": datetime.utcnow(),
+                    "last_status_check_status": "NOT_FOUND",
+                    "last_status_check_source": "validate_report",
+                    "status_reason": "COMPANY_MISMATCH",
+                },
+                company_office_id,
+            )
+            return {
+                "status": "NOT_FOUND",
+                "message": "Report belongs to another company",
+                "reportId": report_id,
+                "exists": False,
+            }
 
     browser_status = await check_browser_status()
     print(
@@ -334,6 +389,7 @@ async def validate_report(cmd):
                     "last_status_check_status": "NOT_FOUND",
                     "last_status_check_source": "validate_report",
                 },
+                company_office_id,
             )
             return {
                 "status": "NOT_FOUND",
@@ -410,6 +466,7 @@ async def validate_report(cmd):
                     "last_status_check_status": "MACROS_EXIST",
                     "last_status_check_source": "validate_report",
                 },
+                company_office_id,
             )
 
             return {
@@ -446,6 +503,7 @@ async def validate_report(cmd):
                 "last_status_check_status": "SUCCESS",
                 "last_status_check_source": "validate_report",
             },
+            company_office_id,
         )
 
         return {

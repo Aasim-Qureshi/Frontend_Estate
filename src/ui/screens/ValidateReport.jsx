@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
     Search,
     CheckCircle,
     ArrowLeft,
     FileCheck,
 } from "lucide-react";
+import { useValueNav } from "../context/ValueNavContext";
 
 const ValidateReport = () => {
     // Step management - simplified to only report check
@@ -17,6 +18,11 @@ const ValidateReport = () => {
 
     // Error state
     const [error, setError] = useState("");
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
 
     // Step 1: Check Report ID using IPC
     const handleCheckReport = async () => {
@@ -31,7 +37,11 @@ const ValidateReport = () => {
 
         try {
             // Use IPC to validate report
-            const result = await window.electronAPI.validateReport(reportId);
+            const result = await window.electronAPI.validateReport(
+                reportId,
+                null,
+                selectedCompanyOfficeId || null
+            );
             console.log("Report validation result:", result);
 
             // Handle the IPC response

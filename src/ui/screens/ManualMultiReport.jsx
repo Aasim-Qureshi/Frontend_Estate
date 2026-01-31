@@ -15,6 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { createManualMultiApproachReport } from "../../api/report";
+import { useValueNav } from "../context/ValueNavContext";
 const {
   contributionOptions,
   currencyOptions,
@@ -187,6 +188,11 @@ const InfoBanner = ({ tone = "info", message }) => {
   );
 };
 const ManualMultiReport = () => {
+  const { selectedCompany } = useValueNav();
+  const selectedCompanyOfficeId = useMemo(() => {
+    const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+    return officeId ? String(officeId) : "";
+  }, [selectedCompany]);
   const [showAssetsModal, setShowAssetsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [assets, setAssets] = useState([defaultAssetRow()]);
@@ -653,7 +659,10 @@ const validateAssets = (requireAssets = true) => {
       setIsSaving(true);
       setStatus(null);
       const payload = buildPayload();
-      const response = await createManualMultiApproachReport(payload);
+      const response = await createManualMultiApproachReport(
+        payload,
+        selectedCompanyOfficeId || null
+      );
       if (response?.status !== "success") {
         throw new Error(response?.error || "حدث خطأ غير متوقع أثناء حفظ البيانات.");
       }

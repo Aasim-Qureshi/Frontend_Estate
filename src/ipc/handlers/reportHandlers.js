@@ -34,11 +34,11 @@ const reportHandlers = {
 
 
 
-    async handleValidateReport(event, reportId, userId = null) {
+    async handleValidateReport(event, reportId, userId = null, companyOfficeId = null) {
         try {
             console.log('[MAIN] Received validate report request:', reportId);
 
-            const result = await pythonAPI.report.validateReport(reportId, userId);
+            const result = await pythonAPI.report.validateReport(reportId, userId, companyOfficeId);
             console.log("Result at handler (FULL):", result);
 
             if (result.status === 'SUCCESS') {
@@ -680,7 +680,7 @@ const reportHandlers = {
         }
     },
 
-    async deleteReport(event, reportId, maxRounds, userId) {
+    async deleteReport(event, reportId, maxRounds, userId, companyOfficeId = null) {
         try {
             // Get the window that sent the event
             const senderWindow = BrowserWindow.fromWebContents(event.sender);
@@ -695,7 +695,7 @@ const reportHandlers = {
             });
 
             // Execute delete report
-            const result = await pythonAPI.report.deleteReport(reportId, maxRounds, userId);
+            const result = await pythonAPI.report.deleteReport(reportId, maxRounds, userId, companyOfficeId);
 
             // Unregister progress callback
             pythonAPI.workerService.unregisterProgressCallback(reportId);
@@ -745,7 +745,7 @@ const reportHandlers = {
         }
     },
 
-    async deleteIncompleteAssets(event, reportId, maxRounds, userId) {
+    async deleteIncompleteAssets(event, reportId, maxRounds, userId, companyOfficeId = null) {
         try {
             // Get the window that sent the event
             const senderWindow = BrowserWindow.fromWebContents(event.sender);
@@ -760,7 +760,7 @@ const reportHandlers = {
             });
 
             // Execute delete incomplete assets
-            const result = await pythonAPI.report.deleteIncompleteAssets(reportId, maxRounds, userId);
+            const result = await pythonAPI.report.deleteIncompleteAssets(reportId, maxRounds, userId, companyOfficeId);
 
             // Unregister progress callback
             pythonAPI.workerService.unregisterProgressCallback(reportId);
@@ -801,9 +801,9 @@ const reportHandlers = {
         }
     },
 
-    async getReportDeletions(event, userId, deleteType, page, limit, searchTerm = "") {
+    async getReportDeletions(event, userId, deleteType, page, limit, searchTerm = "", companyOfficeId = null) {
         try {
-            return await pythonAPI.report.getReportDeletions(userId, deleteType, page, limit, searchTerm);
+            return await pythonAPI.report.getReportDeletions(userId, deleteType, page, limit, searchTerm, companyOfficeId);
         } catch (err) {
             console.error('[MAIN] Get report deletions error:', err && err.stack ? err.stack : err);
             return { status: 'FAILED', error: err.message || String(err) };
@@ -828,9 +828,9 @@ const reportHandlers = {
         }
     },
 
-    async getCheckedReports(event, userId, page, limit, searchTerm = "") {
+    async getCheckedReports(event, userId, page, limit, searchTerm = "", companyOfficeId = null) {
         try {
-            return await pythonAPI.report.getCheckedReports(userId, page, limit, searchTerm);
+            return await pythonAPI.report.getCheckedReports(userId, page, limit, searchTerm, companyOfficeId);
         } catch (err) {
             console.error('[MAIN] Get checked reports error:', err && err.stack ? err.stack : err);
             return { status: 'FAILED', error: err.message || String(err) };

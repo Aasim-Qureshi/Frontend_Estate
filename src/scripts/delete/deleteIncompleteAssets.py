@@ -58,7 +58,8 @@ async def _record_delete_status(
     remaining_assets: int | None,
     delete_type: str,
     deleted: bool,
-    user_id: str | None = None
+    user_id: str | None = None,
+    company_office_id: str | None = None
 ):
     if not report_id:
         return
@@ -66,6 +67,7 @@ async def _record_delete_status(
     payload = {
         "report_id": str(report_id),
         "user_id": str(user_id) if user_id else None,
+        "company_office_id": str(company_office_id) if company_office_id else None,
         "total_assets": total_assets,
         "remaining_assets": remaining_assets,
         "deleted": bool(deleted),
@@ -75,8 +77,13 @@ async def _record_delete_status(
     if deleted:
         payload["deleted_at"] = now
     try:
+        query = {"report_id": str(report_id), "delete_type": delete_type}
+        if user_id:
+            query["user_id"] = str(user_id)
+        if company_office_id:
+            query["company_office_id"] = str(company_office_id)
         await _delete_status_coll.update_one(
-            {"report_id": str(report_id), "delete_type": delete_type},
+            query,
             {"$set": payload},
             upsert=True
         )
@@ -507,7 +514,8 @@ async def _process_current_main_page_with_subpages(
     report_id: str | None = None,
     total_assets_state: dict | None = None,
     delete_type: str = "assets",
-    user_id: str | None = None
+    user_id: str | None = None,
+    company_office_id: str | None = None
 ):
     kept_ids = []
     deleted_total = 0
@@ -565,7 +573,8 @@ async def _process_current_main_page_with_subpages(
                     remaining_assets=remaining_assets,
                     delete_type=delete_type,
                     deleted=(remaining_assets == 0),
-                    user_id=user_id
+                    user_id=user_id,
+                    company_office_id=company_office_id
                 )
         log(
             f"[subpage {subpage_index}] kept={kept} deleted={deleted} all_incomplete={all_incomplete} "
@@ -634,7 +643,8 @@ async def delete_incomplete_assets_across_pages(
     report_id: str | None = None,
     total_assets_state: dict | None = None,
     delete_type: str = "assets",
-    user_id: str | None = None
+    user_id: str | None = None,
+    company_office_id: str | None = None
 ):
     total_deleted = 0
     main_pages = 0
@@ -657,7 +667,8 @@ async def delete_incomplete_assets_across_pages(
             report_id=report_id,
             total_assets_state=total_assets_state,
             delete_type=delete_type,
-            user_id=user_id
+            user_id=user_id,
+            company_office_id=company_office_id
         )
         deleted_here = int(res.get("deleted_total") or 0)
         total_deleted += deleted_here
@@ -695,7 +706,13 @@ async def _has_any_assets(page) -> bool:
         log(f"[assets-check] error while checking asset rows: {e}", "ERR")
         return False
 
-async def delete_incomplete_assets_flow(report_id: str, control_state=None, max_rounds: int = 10, user_id: str | None = None) -> dict:
+async def delete_incomplete_assets_flow(
+    report_id: str,
+    control_state=None,
+    max_rounds: int = 10,
+    user_id: str | None = None,
+    company_office_id: str | None = None
+) -> dict:
     page = None
     process_id = f"delete-incomplete-assets-{report_id}"
     
@@ -804,7 +821,8 @@ async def delete_incomplete_assets_flow(report_id: str, control_state=None, max_
                     remaining_assets=int(total_assets_remaining),
                     delete_type="assets",
                     deleted=(int(total_assets_remaining) == 0),
-                    user_id=user_id
+                    user_id=user_id,
+                    company_office_id=company_office_id
                 )
                 await page.get(url)
                 await asyncio.sleep(1.0)
@@ -815,7 +833,8 @@ async def delete_incomplete_assets_flow(report_id: str, control_state=None, max_
                 process_id,
                 report_id=report_id,
                 total_assets_state=total_assets_state,
-                user_id=user_id
+                user_id=user_id,
+                company_office_id=company_office_id
             )
             total_assets_remaining = total_assets_state.get("remaining")
             log(f"Report {report_id}: pagination summary -> {summary}", "OK")
@@ -854,7 +873,8 @@ async def delete_incomplete_assets_flow(report_id: str, control_state=None, max_
                         remaining_assets=int(total_assets_remaining or 0),
                         delete_type="assets",
                         deleted=False,
-                        user_id=user_id
+                        user_id=user_id,
+                        company_office_id=company_office_id
                     )
                 return {
                     "status": "ASSETS_REMAIN",
@@ -874,7 +894,8 @@ async def delete_incomplete_assets_flow(report_id: str, control_state=None, max_
                     remaining_assets=0,
                     delete_type="assets",
                     deleted=True,
-                    user_id=user_id
+                    user_id=user_id,
+                    company_office_id=company_office_id
                 )
             return {
                 "status": "SUCCESS",

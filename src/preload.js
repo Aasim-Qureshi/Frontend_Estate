@@ -60,7 +60,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Reports
-    validateReport: (reportId, userId = null) => safeInvoke('validate-report', reportId, userId),
+    validateReport: (reportId, userId = null, companyOfficeId = null) =>
+        safeInvoke('validate-report', reportId, userId, companyOfficeId),
     createMacros: (reportId, macroCount, tabsNum, batchSize) => safeInvoke('create-macros', reportId, macroCount, tabsNum, batchSize),
     extractAssetData: (excelFilePath) => safeInvoke('extract-asset-data', excelFilePath),
     completeFlow: (reportId, tabsNum) => safeInvoke('complete-flow', reportId, tabsNum),
@@ -124,26 +125,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resumeHalfCheck: (reportId) => safeInvoke('resume-half-check', reportId),
     stopHalfCheck: (reportId) => safeInvoke('stop-half-check', reportId),
 
-    deleteReport: (reportId, maxRounds, userId) => safeInvoke('delete-report', reportId, maxRounds, userId),
+    deleteReport: (reportId, maxRounds, userId, companyOfficeId = null) =>
+        safeInvoke('delete-report', reportId, maxRounds, userId, companyOfficeId),
     deleteMultipleReports: (reportIds, maxRounds) => safeInvoke('delete-multiple-reports', reportIds, maxRounds),
     pauseDeleteReport: (reportId) => safeInvoke('pause-delete-report', reportId),
     resumeDeleteReport: (reportId) => safeInvoke('resume-delete-report', reportId),
     stopDeleteReport: (reportId) => safeInvoke('stop-delete-report', reportId),
 
-    deleteIncompleteAssets: (reportId, maxRounds, userId) => safeInvoke('delete-incomplete-assets', reportId, maxRounds, userId),
+    deleteIncompleteAssets: (reportId, maxRounds, userId, companyOfficeId = null) =>
+        safeInvoke('delete-incomplete-assets', reportId, maxRounds, userId, companyOfficeId),
     pauseDeleteIncompleteAssets: (reportId) => safeInvoke('pause-delete-incomplete-assets', reportId),
     resumeDeleteIncompleteAssets: (reportId) => safeInvoke('resume-delete-incomplete-assets', reportId),
     stopDeleteIncompleteAssets: (reportId) => safeInvoke('stop-delete-incomplete-assets', reportId),
 
-    getReportDeletions: (userId, deleteType, page = 1, limit = 10, searchTerm = "") =>
-        safeInvoke('get-report-deletions', userId, deleteType, page, limit, searchTerm),
+    getReportDeletions: (userId, deleteType, page = 1, limit = 10, searchTerm = "", companyOfficeId = null) =>
+        safeInvoke('get-report-deletions', userId, deleteType, page, limit, searchTerm, companyOfficeId),
 
     storeReportDeletion: (deletionData) => safeInvoke('store-report-deletion', deletionData),
 
     getValidationResults: (userId, reportIds) => safeInvoke('get-validation-results', userId, reportIds),
 
-    getCheckedReports: (userId, page = 1, limit = 10, searchTerm = "") =>
-        safeInvoke('get-checked-reports', userId, page, limit, searchTerm),
+    getCheckedReports: (userId, page = 1, limit = 10, searchTerm = "", companyOfficeId = null) =>
+        safeInvoke('get-checked-reports', userId, page, limit, searchTerm, companyOfficeId),
 
     handleCancelledReport: (reportId) => safeInvoke('handle-cancelled-report', reportId),
 

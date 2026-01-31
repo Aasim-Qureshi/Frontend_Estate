@@ -14,6 +14,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { useSession } from "../context/SessionContext";
+import { useValueNav } from "../context/ValueNavContext";
 import { useAuthAction } from "../hooks/useAuthAction"; // ✅ add
 
 
@@ -26,6 +27,11 @@ const DeleteReport = () => {
 
 
   const { user, token } = useSession();   // ✅ you need token
+  const { selectedCompany } = useValueNav();
+  const selectedCompanyOfficeId = useMemo(() => {
+    const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+    return officeId ? String(officeId) : "";
+  }, [selectedCompany]);
   const userId = useMemo(
     () => user?._id || user?.id || user?.userId || user?.user?._id || null,
     [user]
@@ -186,7 +192,14 @@ const DeleteReport = () => {
     if (!userId) return;
     setDeletedLoading(true);
     setDeletedError("");
-    window.electronAPI.getReportDeletions(userId, null, deletedPage, deletedLimit, searchTerm)
+    window.electronAPI.getReportDeletions(
+      userId,
+      null,
+      deletedPage,
+      deletedLimit,
+      searchTerm,
+      selectedCompanyOfficeId || null
+    )
       .then((res) => {
         if (!isMounted) return;
         if (res?.status === "SUCCESS") {
@@ -204,7 +217,7 @@ const DeleteReport = () => {
         if (isMounted) setDeletedLoading(false);
       });
     return () => { isMounted = false; };
-  }, [userId, deletedPage, deletedLimit, deleteReportStatus, deleteAssetsStatus, searchTerm]);
+  }, [userId, deletedPage, deletedLimit, deleteReportStatus, deleteAssetsStatus, searchTerm, selectedCompanyOfficeId]);
 
   const loadCheckedReports = async (page = checkedPage) => {
     if (!userId) {
@@ -215,7 +228,13 @@ const DeleteReport = () => {
     setCheckedLoading(true);
     setCheckedError("");
     try {
-      const res = await window.electronAPI.getCheckedReports(userId, page, checkedLimit, searchTerm);
+      const res = await window.electronAPI.getCheckedReports(
+        userId,
+        page,
+        checkedLimit,
+        searchTerm,
+        selectedCompanyOfficeId || null
+      );
       if (res?.status === "SUCCESS") {
         const items = (res.items || []).map((row) => {
           const assetsExact = Number(row.assets_exact);
@@ -282,7 +301,7 @@ const DeleteReport = () => {
   useEffect(() => {
     loadCheckedReports(checkedPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkedPage, userId]);
+  }, [checkedPage, userId, selectedCompanyOfficeId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -295,7 +314,12 @@ const DeleteReport = () => {
     if (!userId) return;
     setDeletedPage(1);
     // getReportDeletions effect will run on deletedPage change
-  }, [searchTerm, userId]);
+  }, [searchTerm, userId, selectedCompanyOfficeId]);
+
+  useEffect(() => {
+    setCheckedPage(1);
+    setDeletedPage(1);
+  }, [selectedCompanyOfficeId]);
 
   useEffect(() => {
     if (deleteReportStatus === "success" || deleteReportStatus === "partial" ||
@@ -414,7 +438,7 @@ const DeleteReport = () => {
         }));
 
         try {
-          const res = await window.electronAPI.deleteReport(id, maxRounds, userId);
+          const res = await window.electronAPI.deleteReport(id, maxRounds, userId, selectedCompanyOfficeId || null);
           setOperationResult(prev => ({
             ...prev,
             items: { ...prev.items, [id]: { status: "success", result: res } }
@@ -522,7 +546,7 @@ const DeleteReport = () => {
     try {
       const results = await runWithConcurrency(idsToDelete, concurrency, async (id) => {
         try {
-          const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId);
+          const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId, selectedCompanyOfficeId || null);
           return { id, ok: true, result: res };
         } catch (err) {
           return { id, ok: false, error: String(err) };
@@ -587,7 +611,7 @@ const DeleteReport = () => {
     setDeleteAssetsProgressById({});
     setRowActionById(prev => ({ ...prev, [id]: "delete-report" }));
     try {
-      const res = await window.electronAPI.deleteReport(id, 10, userId);
+      const res = await window.electronAPI.deleteReport(id, 10, userId, selectedCompanyOfficeId || null);
       setDeleteReportStatus("success");
       setOperationResult({
         type: "delete-report",
@@ -634,7 +658,7 @@ const DeleteReport = () => {
         // Step 1: Validate reports
         const validationResults = await runWithConcurrency(reportIds, 3, async (id) => {
           try {
-            const result = await window.electronAPI.validateReport(id, userId);
+            const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
             const status = result?.status;
             const reportStatus = result?.reportStatus;
             const totalAssets = Number(result?.assetsExact ?? result?.microsCount ?? 0) || 0;
@@ -695,6 +719,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: report.id,
               action: "change-status",
               userId,
@@ -712,6 +737,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: report.id,
               action: "change-status",
               userId,
@@ -750,7 +776,7 @@ const DeleteReport = () => {
               )
             );
 
-            const res = await window.electronAPI.deleteReport(id, maxRounds, userId);
+            const res = await window.electronAPI.deleteReport(id, maxRounds, userId, selectedCompanyOfficeId || null);
 
             setReportSummaryRow((prev) =>
               prev.map((row) =>
@@ -759,6 +785,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "change-status-and-delete",
               userId,
@@ -774,6 +801,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "change-status-and-delete",
               userId,
@@ -850,7 +878,7 @@ const DeleteReport = () => {
     setDeleteAssetsProgressById({});
     setRowActionById(prev => ({ ...prev, [id]: "delete-assets" }));
     try {
-      const res = await window.electronAPI.deleteIncompleteAssets(id, 10, userId);
+      const res = await window.electronAPI.deleteIncompleteAssets(id, 10, userId, selectedCompanyOfficeId || null);
       setDeleteAssetsStatus("success");
       setOperationResult({
         type: "delete-incomplete-assets",
@@ -888,7 +916,7 @@ const DeleteReport = () => {
 
     await runWithConcurrency(selectedIds, 3, async (id) => {
       try {
-        await window.electronAPI.validateReport(id, userId);
+        await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
       } catch (err) {
         console.error("Check report failed:", err);
       }
@@ -915,7 +943,7 @@ const DeleteReport = () => {
     if (!id) return;
     setRowActionById(prev => ({ ...prev, [id]: "check-report" }));
     try {
-      await window.electronAPI.validateReport(id, userId);
+      await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
       await loadCheckedReports(checkedPage);
       // Update row result to "Checked" after check completes
       setReportSummaryRow(prev => prev.map(row =>
@@ -1012,7 +1040,7 @@ const DeleteReport = () => {
 
     await runWithConcurrency(selectedIds, 3, async (id) => {
       try {
-        await window.electronAPI.validateReport(id, userId);
+        await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
       } catch (err) {
         console.error("Check report failed:", err);
       }
@@ -1107,7 +1135,7 @@ const DeleteReport = () => {
   //       }
   //     }
 
-  //     const result = await window.electronAPI.validateReport(id, userId);
+  //     const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
   //     const status = result?.status;
 
   //     if (status === "NOT_FOUND") {
@@ -1139,7 +1167,14 @@ const DeleteReport = () => {
       let alreadyDeleted = false;
 
       if (userId) {
-        const deletedRes = await window.electronAPI.getReportDeletions(userId, null, 1, 1, id);
+        const deletedRes = await window.electronAPI.getReportDeletions(
+          userId,
+          null,
+          1,
+          1,
+          id,
+          selectedCompanyOfficeId || null
+        );
         alreadyDeleted =
           deletedRes?.status === "SUCCESS" && (deletedRes.items || []).length > 0;
 
@@ -1154,13 +1189,13 @@ const DeleteReport = () => {
         }
       }
 
-      const result = await window.electronAPI.validateReport(id, userId);
+      const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
 
       const status = result?.status;
       const reportStatus = result?.reportStatus;
 
       if (status === "NOT_FOUND") {
-        return { id, proceed: false, error: "Not Found", result };
+        return { id, proceed: false, error: result?.message || "Not Found", result };
       }
 
       // ✅ block delete if not draft
@@ -1238,7 +1273,7 @@ const DeleteReport = () => {
 
         const results = await runWithConcurrency(reportIds, concurrency, async (id) => {
           try {
-            const result = await window.electronAPI.validateReport(id, userId);
+            const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
 
             const totalAssets = Number(result?.assetsExact ?? result?.microsCount ?? 0) || 0;
 
@@ -1257,6 +1292,7 @@ const DeleteReport = () => {
 
             // ✅ Store in DB so it persists
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: row.reportId,
               action: "check-report",
               userId,
@@ -1279,6 +1315,7 @@ const DeleteReport = () => {
 
             // ✅ Store failure in DB too
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: row.reportId,
               action: "check-report",
               userId,
@@ -1393,6 +1430,7 @@ const DeleteReport = () => {
         // store validation results
         for (const res of validationResults) {
           await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
             reportId: res.id,
             action: "delete-report",
             userId,
@@ -1419,7 +1457,7 @@ const DeleteReport = () => {
 
         const results = await runWithConcurrency(idsToDelete, concurrency, async (id) => {
           try {
-            const res = await window.electronAPI.deleteReport(id, maxRounds, userId);
+            const res = await window.electronAPI.deleteReport(id, maxRounds, userId, selectedCompanyOfficeId || null);
 
             const validation = validationById[id];
             const totalAssets = validation?.totalAssets || 0;
@@ -1430,6 +1468,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "delete-report",
               userId,
@@ -1445,6 +1484,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "delete-report",
               userId,
@@ -1508,7 +1548,7 @@ const DeleteReport = () => {
 
         const validationResults = await runWithConcurrency(reportIds, 3, async (id) => {
           try {
-            const result = await window.electronAPI.validateReport(id, userId);
+            const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
             const status = result?.status;
             const reportStatus = result?.reportStatus;
             const totalAssets = Number(result?.assetsExact ?? result?.microsCount ?? 0) || 0;
@@ -1561,6 +1601,7 @@ const DeleteReport = () => {
 
         for (const res of validationResults) {
           await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
             reportId: res.id,
             action: "delete-assets",
             userId,
@@ -1581,7 +1622,7 @@ const DeleteReport = () => {
 
         const results = await runWithConcurrency(idsToDelete, concurrency, async (id) => {
           try {
-            const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId);
+            const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId, selectedCompanyOfficeId || null);
 
             const validation = validationById[id];
             const totalAssets = validation?.totalAssets || 0;
@@ -1592,6 +1633,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "delete-assets",
               userId,
@@ -1607,6 +1649,7 @@ const DeleteReport = () => {
             );
 
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: id,
               action: "delete-assets",
               userId,
@@ -1861,7 +1904,7 @@ const DeleteReport = () => {
 
         const validationResults = await runWithConcurrency(reportIds, 3, async (id) => {
           try {
-            const result = await window.electronAPI.validateReport(id, userId);
+            const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
             const status = result?.status;
             const reportStatus = result?.reportStatus;
             const totalAssets = Number(result?.assetsExact ?? result?.microsCount ?? 0) || 0;
@@ -1902,6 +1945,7 @@ const DeleteReport = () => {
               );
 
               await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
                 reportId: res.id,
                 action: "change-status",
                 userId,
@@ -1915,6 +1959,7 @@ const DeleteReport = () => {
               );
 
               await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
                 reportId: res.id,
                 action: "change-status",
                 userId,
@@ -1924,6 +1969,7 @@ const DeleteReport = () => {
             }
           } else {
             await window.electronAPI.storeReportDeletion({
+              companyOfficeId: selectedCompanyOfficeId || null,
               reportId: res.id,
               action: "change-status",
               userId,

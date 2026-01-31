@@ -10,11 +10,12 @@ class ReportCommands {
         return await this.worker.sendCommand(command);
     }
 
-    async validateReport(reportId, userId = null) {
+    async validateReport(reportId, userId = null, companyOfficeId = null) {
         return this._sendCommand({
             action: 'validate-report',
             reportId,
-            userId
+            userId,
+            companyOfficeId
         });
     }
 
@@ -344,12 +345,13 @@ class ReportCommands {
         });
     }
 
-    async deleteReport(reportId, maxRounds, userId) {
+    async deleteReport(reportId, maxRounds, userId, companyOfficeId = null) {
         return this._sendCommand({
             action: 'delete-report',
             reportId,
             maxRounds,
-            userId
+            userId,
+            companyOfficeId
         });
     }
 
@@ -382,23 +384,25 @@ class ReportCommands {
         });
     }
 
-    async deleteIncompleteAssets(reportId, maxRounds, userId) {
+    async deleteIncompleteAssets(reportId, maxRounds, userId, companyOfficeId = null) {
         return this._sendCommand({
             action: 'delete-incomplete-assets',
             reportId,
             maxRounds,
-            userId
+            userId,
+            companyOfficeId
         });
     }
 
-    async getReportDeletions(userId, deleteType, page, limit, searchTerm = "") {
+    async getReportDeletions(userId, deleteType, page, limit, searchTerm = "", companyOfficeId = null) {
         return this._sendCommand({
             action: 'get-report-deletions',
             userId,
             deleteType,
             page,
             limit,
-            searchTerm
+            searchTerm,
+            companyOfficeId
         });
     }
 
@@ -417,13 +421,14 @@ class ReportCommands {
         });
     }
 
-    async getCheckedReports(userId, page, limit, searchTerm = "") {
+    async getCheckedReports(userId, page, limit, searchTerm = "", companyOfficeId = null) {
         return this._sendCommand({
             action: 'get-checked-reports',
             userId,
             page,
             limit,
-            searchTerm
+            searchTerm,
+            companyOfficeId
         });
     }
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
     ArrowLeft,
     Upload,
@@ -11,8 +11,14 @@ import {
     AlertCircle
 } from "lucide-react";
 import { uploadAssetDataToDatabase } from "../../api/report";
+import { useValueNav } from "../context/ValueNavContext";
 
 const UploadExcel = () => {
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
     const [report_id, setReportId] = useState("");
     const [excelFileName, setExcelFileName] = useState(null);
     const [excelFilePath, setExcelFilePath] = useState(null);
@@ -180,7 +186,11 @@ const UploadExcel = () => {
             });
 
             // Use the API function instead of Electron IPC
-            const result = await uploadAssetDataToDatabase(report_id.trim(), previewData);
+            const result = await uploadAssetDataToDatabase(
+                report_id.trim(),
+                previewData,
+                selectedCompanyOfficeId || null
+            );
 
             console.log("[UploadExcel] Upload successful:", result);
 

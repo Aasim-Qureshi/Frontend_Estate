@@ -551,9 +551,13 @@ async def handle_command(cmd):
         report_id = cmd.get("reportId")
         max_rounds = int(cmd.get("maxRounds", 10))
         user_id = cmd.get("userId")
+        company_office_id = cmd.get("companyOfficeId")
 
         result = await delete_report_flow(
-            report_id=report_id, max_rounds=max_rounds, user_id=user_id
+            report_id=report_id,
+            max_rounds=max_rounds,
+            user_id=user_id,
+            company_office_id=company_office_id,
         )
         result["commandId"] = cmd.get("commandId")
 
@@ -607,9 +611,13 @@ async def handle_command(cmd):
         report_id = cmd.get("reportId")
         max_rounds = int(cmd.get("maxRounds", 10))
         user_id = cmd.get("userId")
+        company_office_id = cmd.get("companyOfficeId")
 
         result = await delete_incomplete_assets_flow(
-            report_id=report_id, max_rounds=max_rounds, user_id=user_id
+            report_id=report_id,
+            max_rounds=max_rounds,
+            user_id=user_id,
+            company_office_id=company_office_id,
         )
         result["commandId"] = cmd.get("commandId")
 
@@ -618,6 +626,7 @@ async def handle_command(cmd):
     elif action == "get-report-deletions":
         user_id = cmd.get("userId")
         delete_type = cmd.get("deleteType")
+        company_office_id = cmd.get("companyOfficeId")
         page = int(cmd.get("page", 1))
         limit = int(cmd.get("limit", 10))
 
@@ -626,6 +635,8 @@ async def handle_command(cmd):
         else:
             try:
                 query = {"user_id": str(user_id), "deleted": True}
+                if company_office_id:
+                    query["company_office_id"] = str(company_office_id)
                 if delete_type:
                     query["delete_type"] = delete_type
                 search_term = cmd.get("searchTerm")
@@ -697,6 +708,8 @@ async def handle_command(cmd):
                     in ["Report - Deleted", "Asset - Deleted"]
                     else None,
                 }
+                if deletion_data.get("companyOfficeId"):
+                    doc["company_office_id"] = str(deletion_data.get("companyOfficeId"))
                 if deletion_data.get("error"):
                     doc["error"] = deletion_data.get("error")
 
@@ -722,6 +735,8 @@ async def handle_command(cmd):
                 deletion_data["report_status"] = deletion_data.get("reportStatus")
                 deletion_data["total_assets"] = deletion_data.get("totalAssets", 0)
                 deletion_data["updated_at"] = datetime.utcnow()
+                if deletion_data.get("companyOfficeId"):
+                    deletion_data["company_office_id"] = str(deletion_data.get("companyOfficeId"))
 
                 if deletion_data.get("error"):
                     deletion_data["error"] = deletion_data.get("error")
@@ -737,6 +752,7 @@ async def handle_command(cmd):
 
     elif action == "get-checked-reports":
         user_id = cmd.get("userId")
+        company_office_id = cmd.get("companyOfficeId")
         page = int(cmd.get("page", 1))
         limit = int(cmd.get("limit", 10))
         if not user_id:
@@ -744,6 +760,8 @@ async def handle_command(cmd):
         else:
             try:
                 query = {"user_id": str(user_id)}
+                if company_office_id:
+                    query["company_office_id"] = str(company_office_id)
                 search_term = cmd.get("searchTerm")
                 if search_term:
                     query["report_id"] = {"$regex": str(search_term), "$options": "i"}

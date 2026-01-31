@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import reportApi from "../../api/report.service";
+import { useValueNav } from "../context/ValueNavContext";
 
 const submitStateMap = {
   1: "Completed",
@@ -42,7 +43,12 @@ function StatusBadge({ state, reportStatus }) {
 }
 
 export default function ReportsPage({ onViewChange = () => {} }) {
- 
+  const { selectedCompany } = useValueNav();
+  const selectedCompanyOfficeId = useMemo(() => {
+    const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+    return officeId ? String(officeId) : "";
+  }, [selectedCompany]);
+
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -68,7 +74,11 @@ export default function ReportsPage({ onViewChange = () => {} }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await reportApi.getMyReports({ page, limit });
+      const res = await reportApi.getMyReports({
+        page,
+        limit,
+        companyOfficeId: selectedCompanyOfficeId || null
+      });
       console.log(res);
       
       setRows(res.data.data || []);
@@ -88,7 +98,13 @@ async function searchAnything() {
 
   setLoading(true);
   try {
-    const res = await reportApi.searchReports({ q, page: 1, limit, source });
+    const res = await reportApi.searchReports({
+      q,
+      page: 1,
+      limit,
+      source,
+      companyOfficeId: selectedCompanyOfficeId || null
+    });
     setRows(res.data.data || []);
     setTotal(res.data.total || res.data.totalApprox || 0);
     setPage(1);
@@ -106,7 +122,11 @@ async function searchAnything() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit]);
+  }, [page, limit, selectedCompanyOfficeId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCompanyOfficeId]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {

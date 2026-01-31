@@ -11,6 +11,7 @@ import {
     AlertCircle
 } from "lucide-react";
 import { useSession } from "../context/SessionContext";
+import { useValueNav } from "../context/ValueNavContext";
 
 const DeleteAssets = () => {
     // Report ID state
@@ -40,6 +41,11 @@ const DeleteAssets = () => {
     const [deleteAssetsProgress, setDeleteAssetsProgress] = useState(null);
     const [deleteAssetsProgressById, setDeleteAssetsProgressById] = useState({});
     const { user } = useSession();
+    const { selectedCompany } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
     const userId = useMemo(
         () => user?._id || user?.id || user?.userId || user?.user?._id || null,
         [user]
@@ -106,7 +112,14 @@ const DeleteAssets = () => {
         if (!userId) return;
         setDeletedLoading(true);
         setDeletedError("");
-        window.electronAPI.getReportDeletions(userId, "assets", deletedPage, deletedLimit)
+        window.electronAPI.getReportDeletions(
+            userId,
+            "assets",
+            deletedPage,
+            deletedLimit,
+            "",
+            selectedCompanyOfficeId || null
+        )
             .then((res) => {
                 if (!isMounted) return;
                 if (res?.status === "SUCCESS") {
@@ -124,12 +137,17 @@ const DeleteAssets = () => {
                 if (isMounted) setDeletedLoading(false);
             });
         return () => { isMounted = false; };
-    }, [userId, deletedPage, deletedLimit, deleteAssetsStatus]);
+    }, [userId, deletedPage, deletedLimit, deleteAssetsStatus, selectedCompanyOfficeId]);
 
     // Clear selections when checking new reports
     useEffect(() => {
         setSelectedReports(new Set());
     }, [reportSummaryRow]);
+
+    useEffect(() => {
+        setDeletedPage(1);
+        setReportSummaryRow([]);
+    }, [selectedCompanyOfficeId]);
 
     // Handle report selection
     const handleReportSelect = (reportId, isSelected) => {
@@ -181,7 +199,7 @@ const DeleteAssets = () => {
         try {
             const results = await runWithConcurrency(ids, concurrency, async (id) => {
                 try {
-                    const result = await window.electronAPI.validateReport(id);
+                    const result = await window.electronAPI.validateReport(id, userId, selectedCompanyOfficeId || null);
                     console.log(`Full API response for ${id}:`, result);
 
                     const totalAssets = Number(result?.assetsExact ?? result?.microsCount ?? 0) || 0;
@@ -260,7 +278,7 @@ const DeleteAssets = () => {
                 }));
 
                 try {
-                    const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId);
+                    const res = await window.electronAPI.deleteIncompleteAssets(id, maxRounds, userId, selectedCompanyOfficeId || null);
                     setOperationResult(prev => ({
                         ...prev,
                         items: { ...prev.items, [id]: { status: "success", result: res } }

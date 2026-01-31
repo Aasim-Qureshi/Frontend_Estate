@@ -475,6 +475,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ensureCompaniesLoaded,
         setSelectedCompany
     } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
     const { ramInfo } = useRam();
     const recommendedTabs = ramInfo?.recommendedTabs || 3;
     const guestAccessEnabled = systemState?.guestAccessEnabled ?? true;
@@ -649,7 +653,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             const data = await submitReportsQuicklyUpload(
                 excelFiles,
                 wantsPdfUpload ? pdfFiles : [],
-                !wantsPdfUpload
+                !wantsPdfUpload,
+                selectedCompanyOfficeId || null
             );
 
             if (data.status !== "success") {
@@ -796,6 +801,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 page: currentPage.toString(),
                 limit: itemsPerPage.toString(),
             });
+            if (selectedCompanyOfficeId) {
+                params.append("companyOfficeId", selectedCompanyOfficeId);
+            }
 
             // REMOVED: Status filter parameter - we'll filter on frontend instead
 
@@ -827,7 +835,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         } finally {
             setReportsLoading(false);
         }
-    }, [token, currentPage, itemsPerPage, setReports, setReportsPagination, setError]);
+    }, [token, currentPage, itemsPerPage, selectedCompanyOfficeId, setReports, setReportsPagination, setError]);
 
     const clearReportCreatedCache = useCallback((recordId) => {
         reportCreatedCacheRef.current.delete(recordId);
@@ -861,6 +869,19 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             reportCreationWaitersRef.current.set(recordId, { resolve, reject, timeoutId });
         });
     }, []);
+
+    useEffect(() => {
+        setCurrentPage(1);
+        setReports([]);
+        setReportsPagination((prev) => ({
+            ...prev,
+            page: 1,
+            total: 0,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+        }));
+    }, [selectedCompanyOfficeId, setReports, setReportsPagination]);
 
     const handleReportCreatedUpdate = useCallback((recordId, createdReportId) => {
         if (!recordId || !createdReportId) return;
@@ -1330,7 +1351,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             const data = await submitReportsQuicklyUpload(
                 excelFiles,
                 wantsPdfUpload ? pdfFiles : [],
-                !wantsPdfUpload
+                !wantsPdfUpload,
+                selectedCompanyOfficeId || null
             );
 
             if (data.status !== "success") {

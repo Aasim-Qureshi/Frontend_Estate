@@ -471,6 +471,10 @@ const UploadReportElrajhi = ({ onViewChange }) => {
     const [selectedBulkActions, setSelectedBulkActions] = useState({});
     const { executeWithAuth } = useAuthAction();
     const { selectedCompany, companies, loadSavedCompanies, syncCompanies, replaceCompanies } = useValueNav();
+    const selectedCompanyOfficeId = useMemo(() => {
+        const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
+        return officeId ? String(officeId) : "";
+    }, [selectedCompany]);
     const [valuerModalOpen, setValuerModalOpen] = useState(false);
     const [valuerModalMode, setValuerModalMode] = useState("validation");
     const [valuerModalError, setValuerModalError] = useState("");
@@ -1425,7 +1429,8 @@ const UploadReportElrajhi = ({ onViewChange }) => {
                     const data = await uploadElrajhiBatch(
                         validationExcelFile,
                         wantsPdfUpload ? validationPdfFiles : [],
-                        valuersToSend
+                        valuersToSend,
+                        selectedCompanyOfficeId || null
                     );
 
                     console.log("ELRAJHI BATCH:", data);
@@ -1551,7 +1556,8 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             const data = await uploadElrajhiBatch(
                 validationExcelFile,
                 validationPdfFiles,
-                valuersToSend
+                valuersToSend,
+                selectedCompanyOfficeId || null
             );
 
             console.log("ELRAJHI BATCH (PDF Only):", data);
@@ -1642,7 +1648,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         try {
             setBatchLoading(true);
             setBatchMessage(null);
-            const data = await fetchElrajhiBatches();
+            const data = await fetchElrajhiBatches(selectedCompanyOfficeId || null);
             setBatchList(Array.isArray(data?.batches) ? data.batches : []);
             setCurrentPage(1);
         } catch (err) {
@@ -1659,7 +1665,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         if (!batchId) return;
         try {
             setBatchLoading(true);
-            const data = await fetchElrajhiBatchReports(batchId);
+            const data = await fetchElrajhiBatchReports(batchId, selectedCompanyOfficeId || null);
             setBatchReports((prev) => ({
                 ...prev,
                 [batchId]: Array.isArray(data?.reports) ? data.reports : [],
@@ -1677,7 +1683,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
     const ensureBatchReportsLoaded = async (batchId) => {
         if (!batchId) return [];
         if (batchReports[batchId]?.length) return batchReports[batchId];
-        const data = await fetchElrajhiBatchReports(batchId);
+        const data = await fetchElrajhiBatchReports(batchId, selectedCompanyOfficeId || null);
         const reports = Array.isArray(data?.reports) ? data.reports : [];
         setBatchReports((prev) => ({
             ...prev,
@@ -1864,7 +1870,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
 
     useEffect(() => {
         loadBatchList();
-    }, []);
+    }, [selectedCompanyOfficeId]);
 
     const toggleBatchExpand = async (batchId) => {
         if (expandedBatch === batchId) {
