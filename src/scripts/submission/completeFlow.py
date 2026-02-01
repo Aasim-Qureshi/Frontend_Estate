@@ -2,12 +2,11 @@ import json
 import sys
 import traceback
 from datetime import datetime, timezone
-from turtle import clear
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.collation import validate_collation_or_none
 
 from scripts.core.browser import spawn_new_browser
+from scripts.core.httpClient import http_get
 from scripts.core.processControl import (
     check_and_wait,
     clear_process,
@@ -70,7 +69,9 @@ async def run_complete_report_flow(browser, report_id, tabs_num=3, batch_size=10
             message="Fetching report data from database...",
         )
 
-        report = await collection.find_one({"report_id": report_id})
+        report_data = await http_get(f"/new-scripts/report-id/{report_id}")
+        report = report_data.get("data")
+        print("used http")
         if not report:
             clear_process(process_id)
             return {
