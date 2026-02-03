@@ -3,7 +3,6 @@ from datetime import datetime
 from pathlib import Path
 
 from scripts.core.utils import log
-from scripts.core import browser as browser_ctx
 from scripts.core.browser import get_browser, spawn_new_browser, new_tab
 from scripts.core.company_context import build_report_url, require_selected_company
 from scripts.submission.validateReport import (
@@ -1118,7 +1117,6 @@ async def delete_report_flow(
                 if base_browser:
                     new_browser = await spawn_new_browser(base_browser, headless=False)
 
-                    browser_ctx.browser = new_browser
                     page = await new_browser.get(url, new_window=True)
                     return page, new_browser
 

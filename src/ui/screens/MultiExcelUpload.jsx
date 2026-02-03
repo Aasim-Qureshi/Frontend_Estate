@@ -6,6 +6,7 @@ import { useValueNav } from "../context/ValueNavContext";
 import { useSystemControl } from "../context/SystemControlContext";
 import { useAuthAction } from "../hooks/useAuthAction";
 import usePersistentState from "../hooks/usePersistentState";
+import { deductPoints } from "../utils/points";
 import ExcelJS from "exceljs/dist/exceljs.min.js";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 import {
@@ -15,6 +16,8 @@ import {
     CheckCircle2,
     AlertTriangle,
     FileIcon,
+    FileText,
+    FileUp,
     RefreshCw,
     Info,
     Send,
@@ -24,8 +27,11 @@ import {
     Download,
 } from "lucide-react";
 
-import { multiExcelUpload, updateMultiApproachReport, updateMultiApproachAsset } from "../../api/report";
+import { multiExcelUpload, updateMultiApproachReport, updateMultiApproachAsset, deleteMultiApproachReport } from "../../api/report";
 import InsufficientPointsModal from "../components/InsufficientPointsModal";
+
+const MULTI_UPLOAD_PAGE_NAME = "Multi-Excel Upload";
+const MULTI_UPLOAD_PAGE_SOURCE = "multi-batch";
 
 const InputField = ({
     label,
@@ -196,6 +202,7 @@ const buildDefaultFormData = () => ({
     city: "",
     has_other_users: false,
     report_users: [],
+    pdf_path: "",
 });
 
 const buildDefaultValuers = () => ([
@@ -293,6 +300,8 @@ const formatDateForDisplay = (date) => {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
     return date.toISOString().slice(0, 10);
 };
+
+const CONTRIBUTION_OPTIONS = Array.from({ length: 20 }, (_, idx) => (idx + 1) * 5);
 
 const asDateString = (value) => {
     if (!value) return "";
@@ -602,6 +611,7 @@ const mapReportToForm = (report) => {
         city: report?.city || "",
         has_other_users: !!report?.has_other_users,
         report_users: Array.isArray(report?.report_users) ? report.report_users : [],
+        pdf_path: report?.pdf_path || report?.path_pdf || "",
     };
 };
 
@@ -609,7 +619,17 @@ const normalizeValuers = (valuers = []) => {
     if (!Array.isArray(valuers)) return buildDefaultValuers();
     const cleaned = valuers
         .map((valuer) => ({
-            valuer_name: valuer?.valuer_name || valuer?.valuerName || "",
+            valuer_name: (() => {
+                const raw = valuer?.valuer_name || valuer?.valuerName || "";
+                let name = String(raw || "").trim();
+                if (name.includes(" - ")) {
+                    const [head, ...rest] = name.split(" - ");
+                    if (/^\d+$/.test(head.trim()) && rest.length) {
+                        name = rest.join(" - ").trim();
+                    }
+                }
+                return name;
+            })(),
             contribution_percentage: Number(
                 valuer?.contribution_percentage ?? valuer?.percentage ?? 0
             ),
@@ -622,14 +642,23 @@ const normalizeValuers = (valuers = []) => {
 };
 
 const normalizeValuerOption = (valuer = {}) => {
-    const valuerId = (valuer?.valuerId || valuer?.valuer_id || valuer?.id || "").toString().trim();
-    const valuerName = (valuer?.valuerName || valuer?.valuer_name || valuer?.name || "").toString().trim();
+    const valuerId = (valuer?.valuerId || valuer?.valuer_id || valuer?.id || valuer?.value || "").toString().trim();
+    const valuerName = (valuer?.valuerName || valuer?.valuer_name || valuer?.name || valuer?.label || valuer?.text || "").toString().trim();
     return { valuerId, valuerName };
 };
 
 const normalizeValuerList = (list = []) =>
     (Array.isArray(list) ? list : [])
         .map((valuer) => normalizeValuerOption(valuer))
+        .filter((valuer) => valuer.valuerId || valuer.valuerName);
+
+const normalizeSelectedValuers = (list = []) =>
+    (Array.isArray(list) ? list : [])
+        .map((valuer) => ({
+            valuerId: (valuer?.valuerId || valuer?.valuer_id || valuer?.id || "").toString().trim(),
+            valuerName: (valuer?.valuerName || valuer?.valuer_name || valuer?.name || valuer?.label || valuer?.text || "").toString().trim(),
+            percentage: Number(valuer?.percentage ?? valuer?.contribution_percentage ?? 0) || 0,
+        }))
         .filter((valuer) => valuer.valuerId || valuer.valuerName);
 
 const toValuerLabel = (valuer = {}) => {
@@ -656,10 +685,10 @@ const matchCompanyBySelection = (companies = [], selectedCompany) => {
 };
 
 const sumValuerPercentages = (list = []) =>
-    (Array.isArray(list) ? list : []).reduce(
-        (sum, valuer) => sum + (Number(valuer?.contribution_percentage) || 0),
-        0
-    );
+    (Array.isArray(list) ? list : []).reduce((sum, valuer) => {
+        const pct = valuer?.percentage ?? valuer?.contribution_percentage ?? 0;
+        return sum + (Number(pct) || 0);
+    }, 0);
 
 const getReportRecordId = (report) =>
     report?._id || report?.id || report?.recordId || "";
@@ -670,15 +699,29 @@ const isReportInfoIssue = (issue) => {
 };
 
 const MultiExcelUpload = ({ onViewChange }) => {
-    const { token, isGuest } = useSession();
+    const { token, isGuest, user } = useSession();
     const { systemState } = useSystemControl();
     const { executeWithAuth } = useAuthAction();
-    const { taqeemStatus, setTaqeemStatus } = useNavStatus();
-    const { selectedCompany, companies, loadSavedCompanies } = useValueNav();
+    const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
+    const {
+        selectedCompany,
+        companies,
+        loadSavedCompanies,
+        syncCompanies,
+        replaceCompanies,
+        ensureCompaniesLoaded,
+        preferredCompany,
+        setSelectedCompany,
+        setPreferredCompany,
+    } = useValueNav();
     const selectedCompanyOfficeId = useMemo(() => {
         const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
         return officeId ? String(officeId) : "";
     }, [selectedCompany]);
+    const userId = useMemo(
+        () => user?._id || user?.id || user?.userId || null,
+        [user]
+    );
     const [excelFiles, setExcelFiles] = useState([]);
     const [pdfFiles, setPdfFiles] = useState([]);
     const [selectedReportActions, setSelectedReportActions] = useState({});
@@ -719,13 +762,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const [assetSelectFilters, setAssetSelectFilters] = useState({});
     const [assetActionBusy, setAssetActionBusy] = useState({});
     const [editingReportId, setEditingReportId] = useState(null);
+    const [pdfEditFile, setPdfEditFile] = useState(null);
+    const [usePlaceholderPdf, setUsePlaceholderPdf] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [formData, setFormData] = useState(buildDefaultFormData());
     const [errors, setErrors] = useState({});
     const [reportUsers, setReportUsers] = useState([]);
     const [valuers, setValuers] = useState(buildDefaultValuers());
-    const [draftValuers, setDraftValuers] = useState(buildDefaultValuers());
+    const [draftValuers, setDraftValuers] = useState([]);
+    const [selectedValuers, setSelectedValuers] = useState([]);
     const [valuerModalOpen, setValuerModalOpen] = useState(false);
     const [valuerModalError, setValuerModalError] = useState("");
     const [useDefaultValuers, setUseDefaultValuers] = useState(false);
@@ -747,8 +793,69 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const [pendingBatch, setPendingBatch, resetPendingBatch] = usePersistentState("multiExcel:pendingBatch", null, { storage: "session" });
     const [, setReturnView, resetReturnView] = usePersistentState("taqeem:returnView", null, { storage: "session" });
 
+    const chargedBatchesRef = useRef(new Set());
+    const chargeBatchPoints = useCallback(
+        async (batchId, amount, { reportIds = [] } = {}) => {
+            if (!batchId || !amount) return;
+            const normalized = Number(amount);
+            if (!Number.isFinite(normalized) || normalized <= 0) return;
+            if (chargedBatchesRef.current.has(batchId)) return;
+            if (pendingBatch?.batchId === batchId && pendingBatch.charged) {
+                chargedBatchesRef.current.add(batchId);
+                return;
+            }
+
+            const normalizedReportIds = Array.isArray(reportIds)
+                ? Array.from(
+                      new Set(
+                          reportIds
+                              .filter((id) => id || id === 0)
+                              .map((id) => String(id))
+                      )
+                  )
+                : [];
+
+            const deductionMeta = {
+                batchId,
+                source: "multi-batch",
+                pageName: MULTI_UPLOAD_PAGE_NAME,
+                pageSource: MULTI_UPLOAD_PAGE_SOURCE,
+                assetCount: normalized,
+            };
+
+            if (normalizedReportIds.length) {
+                deductionMeta.reportIds = normalizedReportIds;
+                deductionMeta.reportId = normalizedReportIds[0];
+            }
+
+            try {
+                await deductPoints(token, normalized, deductionMeta);
+                chargedBatchesRef.current.add(batchId);
+                setPendingBatch((prev) =>
+                    prev && prev.batchId === batchId ? { ...prev, charged: true } : prev
+                );
+            } catch (err) {
+                console.error("[MultiExcelUpload] Failed to charge points for batch", err);
+            }
+        },
+        [pendingBatch, setPendingBatch, token]
+    );
+
     const pdfInputRef = useRef(null);
+    const editPdfInputRef = useRef(null);
+    const selectedCompanyRef = useRef(selectedCompany);
+    const selectedValuersRef = useRef(selectedValuers);
     const fetchCompanyValuersPromiseRef = useRef(null);
+    const valuerModalPromiseRef = useRef(null);
+    const valuerModalResolveRef = useRef(null);
+
+    useEffect(() => {
+        selectedCompanyRef.current = selectedCompany;
+    }, [selectedCompany]);
+
+    useEffect(() => {
+        selectedValuersRef.current = selectedValuers;
+    }, [selectedValuers]);
 
     // Update state to track batch progress instead of individual report progress
     const [batchProgress, setBatchProgress] = useState({});
@@ -845,28 +952,37 @@ const MultiExcelUpload = ({ onViewChange }) => {
         [companyFromList]
     );
     const displayCompanyValuers = overrideCompanyValuers ?? companyValuers;
-    const valuerOptions = useMemo(() => {
-        const seen = new Set();
-        const options = [];
-        displayCompanyValuers.forEach((valuer) => {
-            const label = toValuerLabel(valuer);
-            if (!label || seen.has(label)) return;
-            seen.add(label);
-            options.push(label);
-        });
-        return options;
-    }, [displayCompanyValuers]);
     const valuerNameOptions = useMemo(() => {
         const placeholder = fetchingCompanyValuers
             ? "Loading valuers..."
-            : valuerOptions.length
+            : displayCompanyValuers.length
                 ? "Select valuer"
                 : "No valuers available";
+        const options = displayCompanyValuers
+            .map((valuer) => {
+                const value = (valuer?.valuerName || valuer?.valuerId || "").toString().trim();
+                const label = toValuerLabel(valuer) || value;
+                if (!value && !label) return null;
+                return { value: value || label, label: label || value };
+            })
+            .filter(Boolean);
         return [
             { value: "", label: placeholder },
-            ...valuerOptions.map((opt) => ({ value: opt, label: opt })),
+            ...options,
         ];
-    }, [fetchingCompanyValuers, valuerOptions]);
+    }, [fetchingCompanyValuers, displayCompanyValuers]);
+    const valuerOptionValues = useMemo(
+        () =>
+            displayCompanyValuers
+                .flatMap((valuer) => {
+                    const name = (valuer?.valuerName || "").toString().trim();
+                    const id = (valuer?.valuerId || "").toString().trim();
+                    const label = toValuerLabel(valuer);
+                    return [name, id, label].filter(Boolean);
+                })
+                .filter(Boolean),
+        [displayCompanyValuers]
+    );
     const selectedCompanyKey = useMemo(
         () =>
             String(
@@ -878,55 +994,42 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const excelInputRef = useRef(null);
 
     useEffect(() => {
-        setOverrideCompanyValuers(null);
-        setValuerModalError("");
-        setUseDefaultValuers(false);
-        setDraftValuers(buildDefaultValuers());
+        setSelectedValuers([]);
+        selectedValuersRef.current = [];
         setValuerModalOpen(false);
+        setDraftValuers([]);
+        setValuerModalError("");
+        setOverrideCompanyValuers(null);
+        setUseDefaultValuers(false);
         setShowValidationModal(false);
+        if (valuerModalResolveRef.current) {
+            valuerModalResolveRef.current(false);
+            valuerModalResolveRef.current = null;
+            valuerModalPromiseRef.current = null;
+        }
     }, [selectedCompanyKey]);
-
-    useEffect(() => {
-        if (!valuerModalOpen) return;
-        setDraftValuers((prev) => {
-            const base = Array.isArray(prev) && prev.length ? prev : buildDefaultValuers();
-            if (!valuerOptions.length) {
-                return base.map((valuer) => ({ ...valuer, valuer_name: "" }));
-            }
-            const cleaned = base.map((valuer) =>
-                valuerOptions.includes(valuer.valuer_name)
-                    ? valuer
-                    : { ...valuer, valuer_name: "" }
-            );
-            const hasAny = cleaned.some((valuer) => valuer.valuer_name);
-            if (!hasAny && valuerOptions.length === 1) {
-                return [{ valuer_name: valuerOptions[0], contribution_percentage: 100 }];
-            }
-            return cleaned;
-        });
-    }, [valuerModalOpen, valuerOptions]);
 
     useEffect(() => {
         setValuers((prev) => {
             const base = Array.isArray(prev) && prev.length ? prev : buildDefaultValuers();
-            if (!valuerOptions.length) {
+            if (!valuerOptionValues.length) {
                 return base.map((valuer) => ({ ...valuer, valuer_name: "" }));
             }
             const cleaned = base.map((valuer) =>
-                valuerOptions.includes(valuer.valuer_name)
+                valuerOptionValues.includes(valuer.valuer_name)
                     ? valuer
                     : { ...valuer, valuer_name: "" }
             );
             const hasAny = cleaned.some((valuer) => valuer.valuer_name);
-            if (!hasAny && valuerOptions.length === 1) {
-                return [{ valuer_name: valuerOptions[0], contribution_percentage: 100 }];
+            if (!hasAny && valuerOptionValues.length === 1) {
+                return [{ valuer_name: valuerOptionValues[0], contribution_percentage: 100 }];
             }
             return cleaned;
         });
-    }, [selectedCompanyKey, valuerOptions]);
+    }, [selectedCompanyKey, valuerOptionValues]);
 
     // Update handleExcelChange to use the ref
-    const handleExcelChange = (e) => {
+    const handleExcelChange = async (e) => {
         const files = Array.from(e.target.files || []);
         setExcelFiles(files);
         resetMessages();
@@ -934,7 +1037,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
         setShowValidationModal(false);
         setUseDefaultValuers(false);
         if (files.length) {
-            void openValuerModal();
+            const ok = await ensureCompanyValuersLoaded();
+            if (ok) {
+                await openValuerModal();
+            }
         }
     };
 
@@ -982,9 +1088,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
         setUploadResult(null);
         resetMessages();
         resetValidation();
-        setDraftValuers(buildDefaultValuers());
+        setDraftValuers([]);
+        setSelectedValuers([]);
+        selectedValuersRef.current = [];
         setValuerModalOpen(false);
         setValuerModalError("");
+        setOverrideCompanyValuers(null);
         setUseDefaultValuers(false);
         setShowValidationModal(false);
         resetPendingSubmit();
@@ -1161,7 +1270,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     }, []);
 
     const createReportsByBatch = useCallback(
-        async (batchId, tabsNum, insertedCount, options = {}) => {
+        async (batchId, tabsNum, insertedCount, assetCount = 0, options = {}) => {
             const { resume = false } = options;
             const resolvedTabs = Math.max(1, Number(tabsNum) || Number(recommendedTabs) || 1);
 
@@ -1200,7 +1309,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         batchId,
                         tabsNum: resolvedTabs,
                         insertedCount,
+                        assetCount,
                         resumeOnLoad: true,
+                        charged: false,
                     });
                     setReturnView("multi-excel-upload");
                     return;
@@ -1257,6 +1368,29 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
                     resetPendingBatch();
                     resetReturnView();
+                    const payloadReportIds = Array.isArray(electronResult?.reportIds)
+                        ? electronResult.reportIds
+                              .map((id) => (id !== undefined && id !== null ? String(id) : null))
+                              .filter(Boolean)
+                        : [];
+                    const recordReportIds = Array.isArray(electronResult?.records)
+                        ? electronResult.records
+                              .map((recordEntry) => {
+                                  const candidate =
+                                      recordEntry?.result?.reportId ||
+                                      recordEntry?.result?.report_id;
+                                  return candidate !== undefined && candidate !== null
+                                      ? String(candidate)
+                                      : null;
+                              })
+                              .filter(Boolean)
+                        : [];
+                    const reportIdsToCharge = Array.from(
+                        new Set([...payloadReportIds, ...recordReportIds])
+                    );
+                    await chargeBatchPoints(batchId, assetCount, {
+                        reportIds: reportIdsToCharge,
+                    });
                     await loadReports();
                     return;
                 }
@@ -1268,7 +1402,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         batchId,
                         tabsNum: resolvedTabs,
                         insertedCount,
+                        assetCount,
                         resumeOnLoad: true,
+                        charged: false,
                     });
                     setReturnView("multi-excel-upload");
                     onViewChange?.("get-companies");
@@ -1436,6 +1572,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
             pendingBatch.batchId,
             pendingBatch.tabsNum,
             pendingBatch.insertedCount,
+            pendingBatch.assetCount || 0,
             { resume: true }
         );
     }, [pendingBatch, creatingReports, createReportsByBatch, setPendingBatch]);
@@ -1687,6 +1824,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
             setError("PDF filenames must match the Excel filenames.");
             return;
         }
+        if (!await ensureValuerSelection()) {
+            return;
+        }
 
         const result = await executeWithAuth(
             async (params) => {
@@ -1754,13 +1894,27 @@ const MultiExcelUpload = ({ onViewChange }) => {
             return
         }
 
+        const batchAssets = validationItems.reduce((sum, item) => {
+            const market = Number(item?.counts?.marketAssets) || 0;
+            const cost = Number(item?.counts?.costAssets) || 0;
+            return sum + market + cost;
+        }, 0);
+
         if (result?.success) {
             // Step 2: Create reports in Taqeem
-            await createReportsByBatch(result.batchId, recommendedTabs, result.insertedCount);
+            await createReportsByBatch(
+                result.batchId,
+                recommendedTabs,
+                result.insertedCount,
+                batchAssets
+            );
         }
     };
 
     const handleStoreOnly = async () => {
+        if (!await ensureValuerSelection()) {
+            return;
+        }
         const result = await executeWithAuth(
             async (params) => {
                 const { token: authToken } = params;
@@ -1865,6 +2019,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
         setReportUsers(mapped.report_users || []);
         setValuers(normalizeValuers(report?.valuers || []));
         setErrors({});
+        setPdfEditFile(null);
+        setUsePlaceholderPdf(false);
         setEditingReportId(recordId);
     };
 
@@ -1874,6 +2030,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
         setReportUsers([]);
         setValuers(buildDefaultValuers());
         setErrors({});
+        setPdfEditFile(null);
+        setUsePlaceholderPdf(false);
     };
 
     const handleFieldChange = (field, value) => {
@@ -1884,6 +2042,22 @@ const MultiExcelUpload = ({ onViewChange }) => {
             delete next[field];
             return next;
         });
+    };
+
+    const handleSelectEditPdfFile = (file) => {
+        setUsePlaceholderPdf(false);
+        setPdfEditFile(file);
+        if (file) {
+            handleFieldChange("pdf_path", file.name || "selected.pdf");
+        }
+    };
+
+    const handleUseTemporaryPdfPath = () => {
+        setPdfEditFile(null);
+        setUsePlaceholderPdf(true);
+        if (editPdfInputRef?.current) {
+            editPdfInputRef.current.value = "";
+        }
     };
 
     const handleReportUserChange = (idx, value) => {
@@ -1913,148 +2087,379 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const handleAddValuer = () => {
         setValuers((prev) => [
             ...prev,
-            { valuer_name: "", contribution_percentage: 0 },
+            { valuer_name: "", contribution_percentage: "" },
         ]);
     };
 
-const handleRemoveValuer = (idx) => {
-    setValuers((prev) => prev.filter((_, index) => index !== idx));
-};
+    const handleRemoveValuer = (idx) => {
+        setValuers((prev) => prev.filter((_, index) => index !== idx));
+    };
 
-const refreshCompaniesFromDb = useCallback(async () => {
-    if (!loadSavedCompanies) {
-        throw new Error("Company list unavailable.");
-    }
-    if (fetchCompanyValuersPromiseRef.current) {
-        return fetchCompanyValuersPromiseRef.current;
-    }
-    const run = (async () => {
-        setFetchingCompanyValuers(true);
+    const waitForTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            if (!window?.electronAPI?.checkStatus) return true;
+            const status = await window.electronAPI.checkStatus();
+            const ok = status?.browserOpen
+                && String(status?.status || "").toUpperCase().includes("SUCCESS");
+            if (ok) {
+                setTaqeemStatus?.("success", "Taqeem login: On");
+                return true;
+            }
+            await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        }
+        throw new Error("Timed out waiting for Taqeem login.");
+    };
+
+    const refreshCompaniesFromTaqeem = useCallback(async () => {
+        if (fetchCompanyValuersPromiseRef.current) {
+            return fetchCompanyValuersPromiseRef.current;
+        }
+        const run = (async () => {
+            if (!window?.electronAPI?.getCompanies) {
+                throw new Error("Desktop integration unavailable. Restart the app.");
+            }
+            setFetchingCompanyValuers(true);
+            try {
+                let isLoggedIn = taqeemStatus?.state === "success";
+                if (window?.electronAPI?.checkStatus) {
+                    const status = await window.electronAPI.checkStatus();
+                    isLoggedIn = status?.browserOpen
+                        && String(status?.status || "").toUpperCase().includes("SUCCESS");
+                    if (isLoggedIn) {
+                        setTaqeemStatus?.("success", "Taqeem login: On");
+                    }
+                }
+
+                if (!isLoggedIn) {
+                    if (!window?.electronAPI?.openTaqeemLogin) {
+                        throw new Error("Taqeem login handler unavailable.");
+                    }
+                    const loginResult = await window.electronAPI.openTaqeemLogin({
+                        automationOnly: true,
+                        onlyIfClosed: true,
+                        navigateIfOpen: false
+                    });
+                    if (loginResult?.status !== "SUCCESS") {
+                        throw new Error(loginResult?.error || "Failed to open Taqeem login.");
+                    }
+                    await waitForTaqeemLogin();
+                }
+
+                setCompanyStatus?.("info", "Fetching companies and valuers from Taqeem...");
+                const data = await window.electronAPI.getCompanies();
+                if (data?.status !== "SUCCESS") {
+                    throw new Error(data?.error || "Failed to fetch companies from Taqeem.");
+                }
+                const fetched = Array.isArray(data?.data)
+                    ? data.data
+                    : Array.isArray(data?.companies)
+                        ? data.companies
+                        : [];
+                if (!fetched.length) {
+                    throw new Error("No companies found in Taqeem.");
+                }
+                const prepared = fetched.map((c) => ({ ...c, type: c.type || "equipment" }));
+                let synced = prepared;
+                if (syncCompanies && !isGuest) {
+                    try {
+                        const syncedRes = await syncCompanies(prepared, "equipment");
+                        if (Array.isArray(syncedRes) && syncedRes.length > 0) {
+                            synced = syncedRes;
+                        }
+                    } catch (err) {
+                        console.warn("Failed to sync companies after Taqeem login", err);
+                    }
+                }
+                if (replaceCompanies) {
+                    await replaceCompanies(synced, { quiet: true, skipNavigation: true, autoSelect: false });
+                } else if (loadSavedCompanies) {
+                    await loadSavedCompanies("equipment");
+                }
+                return synced;
+            } finally {
+                setFetchingCompanyValuers(false);
+            }
+        })();
+        fetchCompanyValuersPromiseRef.current = run;
         try {
-            return await loadSavedCompanies(selectedCompany?.type || "equipment");
+            return await run;
         } finally {
-            setFetchingCompanyValuers(false);
+            fetchCompanyValuersPromiseRef.current = null;
         }
-    })();
-    fetchCompanyValuersPromiseRef.current = run;
-    try {
-        return await run;
-    } finally {
-        fetchCompanyValuersPromiseRef.current = null;
-    }
-}, [loadSavedCompanies, selectedCompany?.type]);
+    }, [isGuest, loadSavedCompanies, replaceCompanies, setCompanyStatus, setTaqeemStatus, syncCompanies, taqeemStatus?.state]);
 
-const openValuerModal = async () => {
-    setDraftValuers(valuers.map((valuer) => ({ ...valuer })));
-    setValuerModalError("");
-    setUseDefaultValuers(false);
-    setOverrideCompanyValuers(null);
-    setValuerModalOpen(true);
-
-    const currentCompany = companyFromList || selectedCompany;
-    if (!currentCompany) {
-        setValuerModalError("Select a company to load valuers.");
-        return;
-    }
-
-    if (valuerOptions.length) return;
-
-    try {
-        const refreshed = await refreshCompaniesFromDb();
-        const match = matchCompanyBySelection(refreshed, currentCompany);
-        const refreshedValuers = normalizeValuerList(match?.valuers || []);
-        if (refreshedValuers.length) {
-            setOverrideCompanyValuers(refreshedValuers);
-        } else {
-            setValuerModalError("No valuers found for the selected company.");
-        }
-    } catch (err) {
-        setValuerModalError(err?.message || "Failed to load valuers.");
-    }
-};
-
-const closeValuerModal = () => {
-    setValuerModalOpen(false);
-    setValuerModalError("");
-};
-
-const handleDraftValuerChange = (idx, field, value) => {
-    setDraftValuers((prev) => {
-        const next = [...prev];
-        next[idx] = { ...next[idx], [field]: value };
-        return next;
-    });
-};
-
-const handleAddDraftValuer = () => {
-    setDraftValuers((prev) => [
-        ...prev,
-        { valuer_name: "", contribution_percentage: 0 },
-    ]);
-};
-
-const handleRemoveDraftValuer = (idx) => {
-    setDraftValuers((prev) => prev.filter((_, index) => index !== idx));
-};
-
-const autoSplitDraftValuers = () => {
-    setDraftValuers((prev) => {
-        const count = prev.length;
-        if (!count) return prev;
-        const base = Math.floor(100 / count / 5) * 5;
-        let remainder = 100 - base * count;
-        return prev.map((valuer) => {
-            const add = remainder >= 5 ? 5 : 0;
-            remainder -= add;
-            return {
-                ...valuer,
-                contribution_percentage: base + add,
-            };
+    const getValuerModalPromise = () => {
+        if (valuerModalPromiseRef.current) return valuerModalPromiseRef.current;
+        valuerModalPromiseRef.current = new Promise((resolve) => {
+            valuerModalResolveRef.current = resolve;
         });
-    });
-};
+        return valuerModalPromiseRef.current;
+    };
 
-const applyValuerSelection = () => {
-    if (!valuerOptions.length) {
-        setValuerModalError("No valuers available for the selected company. Use Skip.");
-        return;
-    }
-    const total = sumValuerPercentages(draftValuers);
-    const hasNamedValuer = draftValuers.some(
-        (valuer) => String(valuer?.valuer_name || "").trim()
-    );
-    if (!hasNamedValuer) {
-        setValuerModalError("Select at least one valuer or use Skip.");
-        return;
-    }
-    if (Math.abs(total - 100) > 0.001) {
-        setValuerModalError(`Total must be 100%. Currently ${total}%.`);
-        return;
-    }
-    setValuers(draftValuers.map((valuer) => ({ ...valuer })));
-    setUseDefaultValuers(false);
-    closeValuerModal();
-    setShowValidationModal(true);
-};
+    const closeValuerModal = (result = false) => {
+        setValuerModalOpen(false);
+        setValuerModalError("");
+        setOverrideCompanyValuers(null);
+        if (valuerModalResolveRef.current) {
+            valuerModalResolveRef.current(result);
+            valuerModalResolveRef.current = null;
+            valuerModalPromiseRef.current = null;
+        }
+    };
 
-const skipValuerSelection = () => {
-    setValuers(buildDefaultValuers());
-    setUseDefaultValuers(true);
-    closeValuerModal();
-    setShowValidationModal(true);
-};
+    const ensureCompanySelectedForDelete = useCallback(async () => {
+        if (selectedCompany) return selectedCompany;
 
-const buildValuersPayload = () =>
-    (Array.isArray(valuers) ? valuers : [])
-        .map((valuer) => ({
-            valuer_name: String(valuer?.valuer_name || "").trim(),
-            contribution_percentage: Number(valuer?.contribution_percentage) || 0,
-        }))
-        .filter((valuer) => valuer.valuer_name);
+        let list = companies;
+        try {
+            if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
+                const data = await window.electronAPI.getCompanies();
+                const fetched = Array.isArray(data?.data)
+                    ? data.data
+                    : Array.isArray(data?.companies)
+                        ? data.companies
+                        : [];
+                if (fetched.length > 0 && replaceCompanies) {
+                    list = await replaceCompanies(
+                        fetched.map((c) => ({ ...c, type: c.type || "equipment" })),
+                        { autoSelect: false, skipNavigation: true, quiet: true }
+                    );
+                }
+            }
+            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+                list = await ensureCompaniesLoaded("equipment");
+            }
+            if ((!list || list.length === 0) && loadSavedCompanies) {
+                list = await loadSavedCompanies("equipment");
+            }
+        } catch (err) {
+            console.warn("Failed to fetch companies for deleting reports", err);
+        }
 
+        if (!list || list.length === 0) {
+            throw new Error("No companies available. Login to Taqeem and try again.");
+        }
 
+        if (preferredCompany) {
+            const chosen = await setPreferredCompany(preferredCompany, {
+                applySelection: true,
+                skipNavigation: true,
+                quiet: true,
+            });
+            setCompanyStatus?.("success", `Company: ${chosen?.name || "Selected"}`);
+            return chosen;
+        }
 
-         const valuerSummary = useMemo(() => {
+        if (list.length === 1) {
+            const chosen = list[0];
+            await setSelectedCompany(chosen, { skipNavigation: false, quiet: true });
+            setCompanyStatus?.("success", `Company: ${chosen.name || "Selected"}`);
+            return chosen;
+        }
+
+        throw new Error("Select a company before deleting the report.");
+    }, [
+        selectedCompany,
+        companies,
+        replaceCompanies,
+        ensureCompaniesLoaded,
+        loadSavedCompanies,
+        preferredCompany,
+        setPreferredCompany,
+        setSelectedCompany,
+        setCompanyStatus,
+    ]);
+
+    const ensureCompanyValuersLoaded = async () => {
+        const currentCompany = companyFromList || selectedCompanyRef.current || selectedCompany;
+        if (!currentCompany) {
+            const msg = "Select a company to load its valuers.";
+            setValuerModalError(msg);
+            setError(msg);
+            return false;
+        }
+        const availableValuers = normalizeValuerList(currentCompany?.valuers || []);
+        if (availableValuers.length) return true;
+        try {
+            await refreshCompaniesFromTaqeem();
+            return true;
+        } catch (err) {
+            setValuerModalError(err?.message || "Failed to fetch valuers from Taqeem.");
+            return false;
+        }
+    };
+
+    const openValuerModal = async (options = {}) => {
+        const { waitForSelection = false } = options;
+        if (valuerModalOpen) {
+            return waitForSelection ? getValuerModalPromise() : true;
+        }
+
+        const currentCompany = companyFromList || selectedCompanyRef.current || selectedCompany;
+        if (!currentCompany) {
+            const msg = "Select a company to load its valuers.";
+            setValuerModalError(msg);
+            setError(msg);
+            return false;
+        }
+
+        let availableValuers = normalizeValuerList(currentCompany?.valuers || []);
+        if (!availableValuers.length) {
+            try {
+                const refreshed = await refreshCompaniesFromTaqeem();
+                const officeId = currentCompany?.officeId || currentCompany?.office_id;
+                const match = Array.isArray(refreshed)
+                    ? refreshed.find((company) => {
+                        if (officeId !== undefined && officeId !== null) {
+                            return String(company?.officeId || company?.office_id) === String(officeId);
+                        }
+                        if (currentCompany?.url) {
+                            return company?.url === currentCompany.url;
+                        }
+                        return company?.name === currentCompany?.name;
+                    })
+                    : null;
+                availableValuers = normalizeValuerList(match?.valuers || []);
+                if (availableValuers.length) {
+                    setOverrideCompanyValuers(availableValuers);
+                }
+            } catch (err) {
+                const msg = err?.message || "Failed to fetch valuers from Taqeem.";
+                setValuerModalError(msg);
+                setError(msg);
+                return false;
+            }
+        }
+
+        if (!availableValuers.length) {
+            const msg = "No valuers found for the selected company.";
+            setValuerModalError(msg);
+            setError(msg);
+            return false;
+        }
+
+        const currentSelected = normalizeSelectedValuers(selectedValuersRef.current || selectedValuers);
+        const initialDraft = currentSelected.length
+            ? currentSelected.map((v) => {
+                const match = availableValuers.find(
+                    (item) =>
+                        (v.valuerId && item.valuerId === v.valuerId)
+                        || (v.valuerName && item.valuerName === v.valuerName)
+                );
+                return {
+                    valuerId: v.valuerId || match?.valuerId || "",
+                    valuerName: v.valuerName || match?.valuerName || "",
+                    percentage: Number(v.percentage) || 0,
+                };
+            })
+            : availableValuers.length === 1
+                ? [{ ...availableValuers[0], percentage: 100 }]
+                : [];
+
+        setDraftValuers(initialDraft);
+        setValuerModalError("");
+        setUseDefaultValuers(false);
+        setValuerModalOpen(true);
+        return waitForSelection ? getValuerModalPromise() : true;
+    };
+
+    const ensureValuerSelection = async () => {
+        if (useDefaultValuers || (selectedValuersRef.current || []).length) return true;
+        const result = await openValuerModal({ waitForSelection: true });
+        return result === true;
+    };
+
+    const toggleDraftValuer = (valuer, checked) => {
+        const key = valuer.valuerId || valuer.valuerName;
+        setDraftValuers((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((v) => (v.valuerId || v.valuerName) === key);
+            if (checked) {
+                if (idx === -1) {
+                    const nextPct = next.length === 0 ? 100 : 0;
+                    next.push({ ...valuer, percentage: nextPct });
+                }
+            } else if (idx !== -1) {
+                next.splice(idx, 1);
+            }
+
+            if (next.length === 1) {
+                next[0].percentage = 100;
+            }
+            return next;
+        });
+    };
+
+    const updateDraftPercentage = (valuer, percentage) => {
+        const key = valuer.valuerId || valuer.valuerName;
+        setDraftValuers((prev) =>
+            prev.map((v) =>
+                (v.valuerId || v.valuerName) === key
+                    ? { ...v, percentage: Number(percentage) || 0 }
+                    : v
+            )
+        );
+    };
+
+    const autoSplitDraft = () => {
+        setDraftValuers((prev) => {
+            const count = prev.length;
+            if (!count) return prev;
+            const base = Math.floor(100 / count / 5) * 5;
+            let remainder = 100 - base * count;
+            return prev.map((v) => {
+                const add = remainder >= 5 ? 5 : 0;
+                remainder -= add;
+                return { ...v, percentage: base + add };
+            });
+        });
+    };
+
+    const skipValuerSelection = () => {
+        setDraftValuers([]);
+        selectedValuersRef.current = [];
+        setSelectedValuers([]);
+        setUseDefaultValuers(true);
+        setValuerModalError("");
+        closeValuerModal(true);
+        setShowValidationModal(true);
+    };
+
+    const applyValuerDraft = () => {
+        const total = sumValuerPercentages(draftValuers);
+        if (!draftValuers.length) {
+            setValuerModalError("Select at least one valuer.");
+            return;
+        }
+        if (Math.abs(total - 100) > 0.001) {
+            setValuerModalError(`Total must be 100%. Currently ${total}%.`);
+            return;
+        }
+        const cleaned = draftValuers.map((v) => ({
+            valuerId: v.valuerId || "",
+            valuerName: v.valuerName || "",
+            percentage: Number(v.percentage) || 0,
+        }));
+        selectedValuersRef.current = cleaned;
+        setSelectedValuers(cleaned);
+        setUseDefaultValuers(false);
+        setValuerModalError("");
+        closeValuerModal(true);
+        setShowValidationModal(true);
+    };
+
+    const buildValuersPayload = () => {
+        const cleaned = normalizeSelectedValuers(selectedValuersRef.current || selectedValuers);
+        return cleaned
+            .map((valuer) => ({
+                valuer_name: String(valuer?.valuerName || valuer?.valuerId || "").trim(),
+                contribution_percentage: Number(valuer?.percentage) || 0,
+            }))
+            .filter((valuer) => valuer.valuer_name);
+    };
+
+    const valuerSummary = useMemo(() => {
         const cleaned = buildValuersPayload();
         if (useDefaultValuers || cleaned.length === 0) {
             return "Using default valuer";
@@ -2062,7 +2467,7 @@ const buildValuersPayload = () =>
         return cleaned
             .map((valuer) => `${valuer.valuer_name} (${valuer.contribution_percentage}%)`)
             .join(", ");
-    }, [useDefaultValuers, valuers]);
+    }, [useDefaultValuers, selectedValuers]);
 
     const validateReport = () => {
         const newErrors = {};
@@ -2147,7 +2552,11 @@ const buildValuersPayload = () =>
                     valuers,
                 };
 
-                const result = await updateMultiApproachReport(editingReportId, payload);
+                const updateOptions = {
+                    pdfFile: pdfEditFile,
+                    useTemporaryPdf: usePlaceholderPdf,
+                };
+                const result = await updateMultiApproachReport(editingReportId, payload, updateOptions);
                 if (result?.success) {
                     setActionStatus({ type: "success", message: "Report updated." });
                     closeReportEdit();
@@ -2389,6 +2798,85 @@ const buildValuersPayload = () =>
         }
     };
 
+    const handleDeleteReport = useCallback(
+        async (reportOrId, options = {}) => {
+            const { confirm = true } = options;
+            const report = typeof reportOrId === "string"
+                ? reports.find((item) => getReportRecordId(item) === reportOrId)
+                : reportOrId;
+            const recordId = getReportRecordId(report);
+            const taqeemReportId = report?.report_id || report?.reportId || "";
+
+            if (!report || !recordId) {
+                setError("Report not found.");
+                return;
+            }
+
+            if (!taqeemReportId) {
+                setError("Report must be submitted to Taqeem first (must have a report_id).");
+                return;
+            }
+
+            if (confirm && !window.confirm("Are you sure you want to delete this report?")) return;
+
+            setReportActionBusy((prev) => ({ ...prev, [recordId]: "delete" }));
+
+            try {
+                if (window?.electronAPI?.checkStatus) {
+                    const browserStatus = await window.electronAPI.checkStatus();
+                    if (browserStatus?.browserOpen && String(browserStatus?.status || "").toUpperCase().includes("SUCCESS")) {
+                        setTaqeemStatus?.("success", "Taqeem login: On");
+                    } else {
+                        setTaqeemStatus?.("info", "Taqeem login: Off");
+                        setSuccess("Taqeem login is off. Complete login in the opened browser window to continue.");
+                    }
+                }
+
+                await ensureCompanySelectedForDelete();
+
+                if (!window?.electronAPI?.deleteReport) {
+                    throw new Error("Desktop integration unavailable. Restart the app.");
+                }
+
+                setSuccess(`Deleting report ${taqeemReportId}...`);
+                const result = await window.electronAPI.deleteReport(taqeemReportId, 10, userId);
+                if (result?.status !== "SUCCESS") {
+                    throw new Error(result?.message || result?.error || "Failed to delete report.");
+                }
+
+                const deleteResult = await deleteMultiApproachReport(recordId);
+                if (!deleteResult?.success) {
+                    throw new Error(
+                        deleteResult?.message ||
+                        "Report deleted in Taqeem, but failed to remove it locally."
+                    );
+                }
+
+                setSuccess(result?.message || "Report deleted successfully.");
+                await loadReports();
+            } catch (err) {
+                setError(err?.message || "Failed to delete report.");
+            } finally {
+                setReportActionBusy((prev) => {
+                    const next = { ...prev };
+                    delete next[recordId];
+                    return next;
+                });
+            }
+        },
+        [
+            deleteMultiApproachReport,
+            ensureCompanySelectedForDelete,
+            loadReports,
+            reports,
+            setError,
+            setReportActionBusy,
+            setSuccess,
+            setTaqeemStatus,
+            userId,
+        ]
+    );
+
     const handleReportAction = async (report, action) => {
         if (!action) return;
         if (action === "edit") {
@@ -2478,6 +2966,11 @@ const buildValuersPayload = () =>
                     }
                 }
             );
+            return;
+        }
+
+        if (action === "delete") {
+            await handleDeleteReport(report);
             return;
         }
 
@@ -2985,8 +3478,7 @@ const buildValuersPayload = () =>
     );
 
     const draftValuerTotal = sumValuerPercentages(draftValuers);
-    const draftHasNamedValuer = draftValuers.some((valuer) => String(valuer?.valuer_name || "").trim());
-    const draftValuerValid = draftHasNamedValuer && Math.abs(draftValuerTotal - 100) < 0.001;
+    const draftValuerValid = draftValuers.length > 0 && Math.abs(draftValuerTotal - 100) < 0.001;
 
 
    
@@ -2999,7 +3491,9 @@ const buildValuersPayload = () =>
         >
             <div className="space-y-3">
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold text-slate-800">Choose valuers and set contribution percentages (total 100%).</div>
+                    <div className="text-xs font-semibold text-slate-800">
+                        Choose valuers and set contribution percentages (total 100%).
+                    </div>
                 </div>
                 {!selectedCompany && (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -3009,59 +3503,68 @@ const buildValuersPayload = () =>
                 {fetchingCompanyValuers && (
                     <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading valuers from your companies...
+                        Retrieving valuers from Taqeem...
                     </div>
                 )}
-                {!fetchingCompanyValuers && selectedCompany && !valuerOptions.length && (
+                {!fetchingCompanyValuers && selectedCompany && !displayCompanyValuers.length && (
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         No valuers found for the selected company.
                     </div>
                 )}
-                <div className="space-y-2">
-                    {draftValuers.map((valuer, idx) => (
-                        <div key={`draft-valuer-${idx}`} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
-                            <SelectField
-                                label="Valuer name"
-                                value={valuer.valuer_name}
-                                options={valuerNameOptions}
-                                onChange={(e) => handleDraftValuerChange(idx, "valuer_name", e.target.value)}
-                                disabled={fetchingCompanyValuers || !valuerOptions.length}
-                            />
-                            <InputField
-                                label="Contribution %"
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={valuer.contribution_percentage}
-                                onChange={(e) => handleDraftValuerChange(idx, "contribution_percentage", e.target.value)}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => handleRemoveDraftValuer(idx)}
-                                className="text-xs font-semibold text-rose-600 hover:text-rose-700 px-2 py-1 rounded-md border border-rose-200 hover:border-rose-300 bg-rose-50/60"
-                            >
-                                Remove
-                            </button>
+                <div className="max-h-[320px] overflow-y-auto rounded-xl border border-slate-200">
+                    {fetchingCompanyValuers ? (
+                        <div className="flex items-center gap-2 px-3 py-4 text-xs text-slate-600">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Fetching valuers from Taqeem...
                         </div>
-                    ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={handleAddDraftValuer}
-                        disabled={fetchingCompanyValuers || !valuerOptions.length}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 disabled:opacity-50"
-                    >
-                        Add valuer
-                    </button>
-                    <button
-                        type="button"
-                        onClick={autoSplitDraftValuers}
-                        disabled={fetchingCompanyValuers || !valuerOptions.length || draftValuers.length < 2}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                        Auto split
-                    </button>
+                    ) : displayCompanyValuers.length ? (
+                        displayCompanyValuers.map((valuer) => {
+                            const key = valuer.valuerId || valuer.valuerName;
+                            const selected = draftValuers.find(
+                                (v) => (v.valuerId || v.valuerName) === key
+                            );
+                            return (
+                                <div key={key} className="flex items-center justify-between gap-3 px-3 py-2 border-b last:border-b-0">
+                                    <label className="flex items-center gap-2 text-xs text-slate-800">
+                                        <input
+                                            type="checkbox"
+                                            className="h-4 w-4"
+                                            checked={!!selected}
+                                            onChange={(e) => toggleDraftValuer(valuer, e.target.checked)}
+                                        />
+                                        <div className="flex flex-col">
+                                            <span className="font-semibold">{valuer.valuerName || "Valuer"}</span>
+                                            {valuer.valuerId ? (
+                                                <span className="text-[10px] text-slate-500">ID: {valuer.valuerId}</span>
+                                            ) : null}
+                                        </div>
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-slate-600">Contribution</span>
+                                        <select
+                                            className="rounded-md border border-slate-300 px-2 py-1 text-[10px] text-slate-800"
+                                            disabled={!selected}
+                                            value={selected?.percentage || ""}
+                                            onChange={(e) => updateDraftPercentage(valuer, e.target.value)}
+                                        >
+                                            <option value="">Select</option>
+                                            {CONTRIBUTION_OPTIONS.map((pct) => (
+                                                <option key={pct} value={pct}>
+                                                    {pct}%
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <div className="px-3 py-4 text-xs text-slate-600">
+                            {fetchingCompanyValuers
+                                ? "Fetching valuers from Taqeem..."
+                                : "No valuers found for the selected company."}
+                        </div>
+                    )}
                 </div>
                 {valuerModalError && (
                     <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
@@ -3070,7 +3573,7 @@ const buildValuersPayload = () =>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                     <div className="text-xs text-slate-600 font-semibold">
-                        Selected: {draftValuers.length} | Total: {draftValuerTotal}%
+                        Selected: {draftValuers.length || 0} | Total: {draftValuerTotal}%
                     </div>
                     <div className="flex items-center gap-2">
                         <button
@@ -3078,12 +3581,20 @@ const buildValuersPayload = () =>
                             onClick={skipValuerSelection}
                             className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
-                            Skip (use default)
+                            Skip (use Taqeem default)
                         </button>
                         <button
                             type="button"
-                            onClick={applyValuerSelection}
-                            disabled={!draftValuerValid || fetchingCompanyValuers || !valuerOptions.length}
+                            onClick={autoSplitDraft}
+                            disabled={draftValuers.length < 2}
+                            className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                            Auto split
+                        </button>
+                        <button
+                            type="button"
+                            onClick={applyValuerDraft}
+                            disabled={!draftValuerValid}
                             className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
                         >
                             Save valuers
@@ -3495,6 +4006,7 @@ const buildValuersPayload = () =>
                                                                 <option value="send-approver">Send to approver</option>
                                                                 <option value="approve">Approve</option>
                                                                 <option value="download">Download certificate</option>
+                                                                <option value="delete">Delete</option>
                                                             </select>
                                                             <button
                                                                 type="button"
@@ -3991,6 +4503,59 @@ const buildValuersPayload = () =>
                         </div>
                     </Section>
 
+                    <Section title="PDF">
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-700">
+                                <FileText className="w-4 h-4 text-slate-500" />
+                                <span className="truncate text-slate-600">
+                                    {formData.pdf_path
+                                        ? `Stored: ${formData.pdf_path}`
+                                        : "No PDF stored for this report"}
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label
+                                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-md cursor-pointer hover:bg-blue-100 transition-colors"
+                                >
+                                    <FileUp className="w-4 h-4" />
+                                    Choose PDF
+                                    <input
+                                        ref={editPdfInputRef}
+                                        type="file"
+                                        accept="application/pdf"
+                                        className="hidden"
+                                        onChange={(e) => handleSelectEditPdfFile(e.target.files?.[0] || null)}
+                                    />
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={handleUseTemporaryPdfPath}
+                                    className="text-xs font-semibold text-slate-600 px-3 py-1.5 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors"
+                                >
+                                    Use temporary PDF
+                                </button>
+                            </div>
+                            {pdfEditFile && (
+                                <p className="text-[11px] text-slate-500">
+                                    Selected: {pdfEditFile.name}
+                                </p>
+                            )}
+                            {usePlaceholderPdf && (
+                                <p className="text-[11px] text-amber-600">
+                                    Temporary placeholder PDF will be used when saving.
+                                </p>
+                            )}
+                            <InputField
+                                label="Saved PDF path"
+                                value={formData.pdf_path || ""}
+                                readOnly
+                                disabled
+                                placeholder="Path saved in database"
+                                className="text-[11px]"
+                            />
+                        </div>
+                    </Section>
+
                     <Section title="Client & contact">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                             <InputField
@@ -4097,7 +4662,7 @@ const buildValuersPayload = () =>
                                     Select a company to load valuers.
                                 </div>
                             )}
-                            {selectedCompany && !valuerOptions.length && (
+                            {selectedCompany && !displayCompanyValuers.length && (
                                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
                                     {fetchingCompanyValuers
                                         ? "Loading valuers for the selected company..."
@@ -4111,12 +4676,15 @@ const buildValuersPayload = () =>
                                         value={valuer.valuer_name}
                                         options={valuerNameOptions}
                                         onChange={(e) => handleValuerChange(idx, "valuer_name", e.target.value)}
-                                        disabled={fetchingCompanyValuers || !valuerOptions.length}
+                                        disabled={fetchingCompanyValuers || !displayCompanyValuers.length}
                                     />
-                                    <InputField
+                                    <SelectField
                                         label="Contribution %"
-                                        type="number"
                                         value={valuer.contribution_percentage}
+                                        options={[
+                                            { value: "", label: "Select %" },
+                                            ...CONTRIBUTION_OPTIONS.map((pct) => ({ value: pct, label: `${pct}%` })),
+                                        ]}
                                         onChange={(e) => handleValuerChange(idx, "contribution_percentage", e.target.value)}
                                     />
                                     <button
@@ -4131,7 +4699,7 @@ const buildValuersPayload = () =>
                             <button
                                 type="button"
                                 onClick={handleAddValuer}
-                                disabled={fetchingCompanyValuers || !valuerOptions.length}
+                                disabled={fetchingCompanyValuers || !displayCompanyValuers.length}
                                 className="rounded-md border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Add valuer

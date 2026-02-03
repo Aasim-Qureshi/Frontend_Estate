@@ -1,7 +1,22 @@
 import React from "react";
 import { X } from "lucide-react"; // Add X icon import
 
-const InsufficientPointsModal = ({ viewChange, onClose }) => {
+const InsufficientPointsModal = ({ viewChange, onClose, details = {} }) => {
+    const { assetCount, requiredPoints, availablePoints, customMessage } = details;
+    const hasAssetCount = Number.isFinite(assetCount) && assetCount > 0;
+    const requiredLabel = Number.isFinite(requiredPoints)
+        ? `${requiredPoints} point${requiredPoints === 1 ? '' : 's'}`
+        : 'enough points';
+    const assetLabel = hasAssetCount
+        ? `${assetCount} asset${assetCount === 1 ? '' : 's'}`
+        : 'items';
+    const availableLabel = Number.isFinite(availablePoints) ? `${availablePoints} available` : '';
+    const mainMessage = customMessage
+        ? customMessage
+        : `You need ${requiredLabel}${hasAssetCount ? ` for ${assetLabel}` : ''} to continue.`;
+    const secondaryMessage = availableLabel
+        ? `You currently have ${availableLabel}.`
+        : 'Please purchase a package to continue.';
     return (
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative border border-gray-200">
             {/* Close button */}
@@ -14,11 +29,14 @@ const InsufficientPointsModal = ({ viewChange, onClose }) => {
             </button>
 
             <h3 className="text-lg font-semibold text-gray-900 pr-6">
-                You don't have enough points
+                Insufficient points
             </h3>
 
             <p className="mt-2 text-sm text-gray-600">
-                Please purchase a package to continue.
+                {mainMessage}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+                {secondaryMessage}
             </p>
 
             <div className="mt-5 flex gap-3">

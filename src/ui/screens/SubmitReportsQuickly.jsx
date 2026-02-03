@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavStatus } from "../context/NavStatusContext";
 import { useRam } from "../context/RAMContext";
 import usePersistentState from "../hooks/usePersistentState";
@@ -6,6 +7,7 @@ import { useSession } from "../context/SessionContext";
 import { useSystemControl } from "../context/SystemControlContext";
 import { useAuthAction } from "../hooks/useAuthAction";
 import InsufficientPointsModal from "../components/InsufficientPointsModal";
+import DeductionNotification from "../components/DeductionNotification";
 import ExcelJS from "exceljs/dist/exceljs.min.js";
 import {
     FileSpreadsheet,
@@ -32,6 +34,7 @@ import {
     deleteSubmitReportsQuickly,
 } from "../../api/report";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
+import { deductPoints } from "../utils/points";
 import { downloadTemplateFile } from "../utils/templateDownload";
 import { useValueNav } from "../context/ValueNavContext";
 
@@ -76,6 +79,8 @@ const reportStatusClasses = {
     sent: "border-purple-200 bg-purple-50 text-purple-700",
     new: "border-slate-200 bg-slate-50 text-slate-700",
 };
+const QUICK_PAGE_NAME = "Submit Reports Quickly";
+const QUICK_PAGE_SOURCE = "submit-reports-quickly";
 
 // Helper functions for validation
 const normalizeCellValue = (value) => {
@@ -263,7 +268,7 @@ const worksheetToObjects = (worksheet) => {
     return rows;
 };
 
-const validateRequiredAssetFields = (sheetName, rows = []) => {
+const validateRequiredAssetFields = (sheetName, rows = [], localize = (key, defaultValue, opts = {}) => defaultValue) => {
     const issues = [];
     const addIssue = (field, location, message) => issues.push({ field, location, message });
     const requiredKeySet = new Set(
@@ -314,27 +319,43 @@ const validateRequiredAssetFields = (sheetName, rows = []) => {
                 return;
             }
             if (!hasValue(row[key])) {
-                addIssue(key, location, `Missing value for column "${key}".`);
+                addIssue(
+                    key,
+                    location,
+                    localize(
+                        "missingColumn",
+                        `Missing value for column "${key}".`,
+                        { column: key }
+                    )
+                );
             }
         });
 
         const assetName = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[0].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.asset_name - 1]];
         if (!hasValue(assetName)) {
-            addIssue("asset_name", location, "Missing asset_name.");
+            addIssue("asset_name", location, localize("missingAssetName", "Missing asset_name."));
         }
 
         const assetUsageRaw = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[1].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.asset_usage_id - 1]];
         if (!hasValue(assetUsageRaw)) {
-            addIssue("asset_usage_id", location, "Missing asset_usage_id.");
+            addIssue(
+                "asset_usage_id",
+                location,
+                localize("missingAssetUsageId", "Missing asset_usage_id.")
+            );
         } else {
             const usageId = Number(assetUsageRaw);
             if (!VALID_ASSET_USAGE_IDS.has(usageId)) {
                 addIssue(
                     "asset_usage_id",
                     location,
-                    `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")}`
+                    localize(
+                        "invalidAssetUsageId",
+                        `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")}`,
+                        { allowed: Array.from(VALID_ASSET_USAGE_IDS).join(", ") }
+                    )
                 );
             }
         }
@@ -342,45 +363,85 @@ const validateRequiredAssetFields = (sheetName, rows = []) => {
         const finalValue = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[2].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.final_value - 1]];
         if (!hasValue(finalValue)) {
-            addIssue("final_value", location, "Missing final_value.");
+            addIssue(
+                "final_value",
+                location,
+                localize("missingFinalValue", "Missing final_value.")
+            );
         } else {
             if (!isStrictInteger(finalValue)) {
-                addIssue("final_value", location, "final_value must be a whole number (no decimals).");
+                addIssue(
+                    "final_value",
+                    location,
+                    localize(
+                        "finalValueWholeNumber",
+                        "final_value must be a whole number (no decimals)."
+                    )
+                );
             } else if (Number(finalValue) <= 0) {
-                addIssue("final_value", location, "final_value must be greater than 0.");
+                addIssue(
+                    "final_value",
+                    location,
+                    localize(
+                        "finalValuePositive",
+                        "final_value must be greater than 0."
+                    )
+                );
             }
         }
 
         const inspectionRaw = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[3].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.inspection_date - 1]];
         if (!hasValue(inspectionRaw)) {
-            addIssue("inspection_date", location, "Missing inspection_date.");
+            addIssue(
+                "inspection_date",
+                location,
+                localize("missingInspectionDate", "Missing inspection_date.")
+            );
         } else {
             const inspectionDate = parseExcelDateValue(inspectionRaw);
             if (!inspectionDate || Number.isNaN(inspectionDate.getTime())) {
-                addIssue("inspection_date", location, "inspection_date is not a valid date.");
+                addIssue(
+                    "inspection_date",
+                    location,
+                    localize(
+                        "invalidInspectionDate",
+                        "inspection_date is not a valid date."
+                    )
+                );
             } else if (inspectionDate > today) {
-                addIssue("inspection_date", location, "inspection_date cannot be in the future.");
+                addIssue(
+                    "inspection_date",
+                    location,
+                    localize(
+                        "inspectionDateFuture",
+                        "inspection_date cannot be in the future."
+                    )
+                );
             }
         }
 
         const region = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[4].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.region - 1]];
         if (!hasValue(region)) {
-            addIssue("region", location, "Missing region.");
+            addIssue(
+                "region",
+                location,
+                localize("missingRegion", "Missing region.")
+            );
         }
 
         const city = pickFieldValueWithinKeys(row, REQUIRED_ASSET_FIELDS[5].candidates, allowedKeySet)
             ?? row[rowKeys[REQUIRED_COLUMN_FALLBACKS.city - 1]];
         if (!hasValue(city)) {
-            addIssue("city", location, "Missing city.");
+            addIssue("city", location, localize("missingCity", "Missing city."));
         }
     });
 
     return issues;
 };
 
-const validateAssetUsageId = (sheetName, rows = []) => {
+const validateAssetUsageId = (sheetName, rows = [], localize = (key, defaultValue, opts = {}) => defaultValue) => {
     const issues = [];
     const addIssue = (field, location, message) => issues.push({ field, location, message });
 
@@ -388,24 +449,36 @@ const validateAssetUsageId = (sheetName, rows = []) => {
         const assetName = row.asset_name || row.assetName || row["asset_name\n"] || row["Asset Name"] || "";
         if (!hasValue(assetName)) return;
         const assetUsageId = pickFieldValue(row, ["asset_usage_id", "asset usage id", "asset usage", "asset_usage_id\n", "Asset Usage ID"]);
-        if (!hasValue(assetUsageId)) {
-            addIssue("asset_usage_id", `${sheetName} row ${idx + 2}`, `Missing asset_usage_id for asset "${assetName}"`);
-        } else {
-            const num = Number(assetUsageId);
-            if (!VALID_ASSET_USAGE_IDS.has(num)) {
+            if (!hasValue(assetUsageId)) {
                 addIssue(
                     "asset_usage_id",
                     `${sheetName} row ${idx + 2}`,
-                    `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")} for asset "${assetName}"`
+                    localize(
+                        "missingAssetUsageForAsset",
+                        `Missing asset_usage_id for asset "${assetName}"`,
+                        { asset: assetName }
+                    )
                 );
+            } else {
+                const num = Number(assetUsageId);
+                if (!VALID_ASSET_USAGE_IDS.has(num)) {
+                    addIssue(
+                        "asset_usage_id",
+                        `${sheetName} row ${idx + 2}`,
+                        localize(
+                            "invalidAssetUsageForAsset",
+                            `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")} for asset "${assetName}"`,
+                            { allowed: Array.from(VALID_ASSET_USAGE_IDS).join(", "), asset: assetName }
+                        )
+                    );
+                }
             }
-        }
     });
 
     return issues;
 };
 
-const validateCostSheetIntegers = (rows = []) => {
+const validateCostSheetIntegers = (rows = [], localize = (key, defaultValue, opts = {}) => defaultValue) => {
     const issues = [];
     const addIssue = (field, location, message) => issues.push({ field, location, message });
 
@@ -414,25 +487,49 @@ const validateCostSheetIntegers = (rows = []) => {
         if (!hasValue(assetName)) return;
         const rawFinal = pickFieldValue(row, ["final_value", "final value", "value", "Final Value", "Value", "final_value\n"]);
         if (!hasValue(rawFinal)) {
-            addIssue("final_value", `cost row ${idx + 2}`, `Missing final_value for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `cost row ${idx + 2}`,
+                localize(
+                    "costMissingFinalValue",
+                    `Missing final_value for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
             return;
         }
 
         if (!isStrictInteger(rawFinal)) {
-            addIssue("final_value", `cost row ${idx + 2}`, `final_value must be a whole number (no decimals) for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `cost row ${idx + 2}`,
+                localize(
+                    "costFinalValueInteger",
+                    `final_value must be a whole number (no decimals) for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
             return;
         }
 
         const num = Number(rawFinal);
         if (num <= 0) {
-            addIssue("final_value", `cost row ${idx + 2}`, `final_value must be greater than 0 for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `cost row ${idx + 2}`,
+                localize(
+                    "costFinalValuePositive",
+                    `final_value must be greater than 0 for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
         }
     });
 
     return issues;
 };
 
-const validateMarketSheet = (rows = []) => {
+const validateMarketSheet = (rows = [], localize = (key, defaultValue, opts = {}) => defaultValue) => {
     const issues = [];
     const addIssue = (field, location, message) => issues.push({ field, location, message });
 
@@ -441,18 +538,42 @@ const validateMarketSheet = (rows = []) => {
         if (!hasValue(assetName)) return;
         const rawFinal = pickFieldValue(row, ["final_value", "final value", "value", "Final Value", "Value", "final_value\n"]);
         if (!hasValue(rawFinal)) {
-            addIssue("final_value", `market row ${idx + 2}`, `Missing final_value for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `market row ${idx + 2}`,
+                localize(
+                    "marketMissingFinalValue",
+                    `Missing final_value for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
             return;
         }
 
         if (!isStrictInteger(rawFinal)) {
-            addIssue("final_value", `market row ${idx + 2}`, `final_value must be a whole number (no decimals) for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `market row ${idx + 2}`,
+                localize(
+                    "marketFinalValueInteger",
+                    `final_value must be a whole number (no decimals) for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
             return;
         }
 
         const num = Number(rawFinal);
         if (num <= 0) {
-            addIssue("final_value", `market row ${idx + 2}`, `final_value must be greater than 0 for asset "${assetName}"`);
+            addIssue(
+                "final_value",
+                `market row ${idx + 2}`,
+                localize(
+                    "marketFinalValuePositive",
+                    `final_value must be greater than 0 for asset "${assetName}"`,
+                    { asset: assetName }
+                )
+            );
         }
     });
 
@@ -464,6 +585,12 @@ const MAX_PDF_SIZE = 20 * 1024 * 1024; // 20 MB in bytes
 
 const SubmitReportsQuickly = ({ onViewChange }) => {
     const { token, login, user, isGuest } = useSession();
+    const { t } = useTranslation();
+    const translate = useCallback(
+        (key, defaultValue, options = {}) =>
+            t(`submitReportsQuickly.${key}`, { defaultValue, ...options }),
+        [t]
+    );
     const { systemState } = useSystemControl();
     const { executeWithAuth } = useAuthAction();
     const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
@@ -511,6 +638,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const [validationTableTab, setValidationTableTab] = useState("assets");
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [showInsufficientPointsModal, setShowInsufficientPointsModal] = useState(false);
+    const [insufficientPointsMeta, setInsufficientPointsMeta] = useState(null);
     const [reports, setReports, resetReports] = usePersistentState("submitReportsQuickly:reports", [], { storage: "session" });
     const [reportsLoading, setReportsLoading] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -555,7 +683,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
         if (oversizedFiles.length > 0) {
             const oversizedNames = oversizedFiles.map(f => f.name).join(", ");
-            setError(`PDF file(s) exceed 20 MB limit: ${oversizedNames}`);
+            setError(
+                translate(
+                    "messages.error.pdfSizeLimit",
+                    "PDF file(s) exceed 20 MB limit: {{files}}",
+                    { files: oversizedNames }
+                )
+            );
             return;
         }
 
@@ -615,16 +749,36 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             resetMessages();
 
             if (excelFiles.length === 0) {
-                throw new Error("Please select at least one Excel file");
+                throw new Error(
+                    translate(
+                        "messages.error.selectExcelFile",
+                        "Please select at least one Excel file"
+                    )
+                );
             }
             if (wantsPdfUpload && pdfFiles.length === 0) {
-                throw new Error("Please select at least one PDF file or disable PDF upload.");
+                throw new Error(
+                    translate(
+                        "messages.error.selectPdfFile",
+                        "Please select at least one PDF file or disable PDF upload."
+                    )
+                );
             }
             if (wantsPdfUpload && (pdfMatchInfo.excelsMissingPdf.length || pdfMatchInfo.unmatchedPdfs.length)) {
-                throw new Error("PDF filenames must match the Excel filenames.");
+                throw new Error(
+                    translate(
+                        "messages.error.pdfNamesMismatch",
+                        "PDF filenames must match the Excel filenames."
+                    )
+                );
             }
             if (!isReadyToUpload) {
-                throw new Error("Please fix validation issues before uploading.");
+                throw new Error(
+                    translate(
+                        "messages.error.validationIssues",
+                        "Please fix validation issues before uploading."
+                    )
+                );
             }
 
             const authStatus = await ensureTaqeemAuthorized(
@@ -636,9 +790,19 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 setTaqeemStatus,
                 authOptions
             );
+            const activeToken = authStatus?.token || token;
 
             if (authStatus?.status === "INSUFFICIENT_POINTS") {
-                throw new Error("You don't have enough points to submit reports.");
+                openInsufficientPointsModal({
+                    requiredPoints: authStatus.required ?? excelFiles.length,
+                    availablePoints: authStatus.available,
+                    assetCount: excelFiles.length,
+                    customMessage:
+                        authStatus.message ||
+                        authStatus.reason ||
+                        "You don't have enough points to submit your files."
+                });
+                return;
             }
 
             if (authStatus?.status === "LOGIN_REQUIRED") {
@@ -649,7 +813,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 throw new Error("Please login to Taqeem first to submit reports.");
             }
 
-            setSuccess("Uploading files to server...");
+            setSuccess(
+                translate(
+                    "messages.success.uploadingFiles",
+                    "Uploading files to server..."
+                )
+            );
             const data = await submitReportsQuicklyUpload(
                 excelFiles,
                 wantsPdfUpload ? pdfFiles : [],
@@ -658,7 +827,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             );
 
             if (data.status !== "success") {
-                throw new Error(data.error || "Upload failed");
+                throw new Error(
+                    data.error ||
+                        translate("messages.error.uploadFailed", "Upload failed")
+                );
             }
 
             const createdReports = Array.isArray(data.reports) ? data.reports : [];
@@ -667,7 +839,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             }
 
             const insertedCount = data.created || 0;
-            setSuccess(`Files uploaded successfully. Inserted ${insertedCount} report(s). Now submitting to Taqeem...`);
+            setSuccess(
+                translate(
+                    "messages.success.filesUploadedSubmitting",
+                    "Files uploaded successfully. Inserted {{count}} report(s). Now submitting to Taqeem...",
+                    { count: insertedCount }
+                )
+            );
 
             // Refresh reports to get the newly uploaded ones
             const refreshedReports = await loadReports();
@@ -687,26 +865,75 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             }
 
             setSubmitting(true);
+            const successfulReports = [];
 
             // Submit each report to Taqeem
             for (const report of recentReports) {
                 const recordId = getReportRecordId(report);
-                if (recordId) {
-                    try {
-                        // Use global recommendedTabs for submission
-                        const tabsNum = Math.max(1, Number(recommendedTabs) || 3);
-                        await submitToTaqeem(recordId, tabsNum);
-
-                        // Add a small delay between submissions to avoid rate limiting
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    } catch (err) {
-                        console.error(`Failed to submit report ${recordId}:`, err);
-                        // Continue with next report even if one fails
-                    }
+                if (!recordId) continue;
+                try {
+                    const tabsNum = Math.max(1, Number(recommendedTabs) || 3);
+                    await submitToTaqeem(recordId, tabsNum);
+                    successfulReports.push(report);
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                } catch (err) {
+                    console.error(`Failed to submit report ${recordId}:`, err);
+                    // Continue with next report even if one fails
                 }
             }
 
-            setSuccess(`${recentReports.length} report(s) uploaded and submitted to Taqeem successfully.`);
+            if (!successfulReports.length) {
+                throw new Error("All report submissions failed. Please try again.");
+            }
+
+            const assetCount = successfulReports.reduce(
+                (sum, report) =>
+                    sum + (Array.isArray(report?.asset_data) ? report.asset_data.length : 0),
+                0
+            );
+            const allReportIds = Array.from(
+                new Set(
+                    successfulReports
+                        .map((report) => report?.report_id || getReportRecordId(report))
+                        .filter(Boolean)
+                )
+            );
+            const primaryReportId = allReportIds[0];
+            const batchId = successfulReports.find((report) => report?.batch_id)?.batch_id;
+            const primaryRecordId =
+                getReportRecordId(
+                    successfulReports.find((report) => getReportRecordId(report))
+                ) || null;
+            const deductionPageName = QUICK_PAGE_NAME;
+            const deductionPageSource = QUICK_PAGE_SOURCE;
+
+            if (assetCount > 0 && activeToken) {
+                try {
+                    await deductPoints(activeToken, assetCount, {
+                        reportIds: allReportIds,
+                        reportId: primaryReportId,
+                        recordId: primaryRecordId,
+                        source: "submit-reports-quickly",
+                        pageName: deductionPageName,
+                        pageSource: deductionPageSource,
+                        assetCount,
+                        batchId,
+                    });
+                } catch (deductErr) {
+                    console.error(
+                        "[SubmitReportsQuickly] Failed to deduct points for submissions:",
+                        deductErr
+                    );
+                }
+            }
+
+            setSuccess(
+                translate(
+                    "messages.success.successfulUploads",
+                    "{{count}} report(s) uploaded and submitted to Taqeem successfully.",
+                    { count: successfulReports.length }
+                )
+            );
             setExcelFiles([]);
             setPdfFiles([]);
             setWantsPdfUpload(false);
@@ -721,11 +948,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 "Failed to upload and submit files";
 
             if (status === 400) {
-                setError(apiError || "Bad request. Please check the selected files and try again.");
+                setError(
+                    apiError ||
+                        translate(
+                            "messages.error.badRequest",
+                            "Bad request. Please check the selected files and try again."
+                        )
+                );
             } else if (status === 500) {
-                setError(apiError || "Server error while processing your files. Please try again or contact support.");
+                setError(
+                    apiError ||
+                        translate(
+                            "messages.error.serverProcessing",
+                            "Server error while processing your files. Please try again or contact support."
+                        )
+                );
             } else if (err?.code === "ERR_NETWORK") {
-                setError("Network error. Make sure the backend server is running and reachable.");
+                setError(
+                    translate(
+                        "messages.error.network",
+                        "Network error. Make sure the backend server is running and reachable."
+                    )
+                );
             } else {
                 setError(apiError);
             }
@@ -759,12 +1003,25 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         setDownloadingTemplate(true);
         try {
             await downloadTemplateFile("quick submittion-template.xlsx");
-            setSuccess("Excel template downloaded successfully.");
+            setSuccess(
+                translate(
+                    "messages.success.templateDownloaded",
+                    "Excel template downloaded successfully."
+                )
+            );
         } catch (err) {
-            const message = err?.message || "Failed to download Excel template. Please try again.";
+            const message =
+                err?.message ||
+                translate(
+                    "messages.error.templateDownload",
+                    "Failed to download Excel template. Please try again."
+                );
             setError(
                 message.includes("not found")
-                    ? "Template file not found. Please contact administrator to ensure the template file exists in the public folder."
+                    ? translate(
+                        "messages.error.templateNotFound",
+                        "Template file not found. Please contact administrator to ensure the template file exists in the public folder."
+                    )
                     : message
             );
         } finally {
@@ -819,7 +1076,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             console.log("result", result);
 
             if (!result?.success) {
-                throw new Error(result?.message || "Failed to load reports.");
+                throw new Error(
+                    result?.message ||
+                        translate("messages.error.loadReports", "Failed to load reports.")
+                );
             }
 
             const reportList = Array.isArray(result.reports) ? result.reports : [];
@@ -830,7 +1090,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             return reportList;
 
         } catch (err) {
-            setError(err?.message || "Failed to load reports.");
+            setError(
+                err?.message || translate("messages.error.loadReports", "Failed to load reports.")
+            );
             return [];
         } finally {
             setReportsLoading(false);
@@ -1031,6 +1293,41 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         return cleanup;
     }, [handleReportCreatedUpdate]);
 
+    useEffect(() => {
+        const handler = (event) => {
+            const detail = event?.detail;
+            if (!detail || detail.source !== "submit-reports-quickly") return;
+            const chapter = Array.isArray(detail.reportSummaries)
+                ? detail.reportSummaries
+                      .map((summary) => summary.reportId)
+                      .filter(Boolean)
+                : [];
+            const reportIds = chapter.length
+                ? Array.from(new Set(chapter))
+                : Array.isArray(detail.reportIds)
+                    ? detail.reportIds
+                    : detail.reportId
+                        ? [detail.reportId]
+                        : [];
+            if (reportIds.length === 0) return;
+            const idLabel = reportIds.length === 1 ? reportIds[0] : reportIds.join(", ");
+            setSuccess(
+                `Deducted ${detail.deducted || 0} point${(detail.deducted || 0) === 1 ? "" : "s"} for report${reportIds.length > 1 ? "s" : ""} ${idLabel}.`
+            );
+        };
+        window.addEventListener("points-updated", handler);
+        return () => window.removeEventListener("points-updated", handler);
+    }, [setSuccess]);
+
+    const openInsufficientPointsModal = (meta = {}) => {
+        setInsufficientPointsMeta(meta);
+        setShowInsufficientPointsModal(true);
+    };
+    const closeInsufficientPointsModal = () => {
+        setShowInsufficientPointsModal(false);
+        setInsufficientPointsMeta(null);
+    };
+
     const pdfMatchInfo = useMemo(() => {
         if (!wantsPdfUpload) {
             return { unmatchedPdfs: [], excelsMissingPdf: [], pdfMap: {} };
@@ -1085,20 +1382,33 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const hasValidationIssues = totalValidationIssues > 0;
     const validationStatus = useMemo(() => {
         if (validating) {
-            return { text: "Validating...", tone: "info" };
+            return { text: translate("validation.status.validating", "Validating..."), tone: "info" };
         }
         if (excelFiles.length === 0) {
-            return { text: "Upload an Excel file to validate.", tone: "neutral" };
+            return { text: translate("validation.status.uploadPrompt", "Upload an Excel file to validate."), tone: "neutral" };
         }
         if (hasValidationIssues || validationMessage?.type === "error") {
-            return { text: "You have issues in excel sheet.", tone: "error" };
+            return { text: translate("validation.status.hasIssues", "You have issues in excel sheet."), tone: "error" };
         }
         if (validationItems.length > 0) {
-            return { text: "No issues, you can upload it now.", tone: "success" };
+            return { text: translate("validation.status.clean", "No issues, you can upload it now."), tone: "success" };
         }
-        return { text: "Validation pending.", tone: "neutral" };
-    }, [validating, excelFiles.length, hasValidationIssues, validationItems.length, validationMessage?.type]);
+        return { text: translate("validation.status.pending", "Validation pending."), tone: "neutral" };
+    }, [
+        validating,
+        excelFiles.length,
+        hasValidationIssues,
+        validationItems.length,
+        validationMessage?.type,
+        translate,
+    ]);
     const canOpenValidation = validationItems.length > 0 || Boolean(validationMessage);
+
+    const localizeIssue = useCallback(
+        (key, defaultValue, options = {}) =>
+            translate(`validation.issues.${key}`, defaultValue, options),
+        [translate]
+    );
 
     const runValidation = async (excelList, pdfMap) => {
         if (!excelList.length) {
@@ -1112,8 +1422,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             text: "Reading Excel files and validating...",
         });
 
-        try {
-            const shouldValidatePdf = wantsPdfUpload;
+        const shouldValidatePdf = wantsPdfUpload;
+
+        const performValidation = async () => {
             const results = [];
 
             for (const file of excelList) {
@@ -1131,7 +1442,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     addIssue(
                         "Workbook",
                         "Sheets",
-                        "Excel must contain at least one of 'market' or 'cost' sheets."
+                        localizeIssue(
+                            "missingSheets",
+                            "Excel must contain at least one of 'market' or 'cost' sheets."
+                        )
                     );
                     results.push({
                         fileName: file.name,
@@ -1151,14 +1465,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
                 // Validate market sheet
                 if (marketSheet) {
-                    issues.push(...validateRequiredAssetFields("market", marketRows));
-                    issues.push(...validateMarketSheet(marketRows));
+                    issues.push(
+                        ...validateRequiredAssetFields("market", marketRows, localizeIssue)
+                    );
+                    issues.push(...validateMarketSheet(marketRows, localizeIssue));
                 }
 
                 // Validate cost sheet
                 if (costSheet) {
-                    issues.push(...validateRequiredAssetFields("cost", costRows));
-                    issues.push(...validateCostSheetIntegers(costRows));
+                    issues.push(
+                        ...validateRequiredAssetFields("cost", costRows, localizeIssue)
+                    );
+                    issues.push(...validateCostSheetIntegers(costRows, localizeIssue));
                 }
 
                 const marketAssetCount = marketRows.filter((r) =>
@@ -1172,7 +1490,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     addIssue(
                         "Assets",
                         "Sheets",
-                        "No assets found in market or cost sheets."
+                        localizeIssue(
+                            "noAssetsFound",
+                            "No assets found in market or cost sheets."
+                        )
                     );
                 }
 
@@ -1200,26 +1521,27 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 const baseName = normalizeKey(stripExtension(file.name));
                 const matchedPdf = shouldValidatePdf ? pdfMap[baseName] : { name: DUMMY_PDF_NAME };
                 if (shouldValidatePdf && !matchedPdf) {
-                    addIssue("PDF Match", "Files", `No matching PDF found for Excel "${file.name}" (match by filename).`);
+                    addIssue(
+                        "PDF Match",
+                        "Files",
+                        localizeIssue(
+                            "noMatchingPdf",
+                            `No matching PDF found for Excel ${file.name} (match by filename).`,
+                            { file: file.name }
+                        )
+                    );
                 }
 
-                // Check PDF size if matched (only if it's a File object)
-                if (matchedPdf && matchedPdf instanceof File && matchedPdf.size) {
-                    if (matchedPdf.size > MAX_PDF_SIZE) {
-                        const sizeMB = (matchedPdf.size / (1024 * 1024)).toFixed(2);
-                        addIssue("PDF Size", "Files", `PDF "${matchedPdf.name}" exceeds 20 MB limit (${sizeMB} MB).`);
-                    }
-                }
-
-                // Get today's date in yyyy-mm-dd format
+                const pdfMatched = shouldValidatePdf ? Boolean(matchedPdf) : true;
+                const pdfName = shouldValidatePdf ? matchedPdf?.name || "" : DUMMY_PDF_NAME;
                 const today = new Date();
                 const todayDate = today.toISOString().split('T')[0];
 
                 results.push({
                     fileName: file.name,
                     baseName,
-                    pdfMatched: shouldValidatePdf ? Boolean(matchedPdf) : true,
-                    pdfName: shouldValidatePdf ? matchedPdf?.name || "" : DUMMY_PDF_NAME,
+                    pdfMatched,
+                    pdfName,
                     issues,
                     snapshot: {
                         title,
@@ -1258,51 +1580,76 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             matchingResult.issues.push({
                                 field: "PDF Size",
                                 location: "Files",
-                                message: `PDF "${pdfFile.name}" exceeds 20 MB limit (${sizeMB} MB).`
+                                message: localizeIssue(
+                                    "pdfSizeExceed",
+                                    `PDF "${pdfFile.name}" exceeds 20 MB limit (${sizeMB} MB).`,
+                                    { file: pdfFile.name, size: sizeMB }
+                                ),
                             });
                         } else if (results.length > 0) {
                             // Add to first result if no match found
                             results[0].issues.push({
                                 field: "PDF Size",
                                 location: "Files",
-                                message: `PDF "${pdfFile.name}" exceeds 20 MB limit (${sizeMB} MB).`
+                                message: localizeIssue(
+                                    "pdfSizeExceed",
+                                    `PDF "${pdfFile.name}" exceeds 20 MB limit (${sizeMB} MB).`,
+                                    { file: pdfFile.name, size: sizeMB }
+                                ),
                             });
                         }
                     }
                 });
             }
 
-            setValidationItems(results);
+            return results;
+        };
 
-            const totalIssues = results.reduce((acc, r) => acc + (r.issues?.length || 0), 0);
-            const hasPdfMismatch = shouldValidatePdf
-                ? (pdfMatchInfo.excelsMissingPdf.length || pdfMatchInfo.unmatchedPdfs.length)
-                : false;
-            if (totalIssues === 0 && !hasPdfMismatch) {
-                setValidationMessage({
-                    type: "success",
-                    text: shouldValidatePdf
-                        ? "All Excel files look valid and PDFs are matched. You can Upload & Create Reports."
-                        : `All Excel files look valid. PDFs will use ${DUMMY_PDF_NAME}. You can Upload & Create Reports.`,
-                });
-            } else {
+        return performValidation()
+            .then((results) => {
+                setValidationItems(results);
+
+                const totalIssues = results.reduce((acc, r) => acc + (r.issues?.length || 0), 0);
+                const hasPdfMismatch = shouldValidatePdf
+                    ? (pdfMatchInfo.excelsMissingPdf.length || pdfMatchInfo.unmatchedPdfs.length)
+                    : false;
+                if (totalIssues === 0 && !hasPdfMismatch) {
+                    setValidationMessage({
+                        type: "success",
+                        text: shouldValidatePdf
+                            ? translate(
+                                "validation.message.validWithPdfs",
+                                "All Excel files look valid and PDFs are matched. You can Upload & Create Reports."
+                            )
+                            : translate(
+                                "validation.message.validWithoutPdfs",
+                                `All Excel files look valid. PDFs will use ${DUMMY_PDF_NAME}. You can Upload & Create Reports.`,
+                                { placeholder: DUMMY_PDF_NAME }
+                            ),
+                    });
+                } else {
+                    setValidationMessage({
+                        type: "error",
+                        text: translate(
+                            "validation.message.issuesFound",
+                            "Validation found issues. Fix them to enable Upload & Create Reports."
+                        ),
+                    });
+                }
+                setValidationTableTab("assets");
+                setShowValidationModal(true);
+            })
+            .catch((err) => {
+                console.error("Validation failed", err);
                 setValidationMessage({
                     type: "error",
-                    text: "Validation found issues. Fix them to enable Upload & Create Reports.",
+                    text: err?.message || translate("validation.message.validationFailed", "Failed to validate Excel files."),
                 });
-            }
-            setValidationTableTab("assets");
-            setShowValidationModal(true);
-        } catch (err) {
-            console.error("Validation failed", err);
-            setValidationMessage({
-                type: "error",
-                text: err?.message || "Failed to validate Excel files.",
+                setShowValidationModal(true);
+            })
+            .finally(() => {
+                setValidating(false);
             });
-            setShowValidationModal(true);
-        } finally {
-            setValidating(false);
-        }
     };
 
     useEffect(() => {
@@ -1333,21 +1680,46 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             resetMessages();
 
             if (excelFiles.length === 0) {
-                throw new Error("Please select at least one Excel file");
+                throw new Error(
+                    translate(
+                        "messages.error.selectExcelFile",
+                        "Please select at least one Excel file"
+                    )
+                );
             }
             if (wantsPdfUpload && pdfFiles.length === 0) {
-                throw new Error("Please select at least one PDF file or disable PDF upload.");
+                throw new Error(
+                    translate(
+                        "messages.error.selectPdfFile",
+                        "Please select at least one PDF file or disable PDF upload."
+                    )
+                );
             }
             if (wantsPdfUpload && (pdfMatchInfo.excelsMissingPdf.length || pdfMatchInfo.unmatchedPdfs.length)) {
-                throw new Error("PDF filenames must match the Excel filenames.");
+                throw new Error(
+                    translate(
+                        "messages.error.pdfNamesMismatch",
+                        "PDF filenames must match the Excel filenames."
+                    )
+                );
             }
             if (!isReadyToUpload) {
-                throw new Error("Please fix validation issues before uploading.");
+                throw new Error(
+                    translate(
+                        "messages.error.validationIssues",
+                        "Please fix validation issues before uploading."
+                    )
+                );
             }
 
             const activeToken = await ensureGuestSession();
 
-            setSuccess("Uploading files to server...");
+            setSuccess(
+                translate(
+                    "messages.success.uploadingFiles",
+                    "Uploading files to server..."
+                )
+            );
             const data = await submitReportsQuicklyUpload(
                 excelFiles,
                 wantsPdfUpload ? pdfFiles : [],
@@ -1356,7 +1728,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             );
 
             if (data.status !== "success") {
-                throw new Error(data.error || "Upload failed");
+                throw new Error(
+                    data.error ||
+                        translate("messages.error.uploadFailed", "Upload failed")
+                );
             }
 
             const createdReports = Array.isArray(data.reports) ? data.reports : [];
@@ -1365,7 +1740,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             }
 
             const insertedCount = data.created || 0;
-            setSuccess(`Files uploaded successfully. Inserted ${insertedCount} report(s).`);
+            setSuccess(
+                translate(
+                    "messages.success.filesUploaded",
+                    "Files uploaded successfully. Inserted {{count}} report(s).",
+                    { count: insertedCount }
+                )
+            );
             await loadReports(activeToken);
             setExcelFiles([]);
             setPdfFiles([]);
@@ -1381,11 +1762,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 "Failed to upload files";
 
             if (status === 400) {
-                setError(apiError || "Bad request. Please check the selected files and try again.");
+                setError(
+                    apiError ||
+                        translate(
+                            "messages.error.badRequest",
+                            "Bad request. Please check the selected files and try again."
+                        )
+                );
             } else if (status === 500) {
-                setError(apiError || "Server error while processing your files. Please try again or contact support.");
+                setError(
+                    apiError ||
+                        translate(
+                            "messages.error.serverProcessing",
+                            "Server error while processing your files. Please try again or contact support."
+                        )
+                );
             } else if (err?.code === "ERR_NETWORK") {
-                setError("Network error. Make sure the backend server is running and reachable.");
+                setError(
+                    translate(
+                        "messages.error.network",
+                        "Network error. Make sure the backend server is running and reachable."
+                    )
+                );
             } else {
                 setError(apiError);
             }
@@ -1408,12 +1806,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const pauseReportProcess = useCallback(
         async (recordId) => {
             if (!recordId) {
-                setError("Missing report record id.");
+                setError(translate("messages.error.missingReportId", "Missing report record id."));
                 return;
             }
 
             if (!window?.electronAPI?.pauseMacroFill) {
-                setError("Desktop integration unavailable. Restart the app.");
+                setError(translate("messages.error.desktopIntegration", "Desktop integration unavailable. Restart the app."));
                 return;
             }
 
@@ -1431,14 +1829,24 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     };
                 });
 
-                setSuccess("Pausing report submission...");
+                setSuccess(
+                    translate(
+                        "messages.success.pausingSubmission",
+                        "Pausing report submission..."
+                    )
+                );
 
                 // Pause the macro fill process (which controls the browser)
                 const result = await window.electronAPI.pauseMacroFill(recordId);
 
                 if (result?.status === "SUCCESS") {
                     // Status is already updated optimistically, real-time listener will confirm
-                    setSuccess("Report submission paused.");
+                    setSuccess(
+                        translate(
+                            "messages.success.reportPaused",
+                            "Report submission paused."
+                        )
+                    );
                 } else {
                     // Revert optimistic update on failure
                     setReportProgress((prev) => {
@@ -1465,7 +1873,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         }
                     };
                 });
-                setError(err?.message || "Failed to pause process.");
+                setError(err?.message || translate("messages.error.pauseProcess", "Failed to pause process."));
             }
         },
         []
@@ -1474,12 +1882,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const resumeReportProcess = useCallback(
         async (recordId) => {
             if (!recordId) {
-                setError("Missing report record id.");
+                setError(translate("messages.error.missingReportId", "Missing report record id."));
                 return;
             }
 
             if (!window?.electronAPI?.resumeMacroFill) {
-                setError("Desktop integration unavailable. Restart the app.");
+                setError(translate("messages.error.desktopIntegration", "Desktop integration unavailable. Restart the app."));
                 return;
             }
 
@@ -1497,14 +1905,24 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     };
                 });
 
-                setSuccess("Resuming report submission...");
+                setSuccess(
+                    translate(
+                        "messages.success.resumingSubmission",
+                        "Resuming report submission..."
+                    )
+                );
 
                 // Resume the macro fill process (which controls the browser)
                 const result = await window.electronAPI.resumeMacroFill(recordId);
 
                 if (result?.status === "SUCCESS") {
                     // Status is already updated optimistically, real-time listener will confirm
-                    setSuccess("Report submission resumed.");
+                    setSuccess(
+                        translate(
+                            "messages.success.reportResumed",
+                            "Report submission resumed."
+                        )
+                    );
                 } else {
                     // Revert optimistic update on failure
                     setReportProgress((prev) => {
@@ -1531,7 +1949,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         }
                     };
                 });
-                setError(err?.message || "Failed to resume process.");
+                setError(err?.message || translate("messages.error.resumeProcess", "Failed to resume process."));
             }
         },
         []
@@ -1540,21 +1958,33 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const stopReportProcess = useCallback(
         async (recordId) => {
             if (!recordId) {
-                setError("Missing report record id.");
+                setError(translate("messages.error.missingReportId", "Missing report record id."));
                 return;
             }
 
             if (!window?.electronAPI?.stopMacroFill) {
-                setError("Desktop integration unavailable. Restart the app.");
+                setError(translate("messages.error.desktopIntegration", "Desktop integration unavailable. Restart the app."));
                 return;
             }
 
-            if (!window.confirm("Are you sure you want to stop this report submission? Progress will be lost.")) {
+            if (
+                !window.confirm(
+                    translate(
+                        "confirm.stopSubmission",
+                        "Are you sure you want to stop this report submission? Progress will be lost."
+                    )
+                )
+            ) {
                 return;
             }
 
             try {
-                setSuccess("Stopping report submission...");
+                setSuccess(
+                    translate(
+                        "messages.success.stoppingSubmission",
+                        "Stopping report submission..."
+                    )
+                );
 
                 // Stop the macro fill process (which controls the browser)
                 const result = await window.electronAPI.stopMacroFill(recordId);
@@ -1570,12 +2000,17 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             message: "Stopped by user"
                         }
                     }));
-                    setSuccess("Report submission stopped.");
+                    setSuccess(
+                        translate(
+                            "messages.success.reportStopped",
+                            "Report submission stopped."
+                        )
+                    );
                 } else {
                     throw new Error(result?.error || "Failed to stop process.");
                 }
             } catch (err) {
-                setError(err?.message || "Failed to stop process.");
+                setError(err?.message || translate("messages.error.stopProcess", "Failed to stop process."));
             }
         },
         []
@@ -1622,7 +2057,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         }
 
         setCompanyStatus?.("info", "Select a company to continue.");
-        setSuccess("Select a company to continue.");
+    setSuccess(translate("messages.success.selectCompany", "Select a company to continue."));
         return waitForCompanySelection();
     }, [
         companies,
@@ -1646,12 +2081,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             } = options;
 
             if (!recordId) {
-                setError("Missing report record id.");
+                setError(translate("messages.error.missingReportId", "Missing report record id."));
                 return;
             }
 
             // Use global recommendedTabs if tabsNum not provided, otherwise use the provided value
             const resolvedTabs = tabsNum || Math.max(1, Number(recommendedTabs) || 3);
+            const report = reports.find((item) => getReportRecordId(item) === recordId);
+            const assetList = Array.isArray(report?.asset_data) ? report.asset_data : [];
+            const assetCount = assetList.length;
 
             // Initialize progress for this report
             setReportProgress((prev) => ({
@@ -1662,27 +2100,48 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
 
             try {
+                let authStatus = true;
                 if (!skipAuth) {
-                    const ok = await ensureTaqeemAuthorized(
+                    authStatus = await ensureTaqeemAuthorized(
                         token,
                         onViewChange,
                         isTaqeemLoggedIn,
-                        0,
+                        assetCount,
                         null,
                         setTaqeemStatus,
                         authOptions
                     );
-                    if (!ok) {
-                        setError("Taqeem login required. Finish login and choose a company to continue.");
-                        return;
-                    }
+                }
+                if (authStatus?.status === "INSUFFICIENT_POINTS") {
+                    openInsufficientPointsModal({
+                        requiredPoints: authStatus.required ?? assetCount,
+                        availablePoints: authStatus.available,
+                        assetCount,
+                        customMessage:
+                            authStatus.message ||
+                            authStatus.reason ||
+                            "You don't have enough points to submit this report."
+                    });
+                    return;
+                }
+                if (authStatus?.status === "LOGIN_REQUIRED") {
+                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+                    return;
+                }
+                if (!authStatus) {
+                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+                    return;
                 }
 
                 if (!skipCompanySelect) {
                     await ensureCompanySelected();
                 }
 
-                setSuccess(resume ? "Resuming Taqeem submission..." : "Submitting report to Taqeem...");
+                setSuccess(
+                    resume
+                        ? translate("messages.success.resumingTaqeem", "Resuming Taqeem submission...")
+                        : translate("messages.success.submittingTaqeem", "Submitting report to Taqeem...")
+                );
 
                 if (!window?.electronAPI?.createReportById) {
                     throw new Error("Desktop integration unavailable. Restart the app.");
@@ -1695,7 +2154,38 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         ...prev,
                         [recordId]: { percentage: 100, status: 'completed', message: 'Report submitted successfully' }
                     }));
-                    setSuccess("Report submitted to Taqeem successfully.");
+                    setSuccess(
+                        translate(
+                            "messages.success.reportSubmitted",
+                            "Report submitted to Taqeem successfully."
+                        )
+                    );
+                    const activeToken = authStatus?.token || token;
+                    try {
+                        if (assetCount > 0 && activeToken) {
+                            const createdReportId =
+                                result?.reportId ||
+                                result?.report_id ||
+                                report?.report_id ||
+                                recordId;
+                            if (createdReportId && report) {
+                                report.report_id = createdReportId;
+                            }
+                            const reportIds = createdReportId ? [createdReportId] : [recordId];
+                            await deductPoints(activeToken, assetCount, {
+                                reportIds,
+                                reportId: createdReportId || recordId,
+                                recordId,
+                                source: "submit-reports-quickly",
+                                pageName: QUICK_PAGE_NAME,
+                                pageSource: QUICK_PAGE_SOURCE,
+                                assetCount,
+                                batchId: report?.batch_id,
+                            });
+                        }
+                    } catch (deductErr) {
+                        console.error("[SubmitReportsQuickly] Failed to deduct points:", deductErr);
+                    }
                     await loadReports();
                     return;
                 }
@@ -1703,7 +2193,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 const errMsg = result?.error || "Upload to Taqeem failed. Make sure you selected a company.";
                 setError(errMsg);
             } catch (err) {
-                setError(err?.message || "Failed to submit report to Taqeem.");
+                setError(err?.message || translate("messages.error.submitTaqeem", "Failed to submit report to Taqeem."));
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
@@ -1740,16 +2230,22 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         const taqeemReportId = report?.report_id;
 
         if (!report || !recordId) {
-            setError("Report not found.");
+            setError(translate("messages.error.reportNotFound", "Report not found."));
             return;
         }
 
         if (!taqeemReportId) {
-            setError("Report must be submitted to Taqeem first (must have a report_id).");
+            setError(translate("messages.error.reportMustBeSubmitted", "Report must be submitted to Taqeem first (must have a report_id)."));
             return;
         }
 
-        if (confirm && !window.confirm("Are you sure you want to delete this report?")) return;
+        if (
+            confirm &&
+            !window.confirm(
+                translate("confirm.deleteReport", "Are you sure you want to delete this report?")
+            )
+        )
+            return;
 
         setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
 
@@ -1760,7 +2256,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     setTaqeemStatus?.("success", "Taqeem login: On");
                 } else {
                     setTaqeemStatus?.("info", "Taqeem login: Off");
-                    setSuccess("Taqeem login is off. Complete login in the opened browser window to continue.");
+                    setSuccess(
+                        translate(
+                            "messages.success.taqeemLoginOff",
+                            "Taqeem login is off. Complete login in the opened browser window to continue."
+                        )
+                    );
                 }
             }
 
@@ -1770,7 +2271,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 throw new Error("Desktop integration unavailable. Restart the app.");
             }
 
-            setSuccess(`Deleting report ${taqeemReportId}...`);
+            setSuccess(
+                translate(
+                    "messages.success.deletingReport",
+                    "Deleting report {{reportId}}...",
+                    { reportId: taqeemReportId }
+                )
+            );
             const result = await window.electronAPI.deleteReport(taqeemReportId, 10, userId);
             const status = result?.status;
 
@@ -1783,10 +2290,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 throw new Error(deleteResult?.message || "Report deleted in Taqeem, but failed to remove it locally.");
             }
 
-            setSuccess(result?.message || "Report deleted successfully.");
+            setSuccess(
+                result?.message ||
+                    translate("messages.success.reportDeleted", "Report deleted successfully.")
+            );
             await loadReports();
         } catch (err) {
-            setError(err?.message || "Failed to delete report.");
+            setError(err?.message || translate("messages.error.deleteReport", "Failed to delete report."));
         } finally {
             setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
         }
@@ -1814,14 +2324,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         try {
             const result = await updateSubmitReportsQuickly(editingReportId, formData);
             if (result?.success) {
-                setSuccess("Report updated successfully.");
+                setSuccess(
+                    translate("messages.success.reportUpdated", "Report updated successfully.")
+                );
                 setEditingReportId(null);
                 await loadReports();
             } else {
                 setError(result?.message || "Failed to update report.");
             }
         } catch (err) {
-            setError(err?.message || "Failed to update report.");
+            setError(err?.message || translate("messages.error.updateReport", "Failed to update report."));
         } finally {
             setSubmitting(false);
         }
@@ -1832,12 +2344,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
         const selectedIds = selectedReportIds.filter(Boolean);
         if (selectedIds.length === 0) {
-            setError("Please select at least one report.");
+            setError(translate("messages.error.selectReport", "Please select at least one report."));
             return;
         }
 
         if (bulkAction === "delete") {
-            if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} report(s)?`)) return;
+            if (
+                !window.confirm(
+                    translate(
+                        "confirm.deleteMultipleReports",
+                        "Are you sure you want to delete {{count}} report(s)?",
+                        { count: selectedIds.length }
+                    )
+                )
+            )
+                return;
             const selectedReports = selectedIds
                 .map((id) => getReportByRecordId(id))
                 .filter(Boolean);
@@ -1862,7 +2383,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 authOptions
             );
             if (!ok) {
-                setError("Taqeem login required. Finish login and choose a company to continue.");
+                setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
                 return;
             }
             await ensureCompanySelected();
@@ -1950,16 +2471,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             setSelectedReportIds([]);
             setBulkAction("");
             if (queueError) {
-                setError(queueError.message || "Stopped queue: report id was not created.");
+                setError(queueError.message || translate("messages.error.queueStopped", "Stopped queue: report id was not created."));
             } else {
-                setSuccess(`All ${selectedIds.length} report(s) submitted. Check progress bars for status.`);
+                setSuccess(
+                    translate(
+                        "messages.success.reportsSubmittedStatus",
+                        "All {{count}} report(s) submitted. Check progress bars for status.",
+                        { count: selectedIds.length }
+                    )
+                );
             }
             return;
         }
 
         if (bulkAction === "send-approver") {
             try {
-                setSuccess(`Sending ${selectedIds.length} report(s) to approver...`);
+                setSuccess(
+                    translate(
+                        "messages.success.sendingToApprover",
+                        "Sending {{count}} report(s) to approver...",
+                        { count: selectedIds.length }
+                    )
+                );
 
                 // Get reports with report_id (Taqeem report IDs)
                 const reportsToSend = selectedIds
@@ -1967,7 +2500,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     .filter(r => r && r.report_id);
 
                 if (reportsToSend.length === 0) {
-                    setError("No reports with Taqeem report IDs found. Reports must be submitted to Taqeem first.");
+                    setError(translate("messages.error.noReportsWithTaqeemId", "No reports with Taqeem report IDs found. Reports must be submitted to Taqeem first."));
                     return;
                 }
                 const reportIds = useMemo(
@@ -1997,16 +2530,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 await loadReports();
                 setSelectedReportIds([]);
                 setBulkAction("");
-                setSuccess(`Successfully sent ${reportsToSend.length} report(s) to approver.`);
+                setSuccess(
+                    translate(
+                        "messages.success.sentToApprover",
+                        "Successfully sent {{count}} report(s) to approver.",
+                        { count: reportsToSend.length }
+                    )
+                );
             } catch (err) {
-                setError(err?.message || "Failed to send reports to approver.");
+                setError(err?.message || translate("messages.error.sendToApprover", "Failed to send reports to approver."));
             }
             return;
         }
 
         if (bulkAction === "approve") {
             try {
-                setSuccess(`Approving ${selectedIds.length} report(s)...`);
+                setSuccess(
+                    translate(
+                        "messages.success.approvingReports",
+                        "Approving {{count}} report(s)...",
+                        { count: selectedIds.length }
+                    )
+                );
 
                 for (const id of selectedIds) {
                     try {
@@ -2019,9 +2564,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 await loadReports();
                 setSelectedReportIds([]);
                 setBulkAction("");
-                setSuccess(`Successfully approved ${selectedIds.length} report(s).`);
+                setSuccess(
+                    translate(
+                        "messages.success.approvedReports",
+                        "Successfully approved {{count}} report(s).",
+                        { count: selectedIds.length }
+                    )
+                );
             } catch (err) {
-                setError(err?.message || "Failed to approve reports.");
+                setError(err?.message || translate("messages.error.approveReports", "Failed to approve reports."));
             }
             return;
         }
@@ -2035,7 +2586,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         if (action === "check-status") {
             const taqeemReportId = report.report_id;
             if (!taqeemReportId) {
-                setError("Report must have a Taqeem report_id to check status.");
+                setError(translate("messages.error.reportNeedsTaqeemId", "Report must have a Taqeem report_id to check status."));
                 return;
             }
             const tabsNum = Math.max(1, Number(recommendedTabs) || 1);
@@ -2057,13 +2608,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         onViewChange,
                         onAuthFailure: (reason) => {
                             if (reason !== "INSUFFICIENT_POINTS" && reason !== "LOGIN_REQUIRED") {
-                                setError(reason?.message || "Authentication failed for full check");
+                                setError(reason?.message || translate("messages.error.authFailed", "Authentication failed for full check"));
                             }
                         }
                     }
                 );
             } catch (err) {
-                setError(err?.message || "Failed to perform full check");
+                setError(
+                    err?.message ||
+                        translate("messages.error.fullCheck", "Failed to perform full check")
+                );
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
@@ -2082,7 +2636,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     authOptions
                 );
                 if (!ok) {
-                    setError("Taqeem login required. Finish login and choose a company to continue.");
+                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
                     return;
                 }
                 await ensureCompanySelected();
@@ -2091,10 +2645,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 if (!isSuccess) {
                     throw new Error(result?.message || result?.error || "Retry failed");
                 }
-                setSuccess(result?.message || "Retry completed.");
+                setSuccess(
+                    result?.message ||
+                        translate("messages.success.retryCompleted", "Retry completed.")
+                );
                 await loadReports();
             } catch (err) {
-                setError(err?.message || "Failed to retry asset submission.");
+                setError(err?.message || translate("messages.error.retryAssetSubmission", "Failed to retry asset submission."));
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
@@ -2106,11 +2663,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
             try {
                 if (!report.report_id) {
-                    setError("Report must be submitted to Taqeem first (must have a report_id).");
+                    setError(translate("messages.error.reportMustBeSubmitted", "Report must be submitted to Taqeem first (must have a report_id)."));
                     return;
                 }
 
-                setSuccess("Sending report to approver...");
+                setSuccess(
+                    translate(
+                        "messages.success.sendingReportToApprover",
+                        "Sending report to approver..."
+                    )
+                );
 
                 if (!window.electronAPI?.finalizeMultipleReports) {
                     throw new Error("Desktop integration unavailable. Restart the app.");
@@ -2126,23 +2688,35 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 await updateSubmitReportsQuickly(recordId, { report_status: "sent" });
 
                 await loadReports();
-                setSuccess("Report sent to approver successfully.");
+                setSuccess(
+                    translate(
+                        "messages.success.reportSentToApprover",
+                        "Report sent to approver successfully."
+                    )
+                );
             } catch (err) {
-                setError(err?.message || "Failed to send report to approver.");
+                setError(err?.message || translate("messages.error.sendReportToApprover", "Failed to send report to approver."));
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
         } else if (action === "approve") {
             setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
             try {
-                setSuccess("Approving report...");
+                setSuccess(
+                    translate("messages.success.approvingReport", "Approving report...")
+                );
 
                 await updateSubmitReportsQuickly(recordId, { checked: true });
 
                 await loadReports();
-                setSuccess("Report approved successfully.");
+                setSuccess(
+                    translate(
+                        "messages.success.reportApproved",
+                        "Report approved successfully."
+                    )
+                );
             } catch (err) {
-                setError(err?.message || "Failed to approve report.");
+                setError(err?.message || translate("messages.error.approveReport", "Failed to approve report."));
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
@@ -2252,11 +2826,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     <div className="absolute top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm">
                         <InsufficientPointsModal
                             viewChange={onViewChange}
-                            onClose={() => setShowInsufficientPointsModal(false)}
+                            onClose={closeInsufficientPointsModal}
+                            details={insufficientPointsMeta}
                         />
                     </div>
                 </div>
             )}
+            <DeductionNotification
+                source="submit-reports-quickly"
+                defaultPageName={QUICK_PAGE_NAME}
+                defaultPageSource={QUICK_PAGE_SOURCE}
+                onViewChange={onViewChange}
+            />
             <div className="space-y-1.5">
                 <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-2">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -2267,8 +2848,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     {excelFiles.length
                                         ? excelFiles.length === 1
                                             ? <span className="truncate max-w-[150px]" title={excelFiles[0].name}>{excelFiles[0].name}</span>
-                                            : `${excelFiles.length} file(s) selected`
-                                        : "Choose Excel file"}
+                                            : translate(
+                                                "filePicker.selectedFiles",
+                                                "{{count}} file(s) selected",
+                                                { count: excelFiles.length }
+                                            )
+                                        : translate("filePicker.chooseExcel", "Choose Excel file")}
                                 </span>
                             </div>
                             <input
@@ -2282,7 +2867,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     e.currentTarget.value = null;
                                 }}
                             />
-                            <span className="text-[10px] font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">Browse</span>
+                            <span className="text-[10px] font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">
+                                {translate("filePicker.browse", "Browse")}
+                            </span>
                         </label>
                         <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50 transition-all hover:bg-blue-50 hover:border-blue-400 min-w-[220px] flex-[1.35] group">
                             <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-700">
@@ -2293,11 +2880,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     onChange={(e) => handlePdfToggle(e.target.checked)}
                                 />
                                 <Files className="w-4 h-4 text-blue-600" />
-                                <span className="font-semibold">Upload PDFs</span>
+                                <span className="font-semibold">{translate("filePicker.uploadPdfs", "Upload PDFs")}</span>
                                 <span className="text-[10px] text-slate-600">
                                     {pdfFiles.length
-                                        ? `${pdfFiles.length} file(s) selected`
-                                        : wantsPdfUpload ? "Choose PDF files" : `Will use ${DUMMY_PDF_NAME}`}
+                                        ? translate(
+                                            "filePicker.selectedPdfs",
+                                            "{{count}} file(s) selected",
+                                            { count: pdfFiles.length }
+                                        )
+                                        : wantsPdfUpload
+                                            ? translate("filePicker.choosePdfFiles", "Choose PDF files")
+                                            : translate(
+                                                "filePicker.willUseDummyPdf",
+                                                "Will use {{placeholder}}",
+                                                { placeholder: DUMMY_PDF_NAME }
+                                            )}
                                 </span>
                             </div>
                             <button
@@ -2310,7 +2907,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 }}
                                 className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 whitespace-nowrap"
                             >
-                                Browse
+                                {translate("filePicker.browse", "Browse")}
                             </button>
                             <input
                                 ref={pdfInputRef}
@@ -2333,7 +2930,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 ) : (
                                     <Download className="w-3.5 h-3.5" />
                                 )}
-                                {downloadingTemplate ? "Downloading..." : "Export Excel Template"}
+                                {downloadingTemplate
+                                    ? translate("filePicker.downloading", "Downloading...")
+                                    : translate("filePicker.exportTemplate", "Export Excel Template")}
                             </button>
                             <button
                                 type="button"
@@ -2353,7 +2952,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                             >
                                 <RefreshCw className="w-3.5 h-3.5" />
-                                Reset
+                                {translate("filePicker.reset", "Reset")}
                             </button>
                         </div>
                     </div>
@@ -2376,7 +2975,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         ) : (
                             <Send className="w-4 h-4" />
                         )}
-                        {storeAndSubmitLoading ? "Uploading..." : submitting ? "Submitting..." : "Store and Submit Now"}
+                        {storeAndSubmitLoading
+                            ? translate("actions.uploading", "Uploading...")
+                            : submitting
+                                ? translate("actions.submitting", "Submitting...")
+                                : translate("actions.storeAndSubmitNow", "Store and Submit Now")}
                     </button>
                     <button
                         type="button"
@@ -2394,7 +2997,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         ) : (
                             <FileIcon className="w-4 h-4" />
                         )}
-                        {storeOnlyLoading ? "Uploading..." : "Store and Submit Later"}
+                        {storeOnlyLoading
+                            ? translate("actions.uploading", "Uploading...")
+                            : translate("actions.storeAndSubmitLater", "Store and Submit Later")}
                     </button>
 
                 </div>
@@ -2428,7 +3033,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 disabled={!canOpenValidation}
                 className={`w-full rounded-lg border border-blue-200/60 bg-gradient-to-r from-blue-50/70 via-white to-blue-50/70 px-3 py-2 text-left shadow-sm card-animate flex flex-wrap items-center justify-between gap-2 ${canOpenValidation ? "hover:border-blue-300/70" : "cursor-default"} disabled:opacity-80`}
             >
-                <span className="text-xs font-semibold text-slate-700">Validation on Excel sheet</span>
+                <span className="text-xs font-semibold text-slate-700">
+                    {translate("validation.panelHeader", "Validation on Excel sheet")}
+                </span>
                 <span className={`text-xs font-semibold ${validationStatus.tone === "error"
                     ? "text-rose-600"
                     : validationStatus.tone === "success"
@@ -2444,7 +3051,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
             <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3 mb-3">
                 <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-slate-800">Reports</h3>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                        {translate("reports.title", "Reports")}
+                    </h3>
                 </div>
                 <div className="space-y-">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -2453,11 +3062,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             onChange={(e) => setBulkAction(e.target.value)}
                             className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer truncate"
                         >
-                            <option value="">Bulk Actions</option>
-                            <option value="upload-submit">Upload & Submit to Taqeem</option>
-                            <option value="delete">Delete</option>
-                            <option value="send-approver">Send to Approver</option>
-                            <option value="approve">Approve</option>
+                            <option value="">{translate("reports.bulkActions", "Bulk Actions")}</option>
+                            <option value="upload-submit">{translate("reports.bulk.uploadAndSubmit", "Upload & Submit to Taqeem")}</option>
+                            <option value="delete">{translate("reports.bulk.delete", "Delete")}</option>
+                            <option value="send-approver">{translate("reports.bulk.sendToApprover", "Send to Approver")}</option>
+                            <option value="approve">{translate("reports.bulk.approve", "Approve")}</option>
                         </select>
                         <button
                             type="button"
@@ -2465,11 +3074,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             disabled={!bulkAction || selectedReportIds.length === 0}
                             className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold"
                         >
-                            Go
+                            {translate("reports.goButton", "Go")}
                         </button>
 
                         <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-                            Filter:
+                            {translate("reports.filter.label", "Filter:")}
                             <select
                                 value={reportSelectFilter}
                                 onChange={(e) => {
@@ -2478,19 +3087,19 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 }}
                                 className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                             >
-                                <option value="all">All statuses</option>
-                                <option value="new">New</option>
-                                <option value="incomplete">Incomplete</option>
-                                <option value="sent">Sent</option>
-                                <option value="complete">Complete</option>
-                                <option value="approved">Approved</option>
+                                <option value="all">{translate("reports.filter.all", "All statuses")}</option>
+                                <option value="new">{translate("reports.filter.new", "New")}</option>
+                                <option value="incomplete">{translate("reports.filter.incomplete", "Incomplete")}</option>
+                                <option value="sent">{translate("reports.filter.sent", "Sent")}</option>
+                                <option value="complete">{translate("reports.filter.complete", "Complete")}</option>
+                                <option value="approved">{translate("reports.filter.approved", "Approved")}</option>
                             </select>
                         </label>
 
                         <div className="relative">
                             <input
                                 type="text"
-                                placeholder="Search by client, report ID, or value..."
+                                placeholder={translate("reports.searchPlaceholder", "Search by client, report ID, or value...")}
                                 value={searchTerm}
                                 onChange={(e) => {
                                     setSearchTerm(e.target.value);
@@ -2517,7 +3126,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         </div>
 
                         <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-                            Items per page:
+                            {translate("reports.itemsPerPageLabel", "Items per page:")}
                             <select
                                 value={itemsPerPage}
                                 onChange={(e) => {
@@ -2540,12 +3149,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             <RefreshCw className={`w-3.5 h-3.5 ${reportsLoading ? 'animate-spin' : ''}`} />
-                            {reportsLoading ? 'Refreshing...' : 'Refresh'}
+                        {reportsLoading
+                            ? translate("reports.refresh.refreshing", "Refreshing...")
+                            : translate("reports.refresh.refresh", "Refresh")}
                         </button>
 
                         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-700">
                             <span className="text-slate-600">
-                                Total: {filteredReports.length} report{filteredReports.length !== 1 ? 's' : ''}
+                                {translate("reports.totalCount", "Total: {{count}} report(s)", {
+                                    count: filteredReports.length,
+                                })}
                             </span>
                             {filteredReports.length > 0 && (
                                 <button
@@ -2553,7 +3166,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     onClick={handleToggleSelectAll}
                                     className="text-xs font-semibold text-blue-600 hover:text-blue-700"
                                 >
-                                    {allFilteredSelected ? "Clear all" : "Select all"}
+                                    {allFilteredSelected
+                                        ? translate("reports.clearAll", "Clear all")
+                                        : translate("reports.selectAll", "Select all")}
                                 </button>
                             )}
                         </div>
@@ -2563,19 +3178,25 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 {reportsLoading && reports.length === 0 && (
                     <div className="flex items-center gap-2 text-xs text-slate-600 py-2">
                         <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                        Loading reports...
+                        {translate("reports.loading", "Loading reports...")}
                     </div>
                 )}
 
                 {!reportsLoading && !reports.length && (
                     <div className="text-xs text-slate-600 py-2 text-center">
-                        No reports found. Upload Excel files to create reports.
+                        {translate(
+                            "reports.empty",
+                            "No reports found. Upload Excel files to create reports."
+                        )}
                     </div>
                 )}
 
                 {!reportsLoading && reports.length > 0 && !filteredReports.length && (
                     <div className="text-xs text-slate-600 py-2 text-center">
-                        No reports match the selected status.
+                        {translate(
+                            "reports.noMatch",
+                            "No reports match the selected status."
+                        )}
                     </div>
                 )}
 
@@ -2586,14 +3207,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 <table className="w-full text-xs text-slate-700">
                                     <thead className="bg-gradient-to-r from-blue-50 to-indigo-50 text-slate-800 border-b-2 border-blue-200">
                                         <tr>
-                                            <th className="px-2 py-2 text-left w-12 text-[10px] font-semibold uppercase tracking-wider">#</th>
+                                            <th className="px-2 py-2 text-left w-12 text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.index", "#")}
+                                            </th>
                                             <th className="px-2 py-2 text-left w-10 text-[10px] font-semibold uppercase tracking-wider"></th>
-                                            <th className="px-2 py-2 text-left w-32 text-[10px] font-semibold uppercase tracking-wider">Report ID</th>
-                                            <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Client</th>
-                                            <th className="px-2 py-2 text-left w-24 text-[10px] font-semibold uppercase tracking-wider">Final value</th>
-                                            <th className="px-2 py-2 text-left w-28 text-[10px] font-semibold uppercase tracking-wider">Status</th>
-                                            <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Action</th>
-                                            <th className="px-2 py-2 text-left w-16 text-[10px] font-semibold uppercase tracking-wider">Select</th>
+                                            <th className="px-2 py-2 text-left w-32 text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.reportId", "Report ID")}
+                                            </th>
+                                            <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.client", "Client")}
+                                            </th>
+                                            <th className="px-2 py-2 text-left w-24 text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.finalValue", "Final value")}
+                                            </th>
+                                            <th className="px-2 py-2 text-left w-28 text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.status", "Status")}
+                                            </th>
+                                            <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.action", "Action")}
+                                            </th>
+                                            <th className="px-2 py-2 text-left w-16 text-[10px] font-semibold uppercase tracking-wider">
+                                                {translate("reports.table.select", "Select")}
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2602,6 +3237,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             const recordId = getReportRecordId(report);
                                             const statusKey = getReportStatus(report);
                                             const assetList = Array.isArray(report.asset_data) ? report.asset_data : [];
+                                            const rawStatusLabel = reportStatusLabels[statusKey] || statusKey;
+                                            const localizedStatusLabel = translate(
+                                                `reports.status.${statusKey}`,
+                                                rawStatusLabel
+                                            );
                                             const isExpanded = recordId ? expandedReports.includes(recordId) : false;
                                             const reportBusy = recordId ? reportActionBusy[recordId] : null;
 
@@ -2617,7 +3257,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                 onClick={() => recordId && toggleReportExpansion(recordId)}
                                                                 disabled={!recordId}
                                                                 className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-slate-300 text-slate-700 hover:bg-blue-50 hover:border-blue-400 disabled:opacity-50 transition-colors"
-                                                                aria-label={isExpanded ? "Hide assets" : "Show assets"}
+                                                                aria-label={
+                                                                    isExpanded
+                                                                        ? translate("reports.actions.hideAssets", "Hide assets")
+                                                                        : translate("reports.actions.showAssets", "Show assets")
+                                                                }
                                                             >
                                                                 {isExpanded ? (
                                                                     <ChevronDown className="w-3.5 h-3.5" />
@@ -2627,8 +3271,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                             </button>
                                                         </td>
                                                         <td className="px-2 py-2">
-                                                            <div className="text-xs font-semibold text-slate-900 truncate" title={report.report_id || "Not submit"}>
-                                                                {report.report_id || "Not submit"}
+                                                            <div className="text-xs font-semibold text-slate-900 truncate" title={report.report_id || translate("reports.notSubmitted", "Not submit")}>
+                                                                {report.report_id || translate("reports.notSubmitted", "Not submit")}
                                                             </div>
                                                             <div className="text-[10px] text-slate-500 truncate" title={recordId || "-"}>
                                                                 {recordId || "-"}
@@ -2646,7 +3290,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                     className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${reportStatusClasses[statusKey] || "border-blue-200 bg-blue-50 text-blue-700"
                                                                         }`}
                                                                 >
-                                                                    {reportStatusLabels[statusKey] || statusKey}
+                                                                    {localizedStatusLabel}
                                                                 </span>
                                                                 {reportProgress[recordId] && (
                                                                     <div className="w-full space-y-1">
@@ -2730,13 +3374,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                         }}
                                                                         className="flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                                                                     >
-                                                                        <option value="">Actions</option>
-                                                                        <option value="check-status">Check status</option>
-                                                                        <option value="retry">retry incomplete assets </option>
-                                                                        <option value="delete">Delete</option>
-                                                                        <option value="edit">Edit</option>
-                                                                        <option value="send-approver">Send to Approver</option>
-                                                                        <option value="approve">Approve</option>
+                                                                        <option value="">{translate("reports.row.actions", "Actions")}</option>
+                                                                        <option value="check-status">{translate("reports.row.checkStatus", "Check status")}</option>
+                                                                        <option value="retry">{translate("reports.row.retryIncomplete", "retry incomplete assets")}</option>
+                                                                        <option value="delete">{translate("reports.row.delete", "Delete")}</option>
+                                                                        <option value="edit">{translate("reports.row.edit", "Edit")}</option>
+                                                                        <option value="send-approver">{translate("reports.row.sendToApprover", "Send to Approver")}</option>
+                                                                        <option value="approve">{translate("reports.row.approve", "Approve")}</option>
                                                                     </select>
                                                                     <button
                                                                         type="button"
@@ -2754,13 +3398,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                         disabled={!recordId || submitting || !!reportBusy || !actionDropdown[recordId]}
                                                                         className="px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-semibold transition-colors"
                                                                     >
-                                                                        Go
+                                                                        {translate("reports.row.go", "Go")}
                                                                     </button>
                                                                 </div>
                                                             </div>
                                                             {reportBusy && (
                                                                 <div className="text-[10px] text-blue-600 mt-0.5 font-medium">
-                                                                    Working...
+                                                                    {translate("reports.row.working", "Working...")}
                                                                 </div>
                                                             )}
                                                         </td>
@@ -2778,34 +3422,52 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                         <tr>
                                                             <td colSpan={8} className="bg-blue-50/20 border-t border-blue-200">
                                                                 <div className="p-2 space-y-2">
-                                                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                                                        <div className="text-xs text-slate-700 font-medium">
-                                                                            Assets: <span className="text-blue-600 font-semibold">{assetList.length}</span>
+                                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                            <div className="text-xs text-slate-700 font-medium">
+                                                                                {translate("reports.assets.label", "Assets")}
+                                                                                : <span className="text-blue-600 font-semibold">{assetList.length}</span>
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
                                                                     <div className="rounded-md border border-slate-200 overflow-hidden bg-white shadow-sm">
                                                                         <div className="max-h-48 overflow-y-auto">
                                                                             <table className="w-full text-xs text-slate-700">
                                                                                 <thead className="bg-slate-50 text-slate-800 border-b border-slate-200 sticky top-0">
                                                                                     <tr>
-                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">Macro ID</th>
-                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">Asset name</th>
-                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">Final value</th>
-                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">Sheet</th>
-                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">Status</th>
+                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                            {translate("reports.assets.table.macroId", "Macro ID")}
+                                                                                        </th>
+                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                            {translate("reports.assets.table.assetName", "Asset name")}
+                                                                                        </th>
+                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                            {translate("reports.assets.table.finalValue", "Final value")}
+                                                                                        </th>
+                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                            {translate("reports.assets.table.sheet", "Sheet")}
+                                                                                        </th>
+                                                                                        <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                            {translate("reports.assets.table.status", "Status")}
+                                                                                        </th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody>
                                                                                     {assetList.length === 0 ? (
                                                                                         <tr>
-                                                                                            <td colSpan={4} className="px-2 py-2 text-center text-slate-500 text-xs">
-                                                                                                No assets available for this report.
-                                                                                            </td>
+                                                                                        <td colSpan={4} className="px-2 py-2 text-center text-slate-500 text-xs">
+                                                                                            {translate(
+                                                                                                "reports.assets.none",
+                                                                                                "No assets available for this report."
+                                                                                            )}
+                                                                                        </td>
                                                                                         </tr>
                                                                                     ) : (
                                                                                         assetList.map((asset, assetIdx) => {
                                                                                             const assetStatus = isAssetComplete(asset) ? "complete" : "incomplete";
                                                                                             const statusLabel = assetStatus === "complete" ? "Complete" : "Incomplete";
+                                                                                            const localizedAssetStatusLabel = translate(
+                                                                                                `reports.assetStatus.${assetStatus}`,
+                                                                                                statusLabel
+                                                                                            );
                                                                                             const statusClass = assetStatus === "complete"
                                                                                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                                                                                 : "border-amber-200 bg-amber-50 text-amber-700";
@@ -2826,7 +3488,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                                                     </td>
                                                                                                     <td className="px-2 py-1.5">
                                                                                                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold ${statusClass}`}>
-                                                                                                            {statusLabel}
+                                                                                                            {localizedAssetStatusLabel}
                                                                                                         </span>
                                                                                                     </td>
                                                                                                 </tr>
@@ -2940,7 +3602,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             return (
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2">
                                     <div className="text-xs text-slate-600 font-medium">
-                                        Showing <span className="font-semibold text-slate-800">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="font-semibold text-slate-800">{Math.min(currentPage * itemsPerPage, filteredReports.length)}</span> of <span className="font-semibold text-slate-800">{filteredReports.length}</span> reports
+                                        {translate(
+                                            "reports.pagination.summary",
+                                            "Showing {{from}} to {{to}} of {{total}} reports",
+                                            {
+                                                from: ((currentPage - 1) * itemsPerPage) + 1,
+                                                to: Math.min(currentPage * itemsPerPage, filteredReports.length),
+                                                total: filteredReports.length,
+                                            }
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                         <button
@@ -2949,7 +3619,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             disabled={currentPage === 1}
                                             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                         >
-                                            Previous
+                                            {translate("reports.pagination.previous", "Previous")}
                                         </button>
                                         <div className="flex items-center gap-1">
                                             {pageNumbers.map((page, idx) => {
@@ -2981,7 +3651,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             disabled={currentPage === totalPages}
                                             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                         >
-                                            Next
+                                            {translate("reports.pagination.next", "Next")}
                                         </button>
                                     </div>
                                 </div>
@@ -2995,19 +3665,19 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             {editingReportId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 bg-slate-50">
-                            <h3 className="text-lg font-semibold text-slate-800">Edit Report</h3>
-                            <button
-                                type="button"
-                                onClick={() => setEditingReportId(null)}
-                                className="text-sm font-medium text-slate-600 hover:text-slate-900"
-                            >
-                                Close
-                            </button>
-                        </div>
+                            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 bg-slate-50">
+                                <h3 className="text-lg font-semibold text-slate-800">{translate("editModal.title", "Edit Report")}</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingReportId(null)}
+                                    className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                                >
+                                    {translate("editModal.close", "Close")}
+                                </button>
+                            </div>
                         <div className="p-4 space-y-4">
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Title</label>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">{translate("editModal.field.title", "Title")}</label>
                                 <input
                                     type="text"
                                     value={formData.title}
@@ -3016,7 +3686,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Client Name</label>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">{translate("editModal.field.clientName", "Client Name")}</label>
                                 <input
                                     type="text"
                                     value={formData.client_name}
@@ -3026,7 +3696,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             </div>
                             <div className="flex gap-4">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Telephone</label>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">{translate("editModal.field.telephone", "Telephone")}</label>
                                     <input
                                         type="text"
                                         value={formData.telephone}
@@ -3035,7 +3705,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">{translate("editModal.field.email", "Email")}</label>
                                     <input
                                         type="email"
                                         value={formData.email}
@@ -3050,7 +3720,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     onClick={() => setEditingReportId(null)}
                                     className="px-4 py-2 border border-slate-300 rounded-md text-sm text-slate-700 hover:bg-slate-50"
                                 >
-                                    Cancel
+                                    {translate("editModal.cancel", "Cancel")}
                                 </button>
                                 <button
                                     type="button"
@@ -3058,7 +3728,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     disabled={submitting}
                                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm"
                                 >
-                                    {submitting ? "Updating..." : "Update"}
+                                    {submitting
+                                        ? translate("editModal.updating", "Updating...")
+                                        : translate("editModal.update", "Update")}
                                 </button>
                             </div>
                         </div>
@@ -3090,16 +3762,27 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             <FileSpreadsheet className="h-4 w-4 text-cyan-200" />
                                         </span>
                                         <div className="flex items-center gap-2 text-[11px] font-semibold text-white/90 min-w-0">
-                                            <span className="uppercase tracking-[0.3em] text-cyan-200 text-[9px]">Excel Validation</span>
+                                            <span className="uppercase tracking-[0.3em] text-cyan-200 text-[9px]">
+                                                {translate("validationModal.title", "Excel Validation")}
+                                            </span>
                                             <span className="h-1 w-1 rounded-full bg-white/40" />
-                                            <span className="text-white">Validation Results</span>
+                                            <span className="text-white">
+                                                {translate("validationModal.subtitle", "Validation Results")}
+                                            </span>
                                             <span className="h-1 w-1 rounded-full bg-white/30" />
                                             <span className="text-blue-100 font-normal truncate">
-                                                Review issues before uploading to ensure smooth submission.
+                                                {translate(
+                                                    "validationModal.description",
+                                                    "Review issues before uploading to ensure smooth submission."
+                                                )}
                                             </span>
                                         </div>
                                         <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white">
-                                            Files: {validationItems.length}
+                                            {translate(
+                                                "validationModal.filesLabel",
+                                                "Files: {{count}}",
+                                                { count: validationItems.length }
+                                            )}
                                         </span>
                                         <span
                                             className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold ${
@@ -3108,11 +3791,23 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                     : "border-emerald-300/40 bg-emerald-500/20 text-emerald-100"
                                             }`}
                                         >
-                                            Issues: {totalValidationIssues}
+                                            {translate(
+                                                "validationModal.issuesLabel",
+                                                "Issues: {{count}}",
+                                                { count: totalValidationIssues }
+                                            )}
                                         </span>
                                         {wantsPdfUpload && (
                                             <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white">
-                                                PDFs: {pdfMatchInfo.unmatchedPdfs.length + pdfMatchInfo.excelsMissingPdf.length}
+                                                {translate(
+                                                    "validationModal.pdfsLabel",
+                                                    "PDFs: {{count}}",
+                                                    {
+                                                        count:
+                                                            pdfMatchInfo.unmatchedPdfs.length +
+                                                            pdfMatchInfo.excelsMissingPdf.length,
+                                                    }
+                                                )}
                                             </span>
                                         )}
                                     </div>
@@ -3122,7 +3817,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                         className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white hover:bg-white/20 whitespace-nowrap"
                                     >
                                         <X className="w-3.5 h-3.5" />
-                                        Close
+                                        {translate("validationModal.closeButton", "Close")}
                                     </button>
                                 </div>
                             </div>
@@ -3132,7 +3827,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     <div className="relative z-10 space-y-4">
                                     {!validationItems.length && !validationMessage && (
                                         <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-xs text-slate-600">
-                                            Upload Excel files to generate validation results.
+                                            {translate(
+                                                "validationModal.emptyMessage",
+                                                "Upload Excel files to generate validation results."
+                                            )}
                                         </div>
                                     )}
 
@@ -3141,10 +3839,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                         <div className="flex items-center gap-3">
                                             <CheckCircle2 className="w-6 h-6" />
                                             <div>
-                                                <div className="text-sm font-semibold">No issues detected</div>
+                                                <div className="text-sm font-semibold">
+                                                    {translate("validationModal.noIssues", "No issues detected")}
+                                                </div>
                                                 <p className="text-xs text-emerald-700/90">
-                                                        Your Excel files look clean. You can proceed with uploading and submission.
-                                                    </p>
+                                                    {translate(
+                                                        "validationModal.noIssuesDetails",
+                                                        "Your Excel files look clean. You can proceed with uploading and submission."
+                                                    )}
+                                                </p>
                                                 </div>
                                             </div>
                                         </div>
@@ -3153,10 +3856,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     {hasValidationIssues && (
                                         <div className="space-y-4">
                                             <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-rose-700 shadow-[0_10px_30px_rgba(248,113,113,0.12)]">
-                                            <div className="text-sm font-semibold">Action required</div>
+                                            <div className="text-sm font-semibold">
+                                                {translate("validationModal.actionRequired", "Action required")}
+                                            </div>
                                             <p className="text-xs text-rose-700/90">
-                                                Fix the items below and re-validate before uploading. Ensure required fields
-                                                are filled, inspection dates are valid, and asset usage IDs match the allowed list.
+                                                {translate(
+                                                    "validationModal.actionHint",
+                                                    "Fix the items below and re-validate before uploading. Ensure required fields are filled, inspection dates are valid, and asset usage IDs match the allowed list."
+                                                )}
                                             </p>
                                         </div>
 
@@ -3170,7 +3877,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                             : "text-slate-500 hover:text-slate-700"
                                                     }`}
                                                 >
-                                                    Report Info
+                                                    {translate("validationModal.tabs.reportInfo", "Report Info")}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -3181,7 +3888,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                             : "text-slate-500 hover:text-slate-700"
                                                     }`}
                                                 >
-                                                    Assets & PDFs
+                                                    {translate("validationModal.tabs.assetsAndPdfs", "Assets & PDFs")}
                                                 </button>
                                             </div>
 
@@ -3192,10 +3899,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                             <table className="min-w-full text-xs text-slate-700">
                                                                 <thead className="bg-slate-900 text-slate-100 sticky top-0">
                                                                     <tr>
-                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Excel</th>
-                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Field</th>
-                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Location</th>
-                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Details</th>
+                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                            {translate("validationModal.table.headers.excel", "Excel")}
+                                                                        </th>
+                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                            {translate("validationModal.table.headers.field", "Field")}
+                                                                        </th>
+                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                            {translate("validationModal.table.headers.location", "Location")}
+                                                                        </th>
+                                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                            {translate("validationModal.table.headers.details", "Details")}
+                                                                        </th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
@@ -3211,25 +3926,38 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                             </table>
                                                         </div>
                                                     </div>
-                                                ) : (
+                                                    ) : (
                                                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-                                                        No report info issues detected.
+                                                        {translate(
+                                                            "validationModal.reportInfo.noIssues",
+                                                            "No report info issues detected."
+                                                        )}
                                                     </div>
                                                 )
                                             ) : (
                                                 <div className="space-y-3">
                                                     {wantsPdfUpload && (pdfMatchInfo.excelsMissingPdf.length || pdfMatchInfo.unmatchedPdfs.length) && (
                                                         <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-700 text-xs">
-                                                            <div className="font-semibold">PDF matching issues</div>
+                                                        <div className="font-semibold">
+                                                            {translate("validationModal.pdfMatchingIssues.title", "PDF matching issues")}
+                                                        </div>
                                                             <div className="mt-1 space-y-1">
                                                                 {pdfMatchInfo.excelsMissingPdf.length > 0 && (
                                                                     <div>
-                                                                        Excel files missing PDF: {pdfMatchInfo.excelsMissingPdf.join(", ")}
+                                                                        {translate(
+                                                                            "validationModal.pdfMatchingIssues.missing",
+                                                                            "Excel files missing PDF: {{files}}",
+                                                                            { files: pdfMatchInfo.excelsMissingPdf.join(", ") }
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                                 {pdfMatchInfo.unmatchedPdfs.length > 0 && (
                                                                     <div>
-                                                                        Unmatched PDFs: {pdfMatchInfo.unmatchedPdfs.join(", ")}
+                                                                        {translate(
+                                                                            "validationModal.pdfMatchingIssues.unmatched",
+                                                                            "Unmatched PDFs: {{files}}",
+                                                                            { files: pdfMatchInfo.unmatchedPdfs.join(", ") }
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -3242,10 +3970,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                 <table className="min-w-full text-xs text-slate-700">
                                                                     <thead className="bg-slate-900 text-slate-100 sticky top-0">
                                                                         <tr>
-                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Excel</th>
-                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Field</th>
-                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Location</th>
-                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">Details</th>
+                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                {translate("validationModal.table.headers.excel", "Excel")}
+                                                                            </th>
+                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                {translate("validationModal.table.headers.field", "Field")}
+                                                                            </th>
+                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                {translate("validationModal.table.headers.location", "Location")}
+                                                                            </th>
+                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                                                                {translate("validationModal.table.headers.details", "Details")}
+                                                                            </th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
@@ -3263,7 +3999,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                         </div>
                                                     ) : (
                                                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-                                                            No asset issues detected.
+                                                            {translate(
+                                                                "validationModal.assetIssues.noIssues",
+                                                                "No asset issues detected."
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
@@ -3273,14 +4012,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 </div>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-slate-200 bg-white/90 px-5 py-3 text-[10px] text-slate-500">
-                                    <span>Close this panel after reviewing the issues.</span>
+                                    <span>{translate("validationModal.footerHint", "Close this panel after reviewing the issues.")}</span>
                                     <button
                                         type="button"
                                         onClick={() => setShowValidationModal(false)}
                                         className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
                                     >
                                         <X className="w-3.5 h-3.5" />
-                                        Close
+                                        {translate("validationModal.closeButton", "Close")}
                                     </button>
                                 </div>
                             </div>

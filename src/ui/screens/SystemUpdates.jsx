@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSession } from '../context/SessionContext';
 import { useSystemControl } from '../context/SystemControlContext';
-import { AlertTriangle, Download, Send, ShieldCheck, Bell, Settings } from 'lucide-react';
+import { AlertTriangle, Download, Send, ShieldCheck, Bell, Settings, DollarSign } from 'lucide-react';
 
 const typeLabels = {
     feature: 'Feature Addition',
@@ -58,6 +58,9 @@ const SystemUpdates = () => {
     const [guestAccess, setGuestAccess] = useState({ enabled: true, limit: 1 });
     const [guestSaving, setGuestSaving] = useState(false);
     const [guestAccessDirty, setGuestAccessDirty] = useState(false);
+    const [guestFreePoints, setGuestFreePoints] = useState(5);
+    const [guestFreePointsSaving, setGuestFreePointsSaving] = useState(false);
+    const [guestFreePointsDirty, setGuestFreePointsDirty] = useState(false);
     const [ramTabsPerGb, setRamTabsPerGb] = useState(5);
     const [ramTabsSaving, setRamTabsSaving] = useState(false);
     const [ramTabsDirty, setRamTabsDirty] = useState(false);
@@ -98,7 +101,13 @@ const SystemUpdates = () => {
         if (!ramTabsDirty) {
             setRamTabsPerGb(Number.isFinite(tabsValue) && tabsValue > 0 ? tabsValue : 5);
         }
-    }, [systemState, guestAccessDirty, ramTabsDirty]);
+        const pointsDigit = Number(systemState?.guestFreePoints);
+        if (!guestFreePointsDirty) {
+            setGuestFreePoints(
+                Number.isFinite(pointsDigit) && pointsDigit > 0 ? pointsDigit : guestAccessCap,
+            );
+        }
+    }, [systemState, guestAccessDirty, ramTabsDirty, guestFreePointsDirty, guestAccessCap]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -156,6 +165,36 @@ const SystemUpdates = () => {
         setGuestAccessDirty(false);
     };
 
+    const handleGuestPointsSave = async () => {
+        if (guestFreePointsSaving) return;
+        setGuestFreePointsSaving(true);
+        try {
+            const normalized = Math.max(1, Number(guestFreePoints) || 1);
+            await updateSystemState({
+                guestFreePoints: normalized,
+            });
+            setGuestFreePointsDirty(false);
+            await fetchSystemState();
+            alert('Guest free points updated.');
+        } catch (err) {
+            const message =
+                err?.response?.data?.message ||
+                err.message ||
+                'Failed to update guest free points';
+            alert(message);
+        } finally {
+            setGuestFreePointsSaving(false);
+        }
+    };
+
+    const handleGuestPointsReset = () => {
+        if (!systemState) return;
+        const pointsValue = Number(systemState.guestFreePoints);
+        const normalized = Number.isFinite(pointsValue) && pointsValue > 0 ? pointsValue : guestAccessCap;
+        setGuestFreePoints(normalized);
+        setGuestFreePointsDirty(false);
+    };
+
     const handleRamTabsSave = async () => {
         setRamTabsSaving(true);
         try {
@@ -192,6 +231,7 @@ const SystemUpdates = () => {
     };
 
     const isMandatory = latestUpdate?.rolloutType === 'mandatory';
+    const guestPointsDisplay = Number.isFinite(guestFreePoints) ? guestFreePoints : guestAccessCap;
 
     const handleDownload = async () => {
         if (!latestUpdate) return;
@@ -248,7 +288,7 @@ const SystemUpdates = () => {
                 <div className="relative overflow-hidden rounded-2xl border border-blue-900/20 bg-gradient-to-br from-slate-950 via-blue-950 to-blue-800 p-4 text-white shadow-lg">
                     <div className="absolute -right-16 -top-12 h-40 w-40 rounded-full bg-blue-400/25 blur-3xl" />
                     <div className="absolute -left-16 -bottom-16 h-40 w-40 rounded-full bg-cyan-200/20 blur-3xl" />
-                    <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    <div className="relative z-10 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                         <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-2">
                             <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.2em] text-blue-100/70">
                                 <span>Guest access</span>
@@ -283,6 +323,15 @@ const SystemUpdates = () => {
                         </div>
                         <p className="text-[13px] font-semibold">
                             {Math.max(1, Number(ramTabsPerGb) || 1)}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-2">
+                        <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.2em] text-blue-100/70">
+                            <span>Guest free points</span>
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+                        </div>
+                        <p className="text-[13px] font-semibold">
+                            {guestPointsDisplay} pts
                         </p>
                     </div>
                 </div>
@@ -447,11 +496,82 @@ const SystemUpdates = () => {
                                     Reset
                                 </button>
                             </div>
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-900/15 bg-white shadow-sm p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <div className="h-9 w-9 rounded-xl bg-amber-900/10 text-amber-900 flex items-center justify-center">
+                                <DollarSign className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-amber-900/50">Guest points</p>
+                                <p className="text-[13px] font-semibold text-amber-900">Free points for guest users</p>
+                            </div>
+                        </div>
+                        <div className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-semibold">
+                            {guestFreePoints} points
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-blue-900/15 bg-white shadow-sm p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-amber-900/15 bg-amber-50/60 px-3 py-2">
+                            <label className="block text-[10px] font-semibold text-amber-950 mb-0.5">Points per guest session</label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={guestFreePoints}
+                                onChange={(e) => {
+                                    setGuestFreePoints(e.target.value);
+                                    setGuestFreePointsDirty(true);
+                                }}
+                                className="w-full px-2 py-1.5 rounded-lg border border-amber-900/20 bg-white/90 text-[10px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-900/20"
+                            />
+                        </div>
+                        <div className="rounded-xl border border-amber-900/15 bg-white px-3 py-2">
+                            <div className="text-[9px] uppercase tracking-[0.2em] text-amber-900/50">Presets</div>
+                            <div className="mt-1 flex items-center gap-1.5">
+                                {[3, 5, 10].map((value) => (
+                                    <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() => {
+                                            setGuestFreePoints(value);
+                                            setGuestFreePointsDirty(true);
+                                        }}
+                                        className="flex-1 rounded-lg border border-amber-900/15 bg-white px-2 py-1 text-[10px] font-semibold text-amber-900 hover:bg-amber-50"
+                                    >
+                                        {value}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={handleGuestPointsSave}
+                                disabled={guestFreePointsSaving || !guestFreePointsDirty}
+                                className="inline-flex items-center justify-center rounded-md bg-amber-900 px-3 py-1.5 text-[10px] font-semibold text-white shadow-sm hover:bg-amber-800 disabled:opacity-60"
+                            >
+                                {guestFreePointsSaving ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleGuestPointsReset}
+                                className="inline-flex items-center justify-center rounded-md border border-amber-900/20 bg-white px-3 py-1.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-50"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                        Controls the number of points guests receive when they bootstrap a new Taqeem session.
+                    </p>
+                </div>
+
+                <div className="rounded-2xl border border-blue-900/15 bg-white shadow-sm p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                                 <div className="h-9 w-9 rounded-xl bg-blue-900/10 text-blue-900 flex items-center justify-center">
                                     <Settings className="w-4 h-4" />

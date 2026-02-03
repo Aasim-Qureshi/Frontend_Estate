@@ -167,8 +167,41 @@ const fetchMultiApproachReports = async (companyOfficeId = null) => {
     return response.data;
 };
 
-const updateMultiApproachReport = async (reportId, payload) => {
-    const response = await httpClient.patch(`/multi-approach/${reportId}`, payload);
+const updateMultiApproachReport = async (reportId, payload = {}, options = {}) => {
+    const { pdfFile, useTemporaryPdf } = options;
+    let requestBody = payload;
+    const headers = {};
+
+    const shouldUseFormData = Boolean(pdfFile || useTemporaryPdf);
+    if (shouldUseFormData) {
+        const formData = new FormData();
+
+        Object.entries(payload || {}).forEach(([key, value]) => {
+            if (value === undefined || value === null) return;
+            if (key === "valuers" || key === "report_users" || typeof value === "object") {
+                formData.append(key, JSON.stringify(value));
+            } else {
+                formData.append(key, value);
+            }
+        });
+
+        if (pdfFile) {
+            formData.append("pdf", pdfFile);
+        }
+
+        if (useTemporaryPdf) {
+            formData.append("useTemporaryPdf", "true");
+        }
+
+        requestBody = formData;
+        headers["Content-Type"] = "multipart/form-data";
+    }
+
+    const response = await httpClient.patch(
+        `/multi-approach/${reportId}`,
+        requestBody,
+        { headers }
+    );
     return response.data;
 };
 

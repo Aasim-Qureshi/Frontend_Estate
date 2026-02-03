@@ -195,6 +195,7 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
 
         record_id = str(record["_id"])
         asset_count = len(record.get("asset_data", []))
+        form_id = None
 
         # Calculate progress increments
         # 10% for report creation, 5% for asset creation, 85% for asset filling
@@ -500,7 +501,7 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
             created_report_id=form_id,
         )
 
-        return {"status": "SUCCESS", "results": results}
+        return {"status": "SUCCESS", "reportId": form_id, "results": results}
 
     except Exception as e:
         tb = traceback.format_exc()
@@ -765,6 +766,7 @@ async def create_reports_by_batch(browser, batch_id, tabs_num=3):
             "failureCount": 0,
             "records": [],
         }
+        created_report_ids = []
 
         # Emit initial progress
         emit_batch_progress(
@@ -798,6 +800,9 @@ async def create_reports_by_batch(browser, batch_id, tabs_num=3):
 
                 if result.get("status") == "SUCCESS":
                     batch_results["successCount"] += 1
+                    report_id = result.get("reportId") or result.get("report_id")
+                    if report_id:
+                        created_report_ids.append(str(report_id))
                     emit_batch_progress(
                         batch_id,
                         index + 1,
@@ -810,9 +815,8 @@ async def create_reports_by_batch(browser, batch_id, tabs_num=3):
                 else:
                     batch_results["failureCount"] += 1
 
-                batch_results["records"].append(
-                    {"recordId": record_id_str, "result": result}
-                )
+                record_entry = {"recordId": record_id_str, "result": result}
+                batch_results["records"].append(record_entry)
 
             except Exception as record_err:
                 batch_results["failureCount"] += 1
@@ -825,6 +829,7 @@ async def create_reports_by_batch(browser, batch_id, tabs_num=3):
                     }
                 )
 
+        batch_results["reportIds"] = list(dict.fromkeys(created_report_ids))
         batch_results["status"] = (
             "SUCCESS" if batch_results["failureCount"] == 0 else "PARTIAL_SUCCESS"
         )

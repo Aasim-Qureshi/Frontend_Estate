@@ -21,7 +21,11 @@ import {
   FileIcon,
 } from "lucide-react";
 import ReportsTable from "../components/ReportsTable";
+import DeductionNotification from "../components/DeductionNotification";
 import { downloadTemplateFile } from "../utils/templateDownload";
+
+const UPLOAD_ASSETS_PAGE_NAME = "Upload Assets";
+const UPLOAD_ASSETS_PAGE_SOURCE = "upload-assets";
 
 const UploadAssets = ({ onViewChange }) => {
   const [excelFileName, setExcelFileName] = useState(null);
@@ -469,26 +473,8 @@ const UploadAssets = ({ onViewChange }) => {
           const completedAssets = flowResult?.summary?.complete_macros;
           console.log("[UploadAssets] Completed assets:", completedAssets);
 
-          if (completedAssets && completedAssets > 0) {
-            try {
-              await window.electronAPI.apiRequest(
-                "PATCH",
-                `/api/packages/deduct`,
-                { amount: completedAssets },
-                { Authorization: `Bearer ${authToken}` },
-              );
-              console.log("[UploadAssets] Deducted assets:", completedAssets);
-            } catch (deductError) {
-              console.error(
-                "[UploadAssets] Error deducting assets:",
-                deductError,
-              );
-              // Don't throw here - deduction failure shouldn't fail the whole upload
-            }
-          }
-
           // Build success message
-          const successMessage = `✅ Successfully created report "${reportId}" with ${previewData.length} assets`;
+          const successMessage = `Successfully created report "${reportId}" with ${previewData.length} assets`;
 
           // Add common fields info if any were set
           const commonFieldsInfo = [];
@@ -527,6 +513,21 @@ const UploadAssets = ({ onViewChange }) => {
         // Auth options
         {
           requiredPoints: previewData.length || 0,
+              deductPoints: (result) => {
+                const completed = Number(result?.completedAssets) || previewData.length || 0;
+                const ids = result?.reportId ? [result.reportId].filter(Boolean) : [];
+                return {
+                  amount: completed,
+                  reportIds: ids,
+                  reportId: result?.reportId,
+                  recordId: result?.recordId || null,
+                  batchId: result?.batchId || null,
+                  source: "upload-assets",
+                  pageName: UPLOAD_ASSETS_PAGE_NAME,
+                  pageSource: UPLOAD_ASSETS_PAGE_SOURCE,
+                  assetCount: completed,
+                };
+              },
           showInsufficientPointsModal: () =>
             setShowInsufficientPointsModal(true),
           onViewChange,
@@ -955,6 +956,13 @@ const UploadAssets = ({ onViewChange }) => {
           </div>
         </div>
       )}
+
+      <DeductionNotification
+        source="upload-assets"
+        defaultPageName={UPLOAD_ASSETS_PAGE_NAME}
+        defaultPageSource={UPLOAD_ASSETS_PAGE_SOURCE}
+        onViewChange={onViewChange}
+      />
 
       {/* File Selection Section - Top */}
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3">

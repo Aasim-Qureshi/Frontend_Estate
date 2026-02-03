@@ -154,7 +154,7 @@
         },
         "settings": "Settings",
         "tickets": "Contact technical support",
-        "systemOnline": "System Online"     
+        "systemOnline": "System Online"
     },
     "navigation": {
         "apps": "Apps",
@@ -272,12 +272,9 @@
                 "label": "Delete Assets / Reports",
                 "description": "Delete reports and related assets safely."
             },
-             "my-reports": {
+            "my-reports": {
                 "label": "My Reports",
-
                 "description": "Find your All Reports At One Place."
-
-
             },
             "delete-assets": {
                 "label": "Change / Check Status",
@@ -350,10 +347,8 @@
             "admin-packages": "Packages",
             "valuation-system": "Valuation System",
             "word-copy": "Word Copy",
-
             "delete-report": "Delete Assets / Reports",
             "my-reports": "My Reports",
-
             "system-status": "System Operating Status",
             "system-updates": "System Updates",
             "statics": "Statics",
@@ -573,6 +568,247 @@
             "previewImages": "Processed {{processed}} preview images (skipped {{skipped}}).",
             "registrationCerts": "Processed {{processed}} registration certificates (skipped {{skipped}}).",
             "imagesDir": "Images folder"
+        }
+    },
+    "submitReportsQuickly": {
+        "filePicker": {
+            "chooseExcel": "Choose Excel file",
+            "selectedFiles": "{{count}} file(s) selected",
+            "browse": "Browse",
+            "uploadPdfs": "Upload PDFs",
+            "selectedPdfs": "{{count}} file(s) selected",
+            "choosePdfFiles": "Choose PDF files",
+            "willUseDummyPdf": "Will use {{placeholder}}",
+            "downloading": "Downloading...",
+            "exportTemplate": "Export Excel Template",
+            "reset": "Reset"
+        },
+        "actions": {
+            "uploading": "Uploading...",
+            "submitting": "Submitting...",
+            "storeAndSubmitNow": "Store and Submit Now",
+            "storeAndSubmitLater": "Store and Submit Later"
+        },
+        "reports": {
+            "title": "Reports",
+            "bulkActions": "Bulk Actions",
+            "bulk": {
+                "uploadAndSubmit": "Upload & Submit to Taqeem",
+                "delete": "Delete",
+                "sendToApprover": "Send to Approver",
+                "approve": "Approve"
+            },
+            "goButton": "Go",
+            "filter": {
+                "label": "Filter:",
+                "all": "All statuses",
+                "new": "New",
+                "incomplete": "Incomplete",
+                "sent": "Sent",
+                "complete": "Complete",
+                "approved": "Approved"
+            },
+            "searchPlaceholder": "Search by client, report ID, or value...",
+            "itemsPerPageLabel": "Items per page:",
+            "totalCount": "Total: {{count}} report(s)",
+            "clearAll": "Clear all",
+            "selectAll": "Select all",
+            "loading": "Loading reports...",
+            "empty": "No reports found. Upload Excel files to create reports.",
+            "noMatch": "No reports match the selected status.",
+            "table": {
+                "index": "#",
+                "reportId": "Report ID",
+                "client": "Client",
+                "finalValue": "Final value",
+                "status": "Status",
+                "action": "Action",
+                "select": "Select"
+            },
+            "actions": {
+                "hideAssets": "Hide assets",
+                "showAssets": "Show assets"
+            },
+            "notSubmitted": "Not submit",
+            "row": {
+                "actions": "Actions",
+                "checkStatus": "Check status",
+                "retryIncomplete": "Retry incomplete assets",
+                "delete": "Delete",
+                "edit": "Edit",
+                "sendToApprover": "Send to Approver",
+                "approve": "Approve",
+                "go": "Go",
+                "working": "Working..."
+            },
+            "assets": {
+                "label": "Assets",
+                "table": {
+                    "macroId": "Macro ID",
+                    "assetName": "Asset name",
+                    "finalValue": "Final value",
+                    "sheet": "Sheet",
+                    "status": "Status"
+                },
+                "none": "No assets available for this report."
+            },
+            "pagination": {
+                "summary": "Showing {{from}} to {{to}} of {{total}} reports",
+                "previous": "Previous",
+                "next": "Next"
+            }
+        },
+        "validationModal": {
+            "title": "Excel Validation",
+            "subtitle": "Validation Results",
+            "description": "Review issues before uploading to ensure smooth submission.",
+            "filesLabel": "Files: {{count}}",
+            "issuesLabel": "Issues: {{count}}",
+            "pdfsLabel": "PDFs: {{count}}",
+            "closeButton": "Close",
+            "emptyMessage": "Upload Excel files to generate validation results.",
+            "noIssues": "No issues detected",
+            "noIssuesDetails": "Your Excel files look clean. You can proceed with uploading and submission.",
+            "actionRequired": "Action required",
+            "actionHint": "Fix the items below and re-validate before uploading. Ensure required fields are filled, inspection dates are valid, and asset usage IDs match the allowed list.",
+            "tabs": {
+                "reportInfo": "Report Info",
+                "assetsAndPdfs": "Assets & PDFs"
+            },
+            "table": {
+                "headers": {
+                    "excel": "Excel",
+                    "field": "Field",
+                    "location": "Location",
+                    "details": "Details"
+                }
+            },
+            "reportInfo": {
+                "noIssues": "No report info issues detected."
+            },
+            "pdfMatchingIssues": {
+                "title": "PDF matching issues",
+                "missing": "Excel files missing PDF: {{files}}",
+                "unmatched": "Unmatched PDFs: {{files}}"
+            },
+            "assetIssues": {
+                "noIssues": "No asset issues detected."
+            },
+            "footerHint": "Close this panel after reviewing the issues.",
+            "panelHeader": "Validation on Excel sheet"
+        },
+        "validation": {
+            "status": {
+                "validating": "Validating...",
+                "uploadPrompt": "Upload an Excel file to validate.",
+                "hasIssues": "You have issues in excel sheet.",
+                "clean": "No issues, you can upload it now.",
+                "pending": "Validation pending."
+            },
+            "message": {
+                "validWithPdfs": "All Excel files look valid and PDFs are matched. You can Upload & Create Reports.",
+                "validWithoutPdfs": "All Excel files look valid. PDFs will use {{placeholder}}. You can Upload & Create Reports.",
+                "issuesFound": "Validation found issues. Fix them to enable Upload & Create Reports.",
+                "validationFailed": "Failed to validate Excel files."
+            },
+            "issues": {
+                "missingColumn": "Missing value for column {{column}}.",
+                "missingAssetName": "Missing asset_name.",
+                "missingAssetUsageId": "Missing asset_usage_id.",
+                "invalidAssetUsageId": "asset_usage_id must be one of: {{allowed}}",
+                "missingFinalValue": "Missing final_value.",
+                "finalValueWholeNumber": "final_value must be a whole number (no decimals).",
+                "finalValuePositive": "final_value must be greater than 0.",
+                "missingInspectionDate": "Missing inspection_date.",
+                "invalidInspectionDate": "inspection_date is not a valid date.",
+                "inspectionDateFuture": "inspection_date cannot be in the future.",
+                "missingRegion": "Missing region.",
+                "missingCity": "Missing city.",
+                "missingAssetUsageForAsset": "Missing asset_usage_id for asset {{asset}}",
+                "invalidAssetUsageForAsset": "asset_usage_id must be one of: {{allowed}} for asset {{asset}}",
+                "costMissingFinalValue": "Missing final_value for asset {{asset}}.",
+                "costFinalValueInteger": "final_value must be a whole number (no decimals) for asset {{asset}}.",
+                "costFinalValuePositive": "final_value must be greater than 0 for asset {{asset}}.",
+                "marketMissingFinalValue": "Missing final_value for asset {{asset}}.",
+                "marketFinalValueInteger": "final_value must be a whole number (no decimals) for asset {{asset}}.",
+                "marketFinalValuePositive": "final_value must be greater than 0 for asset {{asset}}.",
+                "missingSheets": "Excel must contain at least one of 'market' or 'cost' sheets.",
+                "noAssetsFound": "No assets found in market or cost sheets.",
+                "noMatchingPdf": "No matching PDF found for Excel {{file}} (match by filename).",
+                "pdfSizeExceed": "PDF {{file}} exceeds 20 MB limit ({{size}} MB)."
+            },
+            "panelHeader": "Validation on Excel sheet"
+        },
+        "messages": {
+            "error": {
+                "pdfSizeLimit": "PDF file(s) exceed 20 MB limit: {{files}}",
+                "badRequest": "Bad request. Please check the selected files and try again.",
+                "serverProcessing": "Server error while processing your files. Please try again or contact support.",
+                "network": "Network error. Make sure the backend server is running and reachable.",
+                "templateDownload": "Failed to download Excel template. Please try again.",
+                "templateNotFound": "Template file not found. Please contact administrator to ensure the template file exists in the public folder.",
+                "loadReports": "Failed to load reports.",
+                "selectExcelFile": "Please select at least one Excel file",
+                "selectPdfFile": "Please select at least one PDF file or disable PDF upload.",
+                "pdfNamesMismatch": "PDF filenames must match the Excel filenames.",
+                "validationIssues": "Please fix validation issues before uploading.",
+                "uploadFailed": "Upload failed",
+                "pauseProcess": "Failed to pause process.",
+                "resumeProcess": "Failed to resume process.",
+                "stopProcess": "Failed to stop process.",
+                "reportNotFound": "Report not found.",
+                "reportMustBeSubmitted": "Report must be submitted to Taqeem first (must have a report_id).",
+                "noReportsWithTaqeemId": "No reports with Taqeem report IDs found. Reports must be submitted to Taqeem first.",
+                "taqeemLoginRequired": "Taqeem login required. Finish login and choose a company to continue.",
+                "deleteReport": "Failed to delete report.",
+                "updateReport": "Failed to update report.",
+                "selectReport": "Please select at least one report.",
+                "queueStopped": "Stopped queue: report id was not created.",
+                "submitTaqeem": "Failed to submit report to Taqeem.",
+                "reportNeedsTaqeemId": "Report must have a Taqeem report_id to check status.",
+                "authFailed": "Authentication failed for full check",
+                "fullCheck": "Failed to perform full check",
+                "retryAssetSubmission": "Failed to retry asset submission.",
+                "sendReportToApprover": "Failed to send report to approver.",
+                "approveReport": "Failed to approve report.",
+                "desktopIntegration": "Desktop integration unavailable. Restart the app.",
+                "missingReportId": "Missing report record id."
+            },
+            "success": {
+                "uploadingFiles": "Uploading files to server...",
+                "filesUploadedSubmitting": "Files uploaded successfully. Inserted {{count}} report(s). Now submitting to Taqeem...",
+                "filesUploaded": "Files uploaded successfully. Inserted {{count}} report(s).",
+                "templateDownloaded": "Excel template downloaded successfully.",
+                "selectCompany": "Select a company to continue.",
+                "resumingTaqeem": "Resuming Taqeem submission...",
+                "submittingTaqeem": "Submitting report to Taqeem...",
+                "reportSubmitted": "Report submitted to Taqeem successfully.",
+                "taqeemLoginOff": "Taqeem login is off. Complete login in the opened browser window to continue.",
+                "deletingReport": "Deleting report {{reportId}}...",
+                "reportDeleted": "Report deleted successfully.",
+                "reportUpdated": "Report updated successfully.",
+                "reportsSubmittedStatus": "All {{count}} report(s) submitted. Check progress bars for status.",
+                "sendingToApprover": "Sending {{count}} report(s) to approver...",
+                "sentToApprover": "Successfully sent {{count}} report(s) to approver.",
+                "approvingReports": "Approving {{count}} report(s)...",
+                "approvedReports": "Successfully approved {{count}} report(s).",
+                "retryCompleted": "Retry completed.",
+                "sendingReportToApprover": "Sending report to approver...",
+                "reportSentToApprover": "Report sent to approver successfully.",
+                "approvingReport": "Approving report...",
+                "reportApproved": "Report approved successfully.",
+                "pausingSubmission": "Pausing report submission...",
+                "reportPaused": "Report submission paused.",
+                "resumingSubmission": "Resuming report submission...",
+                "reportResumed": "Report submission resumed.",
+                "stoppingSubmission": "Stopping report submission...",
+                "reportStopped": "Report submission stopped."
+            }
+        },
+        "confirm": {
+            "stopSubmission": "Are you sure you want to stop this report submission? Progress will be lost.",
+            "deleteReport": "Are you sure you want to delete this report?",
+            "deleteMultipleReports": "Are you sure you want to delete {{count}} report(s)?"
         }
     },
     "systemControl": {

@@ -51,6 +51,7 @@ const NotificationBell = ({ onViewChange, mode = 'unread' }) => {
         markAllRead
     } = useNotifications();
     const [open, setOpen] = useState(false);
+    const [expandedNotifications, setExpandedNotifications] = useState(new Set());
 
     const isInbox = mode === 'all';
     const listLimit = isInbox ? 50 : 20;
@@ -75,6 +76,18 @@ const NotificationBell = ({ onViewChange, mode = 'unread' }) => {
         }
     };
 
+    const toggleNotificationExpansion = (id) => {
+        setExpandedNotifications((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
     useEffect(() => {
         if (!open) return;
         const handleEsc = (event) => {
@@ -89,6 +102,21 @@ const NotificationBell = ({ onViewChange, mode = 'unread' }) => {
     const openRelatedPage = (item) => {
         if (!item) return;
         const targetView = item.data?.view;
+        const target = item.data?.target;
+        if (target === "deduction-history") {
+            localStorage.setItem(
+                "notification-target",
+                JSON.stringify({
+                    type: "deduction-history",
+                    deductionId: item.data?.deductionId || null,
+                })
+            );
+            if (onViewChange) {
+                onViewChange(targetView || "packages");
+            }
+            setOpen(false);
+            return;
+        }
         const ticketId = item.data?.ticketId;
         const requestId = item.data?.requestId;
         const reportId = item.data?.reportId;
@@ -243,12 +271,33 @@ const NotificationBell = ({ onViewChange, mode = 'unread' }) => {
                                                         </div>
                                                         {!item.readAt && <span className="h-2 w-2 rounded-full bg-rose-500" />}
                                                     </div>
-                                                    <div className="mt-1 line-clamp-2 text-[10px] text-slate-300">
-                                                        {item.message || t('layout.notifications.untitled')}
-                                                    </div>
-                                                    <div className="mt-1 text-[8px] text-slate-500">
-                                                        {formatTime(item.createdAt)}
-                                                    </div>
+                                                        {(() => {
+                                                            const isExpanded = expandedNotifications.has(item._id);
+                                                            return (
+                                                                <>
+                                                                    <div
+                                                                        className={`mt-1 text-[10px] text-slate-300 ${
+                                                                            isExpanded ? "" : "line-clamp-2"
+                                                                        }`}
+                                                                    >
+                                                                        {item.message || t("layout.notifications.untitled")}
+                                                                    </div>
+                                                                    <div className="mt-1 flex items-center justify-between text-[8px] text-slate-500">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                toggleNotificationExpansion(item._id);
+                                                                            }}
+                                                                            className="text-[9px] text-slate-400 hover:text-slate-200"
+                                                                        >
+                                                                            {isExpanded ? "Show less" : "Show more"}
+                                                                        </button>
+                                                                        <span>{formatTime(item.createdAt)}</span>
+                                                                    </div>
+                                                                </>
+                                                            );
+                                                        })()}
                                                 </div>
                                             </div>
                                         </button>

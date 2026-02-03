@@ -5,6 +5,7 @@ import { useNavStatus } from "../context/NavStatusContext";
 import { useValueNav } from "../context/ValueNavContext";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 import { useSystemControl } from "../context/SystemControlContext";
+import { deductPoints } from "../utils/points";
 
 export const useAuthAction = () => {
   const { token, login, isGuest } = useSession();
@@ -19,6 +20,7 @@ export const useAuthAction = () => {
     async (action, actionParams = {}, options = {}) => {
       const {
         requiredPoints = 1,
+        deductPoints: deductPointsOption = 0,
         showInsufficientPointsModal = () => {},
         onAuthSuccess = () => {},
         onAuthFailure = () => {},
@@ -111,7 +113,34 @@ export const useAuthAction = () => {
         }
 
         console.log("[useAuthAction] executing action");
-        return await action(actionParams);
+        const actionResult = await action(actionParams);
+
+        let deductionAmount = 0;
+        let deductionMeta = {};
+        const deductionValue =
+          typeof deductPointsOption === "function"
+            ? deductPointsOption(actionResult)
+            : deductPointsOption;
+
+        if (deductionValue !== null && deductionValue !== undefined) {
+          if (typeof deductionValue === "object") {
+            deductionAmount = Number(deductionValue.amount) || 0;
+            deductionMeta = { ...deductionValue };
+            delete deductionMeta.amount;
+          } else {
+            deductionAmount = Number(deductionValue) || 0;
+          }
+        }
+
+        if (activeToken && Number.isFinite(deductionAmount) && deductionAmount > 0) {
+          try {
+            await deductPoints(activeToken, deductionAmount, deductionMeta);
+          } catch (deductErr) {
+            console.error("[useAuthAction] point deduction failed", deductErr);
+          }
+        }
+
+        return actionResult;
       } catch (error) {
         console.error("[useAuthAction] error during execution", error);
         setAuthError(error?.message || String(error));

@@ -15,7 +15,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { createManualMultiApproachReport } from "../../api/report";
+import { deductPoints } from "../utils/points";
+import { useSession } from "../context/SessionContext";
 import { useValueNav } from "../context/ValueNavContext";
+const MANUAL_MULTI_PAGE_NAME = "Manual Multi Report";
+const MANUAL_MULTI_PAGE_SOURCE = "manual-report";
 const {
   contributionOptions,
   currencyOptions,
@@ -189,6 +193,7 @@ const InfoBanner = ({ tone = "info", message }) => {
 };
 const ManualMultiReport = () => {
   const { selectedCompany } = useValueNav();
+  const { token } = useSession();
   const selectedCompanyOfficeId = useMemo(() => {
     const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
     return officeId ? String(officeId) : "";
@@ -524,6 +529,26 @@ const validateAssets = (requireAssets = true) => {
       return prev;
     });
   }, [assetsTotal]);
+
+  useEffect(() => {
+    const handler = (event) => {
+      const detail = event?.detail;
+      if (!detail || detail.source !== "manual-report") return;
+      const ids = Array.isArray(detail.reportIds)
+        ? detail.reportIds
+        : detail.reportId
+          ? [detail.reportId]
+          : [];
+      if (ids.length === 0) return;
+      const idLabel = ids.length === 1 ? ids[0] : ids.join(", ");
+      setStatus({
+        type: "success",
+        message: `Deducted ${detail.deducted || 0} point${(detail.deducted || 0) === 1 ? "" : "s"} for report${ids.length > 1 ? "s" : ""} ${idLabel}.`,
+      });
+    };
+    window.addEventListener("points-updated", handler);
+    return () => window.removeEventListener("points-updated", handler);
+  }, [setStatus]);
   const validateReportDetails = () => {
     const nextErrors = {};
     const requiredFields = [
@@ -749,27 +774,53 @@ const validateAssets = (requireAssets = true) => {
       return;
     }
 
-    try {
-      setSending(true);
-      setAutomationStatus(null);
-      if (!window?.electronAPI?.createReportsByBatch) {
-        throw new Error(
-          "مكتبة Electron غير متاحة. تأكد أن التطبيق يعمل داخل الحاوية الصحيحة."
+      try {
+        setSending(true);
+        setAutomationStatus(null);
+        if (!window?.electronAPI?.createReportsByBatch) {
+          throw new Error(
+            "مكتبة Electron غير متاحة. تأكد أن التطبيق يعمل داخل الحاوية الصحيحة."
+          );
+        }
+        const result = await window.electronAPI.createReportsByBatch(
+          createdBatchId,
+          Number(tabsNum)
         );
-      }
-      const result = await window.electronAPI.createReportsByBatch(
-        createdBatchId,
-        Number(tabsNum)
-      );
-      if (result?.status === "SUCCESS") {
-        setAutomationStatus({
-          type: "success",
-          message:
-            "تم إرسال التقرير إلى تقييم باستخدام نفس لوجيك Upload Report Elrajhi.",
-        });
-      } else {
-        throw new Error(result?.error || "فشل رفع التقرير إلى تقييم.");
-      }
+        if (result?.status === "SUCCESS") {
+          setAutomationStatus({
+            type: "success",
+            message:
+              "تم إرسال التقرير إلى تقييم باستخدام نفس لوجيك Upload Report Elrajhi.",
+          });
+          const reportIds = createdReports
+            .map((report) => report.report_id)
+            .filter(Boolean);
+          const assetCountFromReports = createdReports.reduce(
+            (sum, report) =>
+              sum +
+              (Array.isArray(report.asset_data) ? report.asset_data.length : 0),
+            0
+          );
+          const deductionAmount = assetCountFromReports || assets.length;
+                if (token && deductionAmount > 0) {
+                  try {
+                    await deductPoints(token, deductionAmount, {
+                      reportIds,
+                      reportId: reportIds[0] || null,
+                      recordId: createdBatchId,
+                      batchId: createdBatchId,
+                      source: "manual-report",
+                      pageName: MANUAL_MULTI_PAGE_NAME,
+                      pageSource: MANUAL_MULTI_PAGE_SOURCE,
+                      assetCount: deductionAmount,
+                    });
+            } catch (deductErr) {
+              console.error("[ManualMultiReport] Failed to deduct points:", deductErr);
+            }
+          }
+        } else {
+          throw new Error(result?.error || "فشل رفع التقرير إلى تقييم.");
+        }
     } catch (err) {
       setAutomationStatus({
         type: "error",

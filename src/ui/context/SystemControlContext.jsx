@@ -21,6 +21,7 @@ const DEFAULT_STATE = {
     allowedModules: [],
     guestAccessEnabled: true,
     guestAccessLimit: 1,
+    guestFreePoints: 5,
     ramTabsPerGb: 5
 };
 

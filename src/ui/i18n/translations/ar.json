@@ -562,6 +562,247 @@
             "imagesDir": "مجلد الصور"
         }
     },
+    "submitReportsQuickly": {
+        "filePicker": {
+            "chooseExcel": "اختر ملف إكسل",
+            "selectedFiles": "تم تحديد {{count}} ملفًا",
+            "browse": "استعراض",
+            "uploadPdfs": "رفع ملفات PDF",
+            "selectedPdfs": "تم تحديد {{count}} ملف PDF",
+            "choosePdfFiles": "اختر ملفات PDF",
+            "willUseDummyPdf": "سيتم استخدام {{placeholder}}",
+            "downloading": "جاري التنزيل...",
+            "exportTemplate": "تصدير قالب إكسل",
+            "reset": "إعادة تعيين"
+        },
+        "actions": {
+            "uploading": "جاري الرفع...",
+            "submitting": "جاري الإرسال...",
+            "storeAndSubmitNow": "احفظ وارسل الي الهيئه الآن",
+            "storeAndSubmitLater": "احفظ وارسل الي الهيئه لاحقًا"
+        },
+        "reports": {
+            "title": "التقارير",
+            "bulkActions": "--إجراءات لأكثر من تقرير--",
+            "bulk": {
+                "uploadAndSubmit": "رفع وإرسال إلى تقييم",
+                "delete": "حذف",
+                "sendToApprover": "إرسال إلى المُعتمد",
+                "approve": "اعتماد التقرير"
+            },
+            "goButton": "نفذ",
+            "filter": {
+                "label": "تصفية:",
+                "all": "كل الحالات",
+                "new": "جديدة",
+                "incomplete": "غير مكتملة",
+                "sent": "مرسلة",
+                "complete": "مكتملة",
+                "approved": "معتمدة"
+            },
+            "searchPlaceholder": "ابحث حسب العميل أو رقم التقرير أو القيمة...",
+            "itemsPerPageLabel": "عدد البنود في كل صفحة:",
+            "totalCount": "الإجمالي: {{count}} تقريرًا",
+            "clearAll": "مسح الكل",
+            "selectAll": "تحديد الكل",
+            "loading": "جارٍ تحميل التقارير...",
+            "empty": "لم يتم العثور على تقارير. ارفع ملفات إكسل لإنشاء تقارير.",
+            "noMatch": "لا توجد تقارير تطابق الحالة المحددة.",
+            "table": {
+                "index": "#",
+                "reportId": "رقم التقرير",
+                "client": "العميل",
+                "finalValue": "القيمة النهائية",
+                "status": "الحالة",
+                "action": "الإجراء",
+                "select": "تحديد"
+            },
+            "actions": {
+                "hideAssets": "إخفاء الأصول",
+                "showAssets": "إظهار الأصول"
+            },
+            "notSubmitted": "غير مُرسل",
+            "row": {
+                "actions": "الإجراءات",
+                "checkStatus": "فحص الحالة",
+                "retryIncomplete": "إعادة رفع الأصول غير المكتملة",
+                "delete": "حذف",
+                "edit": "تعديل",
+                "sendToApprover": "إرسال إلى المُعتمد",
+                "approve": "اعتماد التقرير",
+                "go": "نفذ",
+                "working": "جاري المعالجة..."
+            },
+            "assets": {
+                "label": "الأصول",
+                "table": {
+                    "macroId": "معرّف الماكرو",
+                    "assetName": "اسم الأصل",
+                    "finalValue": "القيمة النهائية",
+                    "sheet": "الورقة",
+                    "status": "الحالة"
+                },
+                "none": "لا توجد أصول لهذا التقرير."
+            },
+            "pagination": {
+                "summary": "عرض {{from}} إلى {{to}} من أصل {{total}} تقريرًا",
+                "previous": "السابق",
+                "next": "التالي"
+            }
+        },
+        "validationModal": {
+            "title": "التحقق من إكسل",
+            "subtitle": "نتائج التحقق",
+            "description": "راجع المشكلات قبل الرفع لضمان تقديم سلس.",
+            "filesLabel": "الملفات: {{count}}",
+            "issuesLabel": "المشكلات: {{count}}",
+            "pdfsLabel": "ملفات PDF: {{count}}",
+            "closeButton": "إغلاق",
+            "emptyMessage": "ارفع ملفات إكسل لتوليد نتائج التحقق.",
+            "noIssues": "لم يتم العثور على مشاكل",
+            "noIssuesDetails": "ملفات إكسل نظيفة. يمكنك المتابعة بالرفع والتقديم.",
+            "actionRequired": "إجراء مطلوب",
+            "actionHint": "صحّح العناصر أدناه وأعد التحقق قبل الرفع. تأكد من تعبئة الحقول المطلوبة، وصحة تواريخ التفتيش، وتطابق معرفات استخدام الأصول مع القائمة المسموحة.",
+            "tabs": {
+                "reportInfo": "معلومات التقرير",
+                "assetsAndPdfs": "الأصول وملفات PDF"
+            },
+            "table": {
+                "headers": {
+                    "excel": "إكسل",
+                    "field": "الحقل",
+                    "location": "الموقع",
+                    "details": "التفاصيل"
+                }
+            },
+            "reportInfo": {
+                "noIssues": "لم يتم اكتشاف مشكلات في بيانات التقرير."
+            },
+            "pdfMatchingIssues": {
+                "title": "مشكلات مطابقة PDF",
+                "missing": "ملفات إكسل تفتقد ملف PDF: {{files}}",
+                "unmatched": "ملفات PDF غير المطابقة: {{files}}"
+            },
+            "assetIssues": {
+                "noIssues": "لم يتم اكتشاف مشكلات في الأصول."
+            },
+            "footerHint": "أغلق اللوحة بعد مراجعة المشكلات.",
+            "panelHeader": "التحقق من ملف الإكسل"
+        },
+        "validation": {
+            "status": {
+                "validating": "جاري التحقق...",
+                "uploadPrompt": "ارفع ملف إكسل للتحقق.",
+                "hasIssues": "توجد مشكلات في ورقة الإكسل.",
+                "clean": "لا توجد مشكلات، يمكنك رفع الملفات الآن.",
+                "pending": "التحقق قيد الانتظار."
+            },
+            "message": {
+                "validWithPdfs": "تبدو جميع ملفات الإكسل صالحة وتم مطابقة ملفات PDF. يمكنك الرفع وإنشاء التقارير.",
+                "validWithoutPdfs": "تبدو جميع ملفات الإكسل صالحة. سيتم استخدام {{placeholder}} لملفات PDF. يمكنك الرفع وإنشاء التقارير.",
+                "issuesFound": "التحقق كشف مشكلات. صحّحها لتمكين الرفع وإنشاء التقارير.",
+                "validationFailed": "فشل التحقق من ملفات الإكسل."
+            },
+            "issues": {
+                "missingColumn": "مفقود قيمة للعمود {{column}}.",
+                "missingAssetName": "مفقود اسم الأصل.",
+                "missingAssetUsageId": "مفقود معرف استخدام الأصل.",
+                "invalidAssetUsageId": "يجب أن تكون قيمة asset_usage_id إحدى القيم التالية: {{allowed}}",
+                "missingFinalValue": "مفقود القيمة النهائية.",
+                "finalValueWholeNumber": "يجب أن تكون القيمة النهائية عددًا صحيحًا (بدون كسور).",
+                "finalValuePositive": "يجب أن تكون القيمة النهائية أكبر من صفر.",
+                "missingInspectionDate": "مفقود تاريخ التفتيش.",
+                "invalidInspectionDate": "تاريخ التفتيش غير صالح.",
+                "inspectionDateFuture": "لا يمكن أن يكون تاريخ التفتيش في المستقبل.",
+                "missingRegion": "مفقود المنطقة.",
+                "missingCity": "مفقود المدينة.",
+                "missingAssetUsageForAsset": "مفقود معرف استخدام الأصل {{asset}}",
+                "invalidAssetUsageForAsset": "يجب أن تكون asset_usage_id إحدى القيم التالية: {{allowed}} للأصل {{asset}}",
+                "costMissingFinalValue": "مفقود القيمة النهائية للأصل {{asset}}.",
+                "costFinalValueInteger": "يجب أن تكون القيمة النهائية عددًا صحيحًا (بدون كسور) للأصل {{asset}}.",
+                "costFinalValuePositive": "يجب أن تكون القيمة النهائية أكبر من صفر للأصل {{asset}}.",
+                "marketMissingFinalValue": "مفقود القيمة النهائية للأصل {{asset}}.",
+                "marketFinalValueInteger": "يجب أن تكون القيمة النهائية عددًا صحيحًا (بدون كسور) للأصل {{asset}}.",
+                "marketFinalValuePositive": "يجب أن تكون القيمة النهائية أكبر من صفر للأصل {{asset}}.",
+                "missingSheets": "يجب أن يحتوي الإكسل على ورقة 'market' أو 'cost'.",
+                "noAssetsFound": "لم يتم العثور على أصول في أوراق market أو cost.",
+                "noMatchingPdf": "لم يُعثر على ملف PDF مطابق لـ {{file}} (مطابقة حسب اسم الملف).",
+                "pdfSizeExceed": "يتجاوز ملف PDF {{file}} الحد المسموح 20 ميغابايت ({{size}} ميغابايت)."
+            },
+            "panelHeader": "التحقق من ملف الإكسل"
+        },
+        "messages": {
+            "error": {
+                "pdfSizeLimit": "تتجاوز ملفات PDF الحد 20 ميغابايت: {{files}}",
+                "badRequest": "طلب خاطئ. تحقق من الملفات المحددة وأعد المحاولة.",
+                "serverProcessing": "خطأ في الخادم أثناء معالجة الملفات. أعد المحاولة أو تواصل مع الدعم.",
+                "network": "خطأ في الشبكة. تأكد أن الخادم الخلفي يعمل ويمكن الوصول إليه.",
+                "templateDownload": "فشل تنزيل قالب الإكسل. أعد المحاولة.",
+                "templateNotFound": "لم يتم العثور على ملف القالب. تأكد من وجوده في مجلد public.",
+                "loadReports": "فشل تحميل التقارير.",
+                "selectExcelFile": "يرجى تحديد ملف إكسل واحد على الأقل.",
+                "selectPdfFile": "يرجى تحديد ملف PDF واحد على الأقل أو إيقاف تفعيل رفع ملفات PDF.",
+                "pdfNamesMismatch": "يجب أن تتطابق أسماء ملفات PDF مع أسماء ملفات الإكسل.",
+                "validationIssues": "يرجى حل مشكلات التحقق قبل الرفع.",
+                "uploadFailed": "فشل الرفع.",
+                "pauseProcess": "فشل إيقاف العملية مؤقتًا.",
+                "resumeProcess": "فشل استئناف العملية.",
+                "stopProcess": "فشل إيقاف العملية.",
+                "reportNotFound": "لم يتم العثور على التقرير.",
+                "reportMustBeSubmitted": "يجب أن يُقدم التقرير إلى تقييم أولاً (يجب أن يحتوي على report_id).",
+                "noReportsWithTaqeemId": "لم يتم العثور على تقارير بها معرّفات تقييم. يجب تقديم التقارير إلى تقييم أولاً.",
+                "taqeemLoginRequired": "يتطلب تسجيل دخول تقييم. أكمل تسجيل الدخول واختر شركة للمتابعة.",
+                "deleteReport": "فشل حذف التقرير.",
+                "updateReport": "فشل تحديث التقرير.",
+                "selectReport": "يرجى تحديد تقرير واحد على الأقل.",
+                "queueStopped": "توقفت قائمة الانتظار: لم يتم إنشاء رقم التقرير.",
+                "submitTaqeem": "فشل إرسال التقرير إلى تقييم.",
+                "reportNeedsTaqeemId": "يجب أن يحتوي التقرير على report_id في تقييم لفحص الحالة.",
+                "authFailed": "فشلت المصادقة للفحص الكامل.",
+                "fullCheck": "فشل إجراء الفحص الكامل.",
+                "retryAssetSubmission": "فشل إعادة محاولة إرسال الأصل.",
+                "sendReportToApprover": "فشل إرسال التقرير إلى المُعتمد.",
+                "approveReport": "فشل اعتماد التقرير.",
+                "desktopIntegration": "دمج سطح المكتب غير متاح. أعد تشغيل التطبيق.",
+                "missingReportId": "معرّف سجل التقرير مفقود."
+            },
+            "success": {
+                "uploadingFiles": "جارٍ رفع الملفات إلى الخادم...",
+                "filesUploadedSubmitting": "تم رفع الملفات بنجاح. تم إدخال {{count}} تقريرًا. جارٍ الإرسال إلى تقييم...",
+                "filesUploaded": "تم رفع الملفات بنجاح. تم إدخال {{count}} تقريرًا.",
+                "templateDownloaded": "تم تنزيل قالب الإكسل بنجاح.",
+                "selectCompany": "اختر شركة للمتابعة.",
+                "resumingTaqeem": "جارٍ استئناف إرسال تقييم...",
+                "submittingTaqeem": "جارٍ إرسال التقرير إلى تقييم...",
+                "reportSubmitted": "تم إرسال التقرير إلى تقييم بنجاح.",
+                "taqeemLoginOff": "تسجيل دخول تقييم متوقف. أكمل الدخول في نافذة المتصفح المفتوحة للمتابعة.",
+                "deletingReport": "جارٍ حذف التقرير {{reportId}}...",
+                "reportDeleted": "تم حذف التقرير بنجاح.",
+                "reportUpdated": "تم تحديث التقرير بنجاح.",
+                "reportsSubmittedStatus": "تم إرسال {{count}} تقريرًا. راجع أشرطة التقدم للحالة.",
+                "sendingToApprover": "جارٍ إرسال {{count}} تقريرًا إلى المُعتمد...",
+                "sentToApprover": "تم إرسال {{count}} تقريرًا إلى المُعتمد بنجاح.",
+                "approvingReports": "جارٍ اعتماد {{count}} تقريرًا...",
+                "approvedReports": "تم اعتماد {{count}} تقريرًا بنجاح.",
+                "retryCompleted": "اكتملت إعادة المحاولة.",
+                "sendingReportToApprover": "جارٍ إرسال التقرير إلى المُعتمد...",
+                "reportSentToApprover": "تم إرسال التقرير إلى المُعتمد بنجاح.",
+                "approvingReport": "جارٍ اعتماد التقرير...",
+                "reportApproved": "تم اعتماد التقرير بنجاح.",
+                "pausingSubmission": "جارٍ إيقاف إرسال التقرير مؤقتًا...",
+                "reportPaused": "توقف إرسال التقرير مؤقتًا.",
+                "resumingSubmission": "جارٍ استئناف إرسال التقرير...",
+                "reportResumed": "استُؤنف إرسال التقرير.",
+                "stoppingSubmission": "جارٍ إيقاف إرسال التقرير...",
+                "reportStopped": "تم إيقاف إرسال التقرير."
+            }
+        },
+        "confirm": {
+            "stopSubmission": "هل أنت متأكد أنك تريد إيقاف إرسال هذا التقرير؟ سيفقد التقدم.",
+            "deleteReport": "هل أنت متأكد أنك تريد حذف هذا التقرير؟",
+            "deleteMultipleReports": "هل أنت متأكد أنك تريد حذف {{count}} تقريرًا؟"
+        }
+    },
     "systemControl": {
         "errors": {
             "loadState": "تعذر تحميل حالة النظام",

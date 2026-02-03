@@ -28,6 +28,8 @@ import { useAuthAction } from "../hooks/useAuthAction"; // Add this import
 import { useValueNav } from "../context/ValueNavContext";
 import EditAssetModal from "./EditAssetModal";
 
+const REPORTS_TABLE_PAGE_NAME = "Reports Table";
+
 const ReportsTable = () => {
     const [reports, setReports] = useState([]);
     const [flowPaused, setFlowPaused] = useState({});
@@ -136,21 +138,6 @@ const ReportsTable = () => {
                     if (flowResult?.status === "SUCCESS") {
                         const completedAssets = flowResult?.summary?.complete_macros || 0;
 
-                        // Deduct points if assets were completed
-                        if (completedAssets > 0) {
-                            try {
-                                await window.electronAPI.apiRequest(
-                                    "PATCH",
-                                    `/api/packages/deduct`,
-                                    { amount: completedAssets },
-                                    { Authorization: `Bearer ${authToken}` }
-                                );
-                                console.log("[ReportsTable] Deducted points for:", completedAssets, "assets");
-                            } catch (deductError) {
-                                console.error("[ReportsTable] Error deducting points:", deductError);
-                            }
-                        }
-
                         // Clear progress after success
                         setTimeout(() => {
                             setSubmitProgress(prev => {
@@ -162,8 +149,9 @@ const ReportsTable = () => {
 
                         return {
                             success: true,
-                            message: `✅ Successfully submitted report "${id}" to Taqeem. ${completedAssets} assets processed.`,
-                            completedAssets
+                            message: `Successfully submitted report "${id}" to Taqeem. ${completedAssets} assets processed.`,
+                            completedAssets,
+                            reportId: id
                         };
                     } else {
                         throw new Error(flowResult?.message || "Failed to submit to Taqeem. Please try again.");
@@ -182,8 +170,24 @@ const ReportsTable = () => {
                 }
             },
             { token, reportId, tabsNum },
-            {
-                requiredPoints: 1,
+                {
+                    requiredPoints: 1,
+                    deductPoints: (result) => {
+                        const amount = Number(result?.completedAssets) || 0;
+                        if (!amount) return null;
+                        const reportIdValue = result?.reportId || null;
+                        const reportIds = reportIdValue ? [reportIdValue] : [];
+                        return {
+                            amount,
+                            reportIds,
+                            reportId: reportIdValue,
+                            recordId,
+                            source: "reports-table",
+                            pageName: REPORTS_TABLE_PAGE_NAME,
+                            pageSource: "reports-table",
+                            assetCount: amount,
+                        };
+                    },
                 showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
                 onAuthSuccess: () => {
                     console.log('Submit to Taqeem authentication successful');

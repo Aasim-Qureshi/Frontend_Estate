@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import ExcelJS from "exceljs/dist/exceljs.min.js";
 import { useAuthAction } from "../hooks/useAuthAction";
+import { deductPoints } from "../utils/points";
 
 import {
   createDuplicateReport,
@@ -38,11 +39,15 @@ import {
   Download,
 } from "lucide-react";
 import { downloadTemplateFile } from "../utils/templateDownload";
+import DeductionNotification from "../components/DeductionNotification";
 
 const toComparable = (v) =>
   String(v ?? "")
     .trim()
     .toLowerCase();
+
+const DUPLICATE_PAGE_NAME = "Upload Manual Report";
+const DUPLICATE_PAGE_SOURCE = "duplicate-report";
 
 const numComparable = (v) => {
   const n = Number(
@@ -1734,6 +1739,7 @@ const DuplicateReport = ({ onViewChange }) => {
           const chosen = created || newestFirst[0];
 
           const recordId = getReportRecordId(chosen);
+          const chosenReportId = chosen?.report_id;
 
           if (!recordId) {
             throw new Error(
@@ -1747,11 +1753,33 @@ const DuplicateReport = ({ onViewChange }) => {
 
           await submitToTaqeem(recordId, tabsForAssets, { withLoading: false });
 
-          return { success: true, recordId };
+          return {
+            success: true,
+            recordId,
+            reportId: chosenReportId,
+            assetCount: requiredPoints,
+          };
         },
         {},
         {
           requiredPoints,
+          deductPoints: (deductResult) => {
+            const amount = Number(deductResult?.assetCount) || 0;
+            if (!amount) return null;
+            const reportId = deductResult?.reportId || deductResult?.recordId;
+            const reportIds = reportId ? [reportId] : [];
+            return {
+              amount,
+              reportIds,
+              reportId,
+              recordId: deductResult?.recordId,
+              batchId: deductResult?.batchId,
+              source: "duplicate-report",
+              pageName: DUPLICATE_PAGE_NAME,
+              pageSource: DUPLICATE_PAGE_SOURCE,
+              assetCount: amount,
+            };
+          },
           onViewChange,
           showInsufficientPointsModal: () => {
             setStatus({ type: "warning", message: "Insufficient points." });
@@ -1774,13 +1802,13 @@ const DuplicateReport = ({ onViewChange }) => {
         },
       );
 
-      if (result?.success) {
-        setStatus({
-          type: "success",
-          message: "Stored + submitted successfully.",
-        });
-        await loadReports();
-        setShowCreateModal(false);
+        if (result?.success) {
+          setStatus({
+            type: "success",
+            message: "Stored + submitted successfully.",
+          });
+          await loadReports();
+          setShowCreateModal(false);
       }
     } catch (err) {
       setStatus({ type: "error", message: err?.message || "Failed." });
@@ -2096,6 +2124,8 @@ const DuplicateReport = ({ onViewChange }) => {
       setStatus({ type: "error", message: "Missing report record id." });
       return;
     }
+    const assetList = report?.asset_data || [];
+    const assetCount = Array.isArray(assetList) ? assetList.length : 0;
 
     if (action === "send-approver") {
       setStatus({ type: "info", message: "Report sent to approver." });
@@ -2110,12 +2140,41 @@ const DuplicateReport = ({ onViewChange }) => {
     setReportActionBusy((prev) => ({ ...prev, [recordId]: action }));
 
     try {
+      const actionOptions = {
+        requiredPoints: 0,
+        onViewChange,
+        showInsufficientPointsModal: () =>
+          setShowInsufficientPointsModal?.(true),
+        onAuthFailure: (reason) => {
+          setStatus({
+            type: "error",
+            message: reason?.message || "Authentication failed for action",
+          });
+        },
+      };
+
+      if (action === "send") {
+        actionOptions.deductPoints = () => {
+          if (!assetCount) return null;
+          const targetReportId = report?.report_id || recordId;
+          const reportIds = targetReportId ? [targetReportId] : [];
+          return {
+            amount: assetCount,
+            reportIds,
+            reportId: targetReportId,
+            recordId,
+            batchId: report?.batch_id,
+            source: "duplicate-report",
+            pageName: DUPLICATE_PAGE_NAME,
+            pageSource: DUPLICATE_PAGE_SOURCE,
+            assetCount,
+          };
+        };
+      }
+
       await executeWithAuth(
         async ({ token: authToken, recordId, report }) => {
           if (action === "send") {
-            const assetCount = Array.isArray(report.asset_data)
-              ? report.asset_data.length
-              : 0;
             const tabsForAssets = resolveTabsForAssets(assetCount);
 
             // ✅ submitToTaqeem no longer checks auth; executeWithAuth already did.
@@ -2123,7 +2182,12 @@ const DuplicateReport = ({ onViewChange }) => {
               withLoading: false,
             });
             await loadReports();
-            return { success: true };
+            return {
+              success: true,
+              recordId,
+              reportId: report?.report_id,
+              assetCount,
+            };
           }
 
           if (action === "retry") {
@@ -2170,18 +2234,7 @@ const DuplicateReport = ({ onViewChange }) => {
           throw new Error("Unsupported action.");
         },
         { recordId, report },
-        {
-          requiredPoints: 0,
-          onViewChange,
-          showInsufficientPointsModal: () =>
-            setShowInsufficientPointsModal?.(true),
-          onAuthFailure: (reason) => {
-            setStatus({
-              type: "error",
-              message: reason?.message || "Authentication failed for action",
-            });
-          },
-        },
+        actionOptions,
       );
     } catch (err) {
       setStatus({
@@ -2492,6 +2545,12 @@ const DuplicateReport = ({ onViewChange }) => {
       </div>
 
       {!showCreateModal && headerAlert}
+      <DeductionNotification
+        source="duplicate-report"
+        defaultPageName={DUPLICATE_PAGE_NAME}
+        defaultPageSource={DUPLICATE_PAGE_SOURCE}
+        onViewChange={onViewChange}
+      />
 
       <Section title="Excel validation (market & cost)">
         <div className="space-y-2">

@@ -1,10 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Package, Send, X } from 'lucide-react';
 import { useSession } from '../context/SessionContext';
 
 const BANK_ACCOUNT_NUMBER = '0123456789';
 const API_BASE_URL = 'http://localhost:3000';
 const REQUESTS_PAGE_SIZE = 10;
+const DEDUCTION_HISTORY_LIMIT = 20;
+
+const formatDateTime = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+};
 
 const formatTime = (value) => {
     if (!value) return '-';
@@ -28,6 +36,16 @@ const Packages = () => {
     const [totalPoints, setTotalPoints] = useState(0);
     const [subscriptions, setSubscriptions] = useState([]);
     const [requests, setRequests] = useState([]);
+    const [deductionHistory, setDeductionHistory] = useState([]);
+    const [historyPagination, setHistoryPagination] = useState({
+        page: 1,
+        limit: 20,
+        total: 0,
+        totalPages: 1,
+    });
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [historyHighlightId, setHistoryHighlightId] = useState(null);
     const [isBankModalOpen, setIsBankModalOpen] = useState(false);
     const [selectedPackage, setSelectedPackage] = useState(null);
     const [isAdminRequestsOpen, setIsAdminRequestsOpen] = useState(false);
@@ -52,44 +70,6 @@ const Packages = () => {
     const accountNumberRef = useRef(null);
     const chatInputRefs = useRef({});
 
-    useEffect(() => {
-        fetchPackages();
-    }, []);
-
-    useEffect(() => {
-        if (!token) {
-            setTotalPoints(0);
-            setSubscriptions([]);
-            setRequests([]);
-            setActiveChatRequestId(null);
-            setChatMessagesByRequest({});
-            setChatLoadingByRequest({});
-            setChatInputByRequest({});
-            setChatAttachmentsByRequest({});
-            setChatSendingByRequest({});
-            setAccountNumberInput('');
-            setEditingRequestId(null);
-            setEditingAccountNumber('');
-            setUpdatingRequestId(null);
-            setDeletingRequestId(null);
-            setIsSubscriptionsOpen(false);
-            setIsRequestsOpen(false);
-            setRequestsPage(1);
-            setAdminRequestsPage(1);
-            return;
-        }
-        fetchSubscriptions();
-        fetchRequests();
-    }, [token]);
-
-    useEffect(() => {
-        if (!activeChatRequestId) return;
-        const input = chatInputRefs.current[activeChatRequestId];
-        if (input) {
-            input.focus();
-        }
-    }, [activeChatRequestId]);
-
     const fetchPackages = async () => {
         try {
             const response = await window.electronAPI.apiRequest('GET', '/api/packages');
@@ -100,7 +80,7 @@ const Packages = () => {
         }
     };
 
-    const fetchSubscriptions = async () => {
+    const fetchSubscriptions = useCallback(async () => {
         if (!token) return;
         try {
             const headers = { Authorization: `Bearer ${token}` };
@@ -112,7 +92,7 @@ const Packages = () => {
             setTotalPoints(0);
             setSubscriptions([]);
         }
-    };
+    }, [token]);
 
     const notifyRequestUpdates = async (items) => {
         if (!token || !Array.isArray(items)) return;
@@ -149,7 +129,7 @@ const Packages = () => {
         }
     };
 
-    const fetchRequests = async () => {
+    const fetchRequests = useCallback(async () => {
         if (!token) return;
         try {
             const headers = { Authorization: `Bearer ${token}` };
@@ -163,7 +143,95 @@ const Packages = () => {
             console.error('Error fetching requests:', error);
             setRequests([]);
         }
-    };
+    }, [token, isAdmin]);
+
+    const fetchDeductionHistory = useCallback(async (page = 1) => {
+        if (!token) {
+            setDeductionHistory([]);
+            setHistoryPagination({
+                page: 1,
+                limit: DEDUCTION_HISTORY_LIMIT,
+                total: 0,
+                totalPages: 1,
+            });
+            return;
+        }
+        setHistoryLoading(true);
+        try {
+            const headers = { Authorization: `Bearer ${token}` };
+            const response = await window.electronAPI.apiRequest(
+                "GET",
+                `/api/packages/deductions?page=${page}&limit=${DEDUCTION_HISTORY_LIMIT}`,
+                {},
+                headers
+            );
+            if (response?.success) {
+                setDeductionHistory(Array.isArray(response.data) ? response.data : []);
+                setHistoryPagination({
+                    page: response.pagination?.page || page,
+                    limit: response.pagination?.limit || DEDUCTION_HISTORY_LIMIT,
+                    total: response.pagination?.total || 0,
+                    totalPages: response.pagination?.totalPages || 1,
+                });
+            }
+        } catch (error) {
+            console.error("Failed to load deduction history:", error);
+            setDeductionHistory([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    }, [token]);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        fetchPackages();
+    }, []);
+
+    useEffect(() => {
+        if (!token) {
+            setTotalPoints(0);
+            setSubscriptions([]);
+            setRequests([]);
+            setActiveChatRequestId(null);
+            setChatMessagesByRequest({});
+            setChatLoadingByRequest({});
+            setChatInputByRequest({});
+            setChatAttachmentsByRequest({});
+            setChatSendingByRequest({});
+            setAccountNumberInput('');
+            setEditingRequestId(null);
+            setEditingAccountNumber('');
+            setUpdatingRequestId(null);
+            setDeletingRequestId(null);
+            setIsSubscriptionsOpen(false);
+            setIsRequestsOpen(false);
+            setRequestsPage(1);
+            setAdminRequestsPage(1);
+            return;
+        }
+        fetchSubscriptions();
+        fetchRequests();
+        fetchDeductionHistory();
+    }, [token, fetchSubscriptions, fetchRequests, fetchDeductionHistory]);
+
+    useEffect(() => {
+        const handler = () => {
+            fetchSubscriptions();
+            fetchDeductionHistory();
+        };
+        window.addEventListener('points-updated', handler);
+        return () => {
+            window.removeEventListener('points-updated', handler);
+        };
+    }, [fetchSubscriptions, fetchDeductionHistory]);
+
+    useEffect(() => {
+        if (!activeChatRequestId) return;
+        const input = chatInputRefs.current[activeChatRequestId];
+        if (input) {
+            input.focus();
+        }
+    }, [activeChatRequestId]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -539,6 +607,18 @@ const Packages = () => {
             localStorage.removeItem('notification-target');
             return;
         }
+
+        if (payload?.type === 'deduction-history') {
+            setHistoryModalOpen(true);
+            fetchDeductionHistory(payload?.page || 1);
+            if (payload?.deductionId) {
+                setHistoryHighlightId(payload.deductionId);
+                setTimeout(() => setHistoryHighlightId(null), 6000);
+            }
+            localStorage.removeItem('notification-target');
+            return;
+        }
+
         if (payload?.type !== 'package-request' || !payload?.id) return;
         const list = isAdmin ? requests : myRequests;
         if (!Array.isArray(list) || list.length === 0) return;
@@ -558,7 +638,7 @@ const Packages = () => {
         setHighlightRequestId(payload.id);
         setTimeout(() => setHighlightRequestId(null), 6000);
         localStorage.removeItem('notification-target');
-    }, [token, requests, myRequests, isAdmin]);
+    }, [token, requests, myRequests, isAdmin, fetchDeductionHistory]);
 
     useEffect(() => {
         setRequestsPage(1);
@@ -743,15 +823,25 @@ const Packages = () => {
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-blue-900/15 bg-white shadow-sm px-3 py-2">
                 <button
                     onClick={() => setIsSubscriptionsOpen(true)}
-                    className="rounded-md border border-blue-900/20 bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-900 hover:bg-blue-50"
+                    className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg hover:bg-slate-900"
                 >
                     Subscriptions
                 </button>
                 <button
                     onClick={() => setIsRequestsOpen(true)}
-                    className="rounded-md border border-blue-900/20 bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-900 hover:bg-blue-50"
+                    className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg hover:bg-slate-900"
                 >
                     Requests
+                </button>
+                <button
+                    onClick={() => {
+                        fetchDeductionHistory(1);
+                        setHistoryHighlightId(null);
+                        setHistoryModalOpen(true);
+                    }}
+                    className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg hover:bg-slate-900"
+                >
+                    History of Deduction
                 </button>
             </div>
 
@@ -1418,6 +1508,163 @@ const Packages = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {historyModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6">
+                    <div
+                        className="absolute inset-0 cursor-default"
+                        onClick={() => {
+                            setHistoryModalOpen(false);
+                            setHistoryHighlightId(null);
+                        }}
+                    />
+                    <div className="relative w-full max-w-5xl rounded-[28px] bg-white shadow-[0_25px_80px_rgba(15,23,42,0.35)] border border-slate-100">
+                        <div className="relative rounded-[28px] bg-white text-slate-900">
+                            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                                        Deduction
+                                    </p>
+                                    <h3 className="text-lg font-semibold text-slate-900">
+                                        Deduction history
+                                    </h3>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHistoryModalOpen(false);
+                                        setHistoryHighlightId(null);
+                                    }}
+                                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 transition hover:border-slate-400"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="px-6 py-5 bg-slate-50">
+                                {historyLoading ? (
+                                    <div className="flex items-center justify-center py-20 text-[12px] text-slate-400">
+                                        Loading deduction history...
+                                    </div>
+                                ) : !deductionHistory.length ? (
+                                    <div className="flex items-center justify-center py-20 text-[12px] text-slate-400">
+                                        No deduction history recorded yet.
+                                    </div>
+                                ) : (
+                                    <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                        <table className="min-w-full text-[11px] text-slate-700">
+                                            <thead className="sticky top-0 bg-white text-left text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                                                <tr>
+                                                    <th className="px-3 py-3">Time</th>
+                                                    <th className="px-3 py-3">Page</th>
+                                                    <th className="px-3 py-3">Reports</th>
+                                                    <th className="px-3 py-3">Client</th>
+                                                    <th className="px-3 py-3">Submitted</th>
+                                                    <th className="px-3 py-3">Completed</th>
+                                                    <th className="px-3 py-3">Assets</th>
+                                                    <th className="px-3 py-3 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {deductionHistory.map((record) => {
+                                                    const isHighlighted = historyHighlightId === record._id;
+                                                    const pageLabel =
+                                                        record.pageName ||
+                                                        record.pageSource ||
+                                                        record.source ||
+                                                        "Packages";
+                                                    const clientList = Array.isArray(record.reportSummaries)
+                                                        ? record.reportSummaries
+                                                              .map((summary) => summary.clientName)
+                                                              .filter(Boolean)
+                                                              .join(", ")
+                                                        : "—";
+                                                    const summaryReportIds = Array.isArray(record.reportSummaries)
+                                                        ? Array.from(
+                                                              new Set(
+                                                                  record.reportSummaries
+                                                                      .map((summary) => summary.reportId)
+                                                                      .filter(Boolean)
+                                                              )
+                                                          )
+                                                        : [];
+                                                    const reportsCellValue = summaryReportIds.length
+                                                        ? summaryReportIds.join(", ")
+                                                        : record.reportIds?.length
+                                                            ? record.reportIds.join(", ")
+                                                            : "—";
+                                                    return (
+                                                        <tr
+                                                            key={record._id}
+                                                            className={`border-b border-slate-100 transition ${
+                                                                isHighlighted ? "bg-slate-50" : "hover:bg-slate-50"
+                                                            }`}
+                                                        >
+                                                            <td className="px-3 py-3 text-[12px] text-slate-600">
+                                                                {formatDateTime(record.createdAt)}
+                                                            </td>
+                                                            <td className="px-3 py-3 font-semibold text-slate-900">
+                                                                {pageLabel}
+                                                            </td>
+                                                            <td className="px-3 py-3 text-[11px] text-slate-700">
+                                                                {reportsCellValue}
+                                                            </td>
+                                                            <td className="px-3 py-3 text-[11px] text-slate-700">
+                                                                {clientList}
+                                                            </td>
+                                                            <td className="px-3 py-3 text-[11px] text-slate-700">
+                                                                {formatDateTime(record.reportSummaries?.[0]?.submittedAt) || "—"}
+                                                            </td>
+                                                            <td className="px-3 py-3 text-[11px] text-slate-700">
+                                                                {formatDateTime(record.reportSummaries?.[0]?.endSubmitTime) || "—"}
+                                                            </td>
+                                                            <td className="px-3 py-3">
+                                                                <span className="text-[11px] text-slate-700">
+                                                                    {record.assetCount ?? "—"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-3 py-3 text-right font-semibold text-slate-900">
+                                                                {record.amount ?? "—"}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-3 text-[10px] text-slate-500">
+                                <span>
+                                    Page {historyPagination.page} of {historyPagination.totalPages || 1}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            fetchDeductionHistory(Math.max(1, historyPagination.page - 1))
+                                        }
+                                        disabled={historyPagination.page <= 1}
+                                        className="rounded-full border border-slate-200 px-3 py-1 text-[10px] font-semibold text-slate-500 hover:border-slate-300 disabled:opacity-40"
+                                    >
+                                        Previous
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            fetchDeductionHistory(
+                                                Math.min(historyPagination.totalPages || 1, historyPagination.page + 1)
+                                            )
+                                        }
+                                        disabled={historyPagination.page >= (historyPagination.totalPages || 1)}
+                                        className="rounded-full border border-slate-200 px-3 py-1 text-[10px] font-semibold text-slate-500 hover:border-slate-300 disabled:opacity-40"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
