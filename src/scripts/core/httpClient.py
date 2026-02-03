@@ -122,5 +122,9 @@ async def http_put(path: str, **kwargs) -> Dict[str, Any]:
     return await _shared_client.request("PUT", path, **kwargs)
 
 
+async def http_patch(path: str, **kwargs) -> Dict[str, Any]:
+    return await _shared_client.request("PATCH", path, **kwargs)
+
+
 async def http_delete(path: str, **kwargs) -> Dict[str, Any]:
     return await _shared_client.request("DELETE", path, **kwargs)

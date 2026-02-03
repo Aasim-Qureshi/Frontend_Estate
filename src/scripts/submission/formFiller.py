@@ -1,6 +1,10 @@
-import asyncio, json, sys
-from scripts.core.utils import wait_for_element
+import asyncio
+import json
+import sys
 from datetime import datetime
+
+from scripts.core.utils import wait_for_element
+
 
 async def fill_valuers(page, valuers):
     try:
@@ -9,7 +13,9 @@ async def fill_valuers(page, valuers):
             for _ in range(len(valuers) - 1):
                 try:
                     await asyncio.sleep(0.05)  # Reduced delay
-                    add_btn = await wait_for_element(page, "#duplicateValuer", timeout=30)
+                    add_btn = await wait_for_element(
+                        page, "#duplicateValuer", timeout=30
+                    )
                     await asyncio.sleep(0.05)  # Reduced delay
                 except Exception:
                     add_btn = None
@@ -67,11 +73,13 @@ async def fill_valuers(page, valuers):
         print(f"[WARNING] fill_valuers failed: {e}", file=sys.stderr)
 
 
-
 _location_cache = {}
+
+
 async def set_location(page, country_name, region_name, city_name):
     try:
-        import re, unicodedata
+        import re
+        import unicodedata
 
         cache_key = f"{country_name}|{region_name}|{city_name}"
 
@@ -83,9 +91,15 @@ async def set_location(page, country_name, region_name, city_name):
             return text.strip()
 
         async def wait_for_options(selector, min_options=2, timeout=10):
-            for _ in range(timeout * 5):  # More frequent checks (every 0.2s instead of 0.5s)
+            for _ in range(
+                timeout * 5
+            ):  # More frequent checks (every 0.2s instead of 0.5s)
                 el = await wait_for_element(page, selector, timeout=0.5)
-                if el and getattr(el, "children", None) and len(el.children) >= min_options:
+                if (
+                    el
+                    and getattr(el, "children", None)
+                    and len(el.children) >= min_options
+                ):
                     return el
                 await asyncio.sleep(0.2)  # Reduced delay for faster detection
             return None
@@ -144,7 +158,8 @@ async def set_location(page, country_name, region_name, city_name):
 
     except Exception as e:
         print(f"Location injection failed: {e}", file=sys.stderr)
-        return False 
+        return False
+
 
 async def bulk_inject_inputs(page, record, field_map, field_types):
     jsdata = {}
@@ -163,7 +178,10 @@ async def bulk_inject_inputs(page, record, field_map, field_types):
                 try:
                     datetime.strptime(value, "%Y-%m-%d")
                 except ValueError:
-                    print(f"[WARNING] Invalid date format for {key}: {value}", file=sys.stderr)
+                    print(
+                        f"[WARNING] Invalid date format for {key}: {value}",
+                        file=sys.stderr,
+                    )
                     continue
 
         jsdata[selector] = {"type": field_type, "value": value}
@@ -224,9 +242,18 @@ async def bulk_inject_inputs(page, record, field_map, field_types):
 
     await page.evaluate(js)
 
-async def fill_form(page, record, field_map, field_types, is_last_step=False, retries=0, max_retries=2, is_valuers=False):
+
+async def fill_form(
+    page,
+    record,
+    field_map,
+    field_types,
+    is_last_step=False,
+    retries=0,
+    max_retries=2,
+    is_valuers=False,
+):
     try:
-        
         if is_valuers:
             try:
                 await fill_valuers(page, record.get("valuers"))
@@ -235,23 +262,23 @@ async def fill_form(page, record, field_map, field_types, is_last_step=False, re
 
         await bulk_inject_inputs(page, record, field_map, field_types)
 
-
         for key, selector in field_map.items():
-            if key not in record: continue
+            if key not in record:
+                continue
             value = str(record[key] or "")
-            ftype = field_types.get(key,"text")
+            ftype = field_types.get(key, "text")
             try:
-
                 if ftype == "location":
-                    country_name = record.get("country","")
-                    region_name = record.get("region","")
-                    city_name = record.get("city","")
+                    country_name = record.get("country", "")
+                    region_name = record.get("region", "")
+                    city_name = record.get("city", "")
                     await set_location(page, country_name, region_name, city_name)
 
                 elif ftype == "file":
                     file_input = await wait_for_element(page, selector, timeout=10)
-                    if file_input: await file_input.send_file(value)
-                    
+                    if file_input:
+                        await file_input.send_file(value)
+
                 elif ftype == "dynamic_select":
                     select_element = await wait_for_element(page, selector, timeout=10)
                     if select_element:
@@ -262,20 +289,29 @@ async def fill_form(page, record, field_map, field_types, is_last_step=False, re
 
             except Exception:
                 continue
-    
+
         if not is_last_step:
-            continue_btn = await wait_for_element(page, "input[name='continue']", timeout=10)
+            continue_btn = await wait_for_element(
+                page, "input[name='continue']", timeout=10
+            )
             if continue_btn:
                 await continue_btn.click()
                 # Reduced wait time - check for errors faster
                 await asyncio.sleep(1.0)
-                error_div = await wait_for_element(page, "div.alert.alert-danger", timeout=3)
+                error_div = await wait_for_element(
+                    page, "div.alert.alert-danger", timeout=3
+                )
                 if error_div and retries < max_retries:
                     await asyncio.sleep(0.5)
                     return await fill_form(
-                        page, record, field_map, 
-                        field_types, is_last_step, retries+1, 
-                        max_retries)
+                        page,
+                        record,
+                        field_map,
+                        field_types,
+                        is_last_step,
+                        retries + 1,
+                        max_retries,
+                    )
         else:
             save_btn = await wait_for_element(page, "input[type='submit']", timeout=10)
             if save_btn:
@@ -283,9 +319,9 @@ async def fill_form(page, record, field_map, field_types, is_last_step=False, re
                 await save_btn.click()
                 # Reduced wait time - form submission is usually quick
                 await asyncio.sleep(1.0)
-                return {"status":"SAVED"}
+                return {"status": "SAVED"}
             else:
-                return {"status":"FAILED","error":"Save button not found"}
+                return {"status": "FAILED", "error": "Save button not found"}
         return True
     except Exception as e:
-        return {"status":"FAILED","error": str(e)}
+        return {"status": "FAILED", "error": str(e)}

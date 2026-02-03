@@ -1,17 +1,20 @@
-import asyncio, sys, traceback, json
+import asyncio
+import json
+import sys
+import traceback
 from datetime import datetime
 
-from .formFiller import bulk_inject_inputs
-from scripts.core.browser import spawn_new_browser
-from scripts.core.utils import wait_for_element
 from scripts.core.processControl import (
-    get_process_manager,
     check_and_wait,
-    create_process,
     clear_process,
+    create_process,
+    emit_progress,
+    get_process_manager,
     update_progress,
-    emit_progress
 )
+from scripts.core.utils import wait_for_element
+
+from .formFiller import bulk_inject_inputs
 
 
 async def save_macros(page, macro_data, field_map, field_types):
@@ -46,13 +49,21 @@ def calculate_tab_batches(total_macros, max_tabs, batch_size=10):
     return result
 
 
-async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_template,
-                                  field_map, field_types, max_tabs=3, batch_size=10):
+async def create_macros_multi_tab(
+    browser,
+    report_id,
+    macro_count,
+    macro_data_template,
+    field_map,
+    field_types,
+    max_tabs=3,
+    batch_size=10,
+):
     """
     Create macros with pause/resume/stop support using the modular state manager
     """
     process_manager = get_process_manager()
-    
+
     # Create process state
     process_state = create_process(
         process_id=report_id,
@@ -60,14 +71,19 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
         total=macro_count,
         report_id=report_id,
         max_tabs=max_tabs,
-        batch_size=batch_size
+        batch_size=batch_size,
     )
 
     try:
-        print(json.dumps({
-            "event": "start",
-            "msg": f"Starting macro creation: {macro_count} macros for report {report_id}"
-        }), file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "event": "start",
+                    "msg": f"Starting macro creation: {macro_count} macros for report {report_id}",
+                }
+            ),
+            file=sys.stderr,
+        )
 
         asset_url = f"https://qima.taqeem.sa/report/asset/create/{report_id}"
 
@@ -75,10 +91,15 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
         await asyncio.sleep(2)
 
         distribution = calculate_tab_batches(macro_count, max_tabs, batch_size)
-        print(json.dumps({
-            "event": "distribution",
-            "msg": f"Tab distribution: {distribution} macros per tab"
-        }), file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "event": "distribution",
+                    "msg": f"Tab distribution: {distribution} macros per tab",
+                }
+            ),
+            file=sys.stderr,
+        )
 
         pages = [main_page]
         for _ in range(len(distribution) - 1):
@@ -105,25 +126,32 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
                 # Check pause/stop state before each batch
                 action = await check_and_wait(report_id)
                 if action == "stop":
-                    print(json.dumps({
-                        "event": "stopped",
-                        "msg": f"Tab {tab_id} stopped by user request"
-                    }), file=sys.stderr)
+                    print(
+                        json.dumps(
+                            {
+                                "event": "stopped",
+                                "msg": f"Tab {tab_id} stopped by user request",
+                            }
+                        ),
+                        file=sys.stderr,
+                    )
                     return {"status": "STOPPED", "message": "Process stopped by user"}
 
                 batch_count = min(batch_size, count - batch_start)
                 batch_index = start_index + batch_start
 
-                print(json.dumps({
-                    "event": "processing_batch",
-                    "msg": f"Tab {tab_id}: Processing batch {batch_index} to {batch_index + batch_count - 1}"
-                }), file=sys.stderr)
+                print(
+                    json.dumps(
+                        {
+                            "event": "processing_batch",
+                            "msg": f"Tab {tab_id}: Processing batch {batch_index} to {batch_index + batch_count - 1}",
+                        }
+                    ),
+                    file=sys.stderr,
+                )
 
                 # Prepare macro data for this batch
-                batch_data = {
-                    "number_of_macros": str(batch_count),
-                    "asset_data": []
-                }
+                batch_data = {"number_of_macros": str(batch_count), "asset_data": []}
 
                 if isinstance(macro_data_template, list):
                     for i in range(batch_count):
@@ -135,13 +163,17 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
                 else:
                     batch_data["asset_data"] = [macro_data_template] * batch_count
 
-                form_data = {**batch_data, **macro_data_template} if isinstance(macro_data_template, dict) else batch_data
+                form_data = (
+                    {**batch_data, **macro_data_template}
+                    if isinstance(macro_data_template, dict)
+                    else batch_data
+                )
 
                 # Emit progress before processing
                 emit_progress(
                     report_id,
                     current_item=f"batch_{batch_index}",
-                    message=f"Tab {tab_id}: Creating batch {batch_index}-{batch_index + batch_count - 1}"
+                    message=f"Tab {tab_id}: Creating batch {batch_index}-{batch_index + batch_count - 1}",
                 )
 
                 result = await save_macros(page, form_data, field_map, field_types)
@@ -152,11 +184,16 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
                         async with lock:
                             failed += batch_count
                     await update_progress(report_id, completed=completed, failed=failed)
-                    
-                    print(json.dumps({
-                        "event": "save_failed",
-                        "msg": f"Tab {tab_id}: Failed to save batch: {result.get('error')}"
-                    }), file=sys.stderr)
+
+                    print(
+                        json.dumps(
+                            {
+                                "event": "save_failed",
+                                "msg": f"Tab {tab_id}: Failed to save batch: {result.get('error')}",
+                            }
+                        ),
+                        file=sys.stderr,
+                    )
                     return result
 
                 # Update progress after successful batch
@@ -165,18 +202,20 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
                     async with lock:
                         completed += batch_count
                         total_created += batch_count
-                
+
                 await update_progress(
-                    report_id, 
-                    completed=completed, 
-                    failed=failed,
-                    emit=True
+                    report_id, completed=completed, failed=failed, emit=True
                 )
 
-                print(json.dumps({
-                    "event": "progress",
-                    "msg": f"Tab {tab_id}: Progress: {completed}/{macro_count} macros created ({round((completed/macro_count)*100, 2)}%)"
-                }), file=sys.stderr)
+                print(
+                    json.dumps(
+                        {
+                            "event": "progress",
+                            "msg": f"Tab {tab_id}: Progress: {completed}/{macro_count} macros created ({round((completed / macro_count) * 100, 2)}%)",
+                        }
+                    ),
+                    file=sys.stderr,
+                )
 
                 # Navigate to next batch if not the last one
                 if batch_start + batch_size < count:
@@ -200,15 +239,17 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
         was_stopped = False
         for result in results:
             if isinstance(result, Exception):
-                print(json.dumps({
-                    "event": "exception",
-                    "msg": f"Task exception: {str(result)}"
-                }), file=sys.stderr)
+                print(
+                    json.dumps(
+                        {"event": "exception", "msg": f"Task exception: {str(result)}"}
+                    ),
+                    file=sys.stderr,
+                )
                 clear_process(report_id)
                 return {
                     "status": "FAILED",
                     "error": str(result),
-                    "traceback": traceback.format_exc()
+                    "traceback": traceback.format_exc(),
                 }
             elif isinstance(result, dict):
                 if result.get("status") == "STOPPED":
@@ -230,38 +271,40 @@ async def create_macros_multi_tab(browser, report_id, macro_count, macro_data_te
                 "message": f"Process stopped. Created {total_created}/{macro_count} macros",
                 "report_id": report_id,
                 "total_created": total_created,
-                "total_requested": macro_count
+                "total_requested": macro_count,
             }
 
-        print(json.dumps({
-            "event": "success",
-            "msg": f"Successfully created {total_created} macros for report {report_id}"
-        }), file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "event": "success",
+                    "msg": f"Successfully created {total_created} macros for report {report_id}",
+                }
+            ),
+            file=sys.stderr,
+        )
 
         return {
             "status": "SUCCESS",
             "report_id": report_id,
             "total_created": total_created,
             "failed": failed,
-            "completion_time": datetime.now().isoformat()
+            "completion_time": datetime.now().isoformat(),
         }
 
     except Exception as e:
         tb = traceback.format_exc()
         clear_process(report_id)
-        print(json.dumps({
-            "event": "exception",
-            "msg": str(e),
-            "traceback": tb
-        }), file=sys.stderr)
-        return {
-            "status": "FAILED",
-            "error": str(e),
-            "traceback": tb
-        }
+        print(
+            json.dumps({"event": "exception", "msg": str(e), "traceback": tb}),
+            file=sys.stderr,
+        )
+        return {"status": "FAILED", "error": str(e), "traceback": tb}
 
 
-async def run_create_assets(browser, report_id, macro_count, tabs_num=3, batch_size=10, macro_data=None):
+async def run_create_assets(
+    browser, report_id, macro_count, tabs_num=3, batch_size=10, macro_data=None
+):
     if not browser:
         return {
             "status": "FAILED",
@@ -305,7 +348,9 @@ async def run_create_assets(browser, report_id, macro_count, tabs_num=3, batch_s
     try:
         step_one = form_steps[1] if len(form_steps) > 1 else form_steps[0]
         field_map = step_one.get("field_map", {}) if isinstance(step_one, dict) else {}
-        field_types = step_one.get("field_types", {}) if isinstance(step_one, dict) else {}
+        field_types = (
+            step_one.get("field_types", {}) if isinstance(step_one, dict) else {}
+        )
     except Exception:
         field_map = {}
         field_types = {}
@@ -341,102 +386,117 @@ async def pause_create_macros(report_id):
     try:
         process_manager = get_process_manager()
         state = process_manager.pause_process(report_id)
-        
+
         if not state:
             return {
                 "status": "FAILED",
-                "error": f"No active process found for report {report_id}"
+                "error": f"No active process found for report {report_id}",
             }
-        
+
         return {
             "status": "SUCCESS",
             "message": f"Paused macro creation for report {report_id}",
-            "paused": state.paused
+            "paused": state.paused,
         }
     except Exception as e:
         return {"status": "FAILED", "error": str(e)}
+
 
 async def resume_create_macros(report_id):
     """Resume macro creation for a report"""
     try:
         process_manager = get_process_manager()
         state = process_manager.resume_process(report_id)
-        
+
         if not state:
             return {
                 "status": "FAILED",
-                "error": f"No active process found for report {report_id}"
+                "error": f"No active process found for report {report_id}",
             }
-        
+
         return {
             "status": "SUCCESS",
             "message": f"Resumed macro creation for report {report_id}",
-            "paused": state.paused
+            "paused": state.paused,
         }
     except Exception as e:
         return {"status": "FAILED", "error": str(e)}
+
 
 async def stop_create_macros(report_id):
     """Stop macro creation for a report"""
     try:
         process_manager = get_process_manager()
         state = process_manager.stop_process(report_id)
-        
+
         if not state:
             return {
                 "status": "FAILED",
-                "error": f"No active process found for report {report_id}"
+                "error": f"No active process found for report {report_id}",
             }
-        
+
         return {
             "status": "SUCCESS",
             "message": f"Stopped macro creation for report {report_id}",
-            "stopped": state.stopped
+            "stopped": state.stopped,
         }
     except Exception as e:
         return {"status": "FAILED", "error": str(e)}
 
-async def run_create_assets_by_count(browser, num_macros, macro_data_template=None, tabs_num=3, batch_size=10):
 
+async def run_create_assets_by_count(
+    browser, num_macros, macro_data_template=None, tabs_num=3, batch_size=10
+):
     try:
-        print(f"[CREATE_ASSETS_BY_COUNT] Starting to create {num_macros} assets using {tabs_num} tabs", file=sys.stderr)
-        
+        print(
+            f"[CREATE_ASSETS_BY_COUNT] Starting to create {num_macros} assets using {tabs_num} tabs",
+            file=sys.stderr,
+        )
+
         if num_macros <= 0:
             return {"status": "FAILED", "error": "num_macros must be greater than 0"}
-        
+
         # Get field_map and field_types from form_steps
         try:
             from scripts.submission.formSteps import form_steps
+
             step_one = form_steps[1] if len(form_steps) > 1 else form_steps[0]
-            field_map = step_one.get("field_map", {}) if isinstance(step_one, dict) else {}
-            field_types = step_one.get("field_types", {}) if isinstance(step_one, dict) else {}
+            field_map = (
+                step_one.get("field_map", {}) if isinstance(step_one, dict) else {}
+            )
+            field_types = (
+                step_one.get("field_types", {}) if isinstance(step_one, dict) else {}
+            )
         except Exception:
             field_map = {}
             field_types = {}
-        
+
         # Default macro data template
         if macro_data_template is None:
             macro_data_template = {}
-        
+
         # Get main page (should already be on asset creation page)
         main_page = browser.tabs[0]
         current_url = await main_page.evaluate("window.location.href")
-        
+
         if "asset/create" not in current_url:
             return {"status": "FAILED", "error": "Not on asset creation page"}
-        
+
         # Calculate distribution using the existing function
         tab_distributions = calculate_tab_batches(num_macros, tabs_num, batch_size)
-        
-        print(f"[CREATE_ASSETS_BY_COUNT] Distribution: {tab_distributions} assets per tab", file=sys.stderr)
-        
+
+        print(
+            f"[CREATE_ASSETS_BY_COUNT] Distribution: {tab_distributions} assets per tab",
+            file=sys.stderr,
+        )
+
         # Open additional tabs if needed
         pages = [main_page]
         for _ in range(len(tab_distributions) - 1):
             new_page = await browser.get(current_url, new_tab=True)
             pages.append(new_page)
             await asyncio.sleep(1)
-        
+
         # Wait for all pages to be ready
         for page in pages:
             for _ in range(20):
@@ -445,30 +505,33 @@ async def run_create_assets_by_count(browser, num_macros, macro_data_template=No
                 if ready_state == "complete" and key_el:
                     break
                 await asyncio.sleep(0.5)
-        
+
         # Track results
         completed = 0
         total_created = 0
         results_lock = asyncio.Lock()
-        
+
         async def process_tab_assets(page, start_index, asset_count, tab_id):
             """Process assets for a single tab"""
             nonlocal completed, total_created
-            
-            print(f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Processing {asset_count} assets", file=sys.stderr)
-            
+
+            print(
+                f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Processing {asset_count} assets",
+                file=sys.stderr,
+            )
+
             # Process assets in batches
             for batch_start in range(0, asset_count, batch_size):
                 batch_count = min(batch_size, asset_count - batch_start)
-                
-                print(f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Processing batch: {start_index + batch_start} to {start_index + batch_start + batch_count - 1}", file=sys.stderr)
-                
+
+                print(
+                    f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Processing batch: {start_index + batch_start} to {start_index + batch_start + batch_count - 1}",
+                    file=sys.stderr,
+                )
+
                 # Prepare macro data for this batch
-                batch_data = {
-                    "number_of_macros": str(batch_count),
-                    "asset_data": []
-                }
-                
+                batch_data = {"number_of_macros": str(batch_count), "asset_data": []}
+
                 # If macro_data_template is a list, use it; otherwise replicate the template
                 if isinstance(macro_data_template, list):
                     for i in range(batch_count):
@@ -479,29 +542,39 @@ async def run_create_assets_by_count(browser, num_macros, macro_data_template=No
                             batch_data["asset_data"].append(macro_data_template[-1])
                 else:
                     batch_data["asset_data"] = [macro_data_template] * batch_count
-                
-                form_data = {**batch_data, **macro_data_template} if isinstance(macro_data_template, dict) else batch_data
-                
+
+                form_data = (
+                    {**batch_data, **macro_data_template}
+                    if isinstance(macro_data_template, dict)
+                    else batch_data
+                )
+
                 # Use the existing save_macros function
                 result = await save_macros(page, form_data, field_map, field_types)
-                
+
                 if result.get("status") == "FAILED":
-                    print(f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Failed to save batch: {result.get('error')}", file=sys.stderr)
+                    print(
+                        f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Failed to save batch: {result.get('error')}",
+                        file=sys.stderr,
+                    )
                     return result
-                
+
                 async with results_lock:
                     completed += batch_count
                     total_created += batch_count
-                
-                print(f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Progress: {completed}/{num_macros} macros created ({round((completed/num_macros)*100, 2)}%)", file=sys.stderr)
-                
+
+                print(
+                    f"[CREATE_ASSETS_BY_COUNT-TAB-{tab_id}] Progress: {completed}/{num_macros} macros created ({round((completed / num_macros) * 100, 2)}%)",
+                    file=sys.stderr,
+                )
+
                 # Navigate back to asset creation page for next batch
                 if batch_start + batch_size < asset_count:
                     await page.get(current_url)
                     await asyncio.sleep(1)
-            
+
             return {"status": "SUCCESS"}
-        
+
         # Process all tabs in parallel
         tasks = []
         idx = 0
@@ -509,35 +582,40 @@ async def run_create_assets_by_count(browser, num_macros, macro_data_template=No
             if count > 0:
                 tasks.append(process_tab_assets(page, idx, count, i))
                 idx += count
-        
+
         results = await asyncio.gather(*tasks)
-        
+
         # Check for failures
         for result in results:
             if isinstance(result, dict) and result.get("status") == "FAILED":
-                print(f"[CREATE_ASSETS_BY_COUNT] Task failed: {result.get('error', 'unknown')}", file=sys.stderr)
+                print(
+                    f"[CREATE_ASSETS_BY_COUNT] Task failed: {result.get('error', 'unknown')}",
+                    file=sys.stderr,
+                )
                 return result
-        
+
         # Close extra tabs
         for page in pages[1:]:
             await page.close()
-        
-        print(f"[CREATE_ASSETS_BY_COUNT] Completed: {total_created} successful", file=sys.stderr)
-        
+
+        print(
+            f"[CREATE_ASSETS_BY_COUNT] Completed: {total_created} successful",
+            file=sys.stderr,
+        )
+
         return {
             "status": "SUCCESS",
             "total_assets": num_macros,
             "successful": total_created,
             "failed": 0,
-            "completion_time": datetime.now().isoformat()
+            "completion_time": datetime.now().isoformat(),
         }
-        
+
     except Exception as e:
         print(f"[CREATE_ASSETS_BY_COUNT] Error: {str(e)}", file=sys.stderr)
         traceback.print_exc()
         return {
             "status": "FAILED",
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
-

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import spawn_new_browser
+from scripts.core.httpClient import http_get, http_patch
 from scripts.core.processControl import (
     check_and_wait,
     clear_process,
@@ -361,7 +362,8 @@ async def handle_macro_edits(
 
 async def run_macro_edit(browser, report_id, tabs_num=3):
     try:
-        record = await db.reports.find_one({"report_id": report_id})
+        record_data = await http_get(f"/new-scripts/report-id/{report_id}")
+        record = record_data.get("data", [])
         if not record:
             return {"status": "FAILED", "error": "Record not found"}
 
@@ -377,10 +379,9 @@ async def run_macro_edit(browser, report_id, tabs_num=3):
             error_msg = f"Assets missing macro IDs at indices: {assets_without_ids}"
             return {"status": "FAILED", "error": error_msg}
 
-        # Update start time
-        await db.reports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"editStartTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "editStartTime"},
         )
 
         # Send initial progress
@@ -392,9 +393,9 @@ async def run_macro_edit(browser, report_id, tabs_num=3):
         )
 
         # Update end time
-        await db.reports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"editEndTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "editEndTime"},
         )
 
         if edit_result.get("status") == "FAILED":
@@ -403,26 +404,16 @@ async def run_macro_edit(browser, report_id, tabs_num=3):
         return {"status": "SUCCESS", "recordId": str(report_id), "result": edit_result}
 
     except Exception as e:
-        tb = traceback.format_exc()
-
-        try:
-            await db.reports.update_one(
-                {"report_id": report_id},
-                {"$set": {"editEndTime": datetime.now(timezone.utc)}},
-            )
-        except Exception:
-            pass
-
         # Clear process state on error
         clear_process(report_id)
-
         return {"status": "FAILED", "error": str(e), "traceback": tb}
 
 
 async def run_macro_edit_retry(browser, report_id, tabs_num=3):
     new_browser = None
     try:
-        record = await db.reports.find_one({"report_id": report_id})
+        record_data = await http_get(f"/new-scripts/report-id/{report_id}")
+        record = record_data.get("data", [])
         if not record:
             return {"status": "FAILED", "error": "Record not found"}
 
@@ -436,7 +427,8 @@ async def run_macro_edit_retry(browser, report_id, tabs_num=3):
         validation_result = await validate_for_retry(new_browser, report_id, asset_data)
 
         if validation_result["status"] == "RE-GRABBED":
-            record = await db.reports.find_one({"report_id": report_id})
+            record_data = await http_get(f"/new-scripts/report-id/{report_id}")
+            record = record_data.get("data", [])
             asset_data = record.get("asset_data", [])
 
         elif validation_result["status"] == "FAILED":
@@ -454,9 +446,9 @@ async def run_macro_edit_retry(browser, report_id, tabs_num=3):
             }
 
         # Update retry start time
-        await db.reports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"retryEditStartTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "retryEditStartTime"},
         )
 
         emit_progress(
@@ -470,9 +462,9 @@ async def run_macro_edit_retry(browser, report_id, tabs_num=3):
             new_browser, retry_record, tabs_num=tabs_num, record_id=report_id
         )
 
-        await db.reports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"retryEditEndTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "retryEditEndTime"},
         )
 
         await RunCheckMacroStatus(

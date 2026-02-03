@@ -9,6 +9,7 @@ from html import unescape
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import check_browser_status, new_window
+from scripts.core.httpClient import http_get, http_patch
 from scripts.core.utils import wait_for_table_rows
 from scripts.submission.createMacros import run_create_assets
 from scripts.submission.grabMacroIds import get_all_macro_ids_parallel, get_macro_count
@@ -31,19 +32,14 @@ async def _resolve_company_office_id(report_id: str) -> str | None:
     if not report_id:
         return None
     report_id_str = str(report_id)
-    for collection_name in _REPORT_SOURCE_COLLECTIONS:
-        try:
-            doc = await _db[collection_name].find_one(
-                {
-                    "report_id": report_id_str,
-                    "company_office_id": {"$exists": True, "$ne": None, "$ne": ""},
-                },
-                {"company_office_id": 1},
-            )
-            if doc and doc.get("company_office_id"):
-                return str(doc["company_office_id"])
-        except Exception:
-            continue
+
+    try:
+        data = await http_get(f"/new-scripts/resolve-company-office-id/{report_id_str}")
+        if data and data.get("company_office_id"):
+            return str(data["company_office_id"])
+
+    except Exception:
+        pass
     return None
 
 
@@ -273,30 +269,37 @@ async def calculate_total_assets(page) -> dict:
 
 
 async def _update_report_check_status(
-    report_id: str, user_id: str | None, updates: dict, company_office_id: str | None = None
+    report_id: str,
+    user_id: str | None,
+    updates: dict,
+    company_office_id: str | None = None,
 ) -> None:
     if not report_id or not updates:
         return
+
     try:
         payload = {
             "report_id": str(report_id),
             "user_id": str(user_id) if user_id else None,
-            **updates,
+            "updates": updates,
         }
+
         if company_office_id:
             payload["company_office_id"] = str(company_office_id)
-        query = {"report_id": str(report_id), "user_id": str(user_id) if user_id else None}
-        if company_office_id:
-            query["company_office_id"] = str(company_office_id)
-        await _check_report_coll.update_one(
-            query,
-            {"$set": payload},
-            upsert=True,
+
+        await http_patch(
+            "/new-scripts/update-check-status",
+            json=payload,
         )
+
     except Exception as e:
         print(
             json.dumps(
-                {"event": "db_update_failed", "reportId": report_id, "error": str(e)}
+                {
+                    "event": "http_update_failed",
+                    "reportId": report_id,
+                    "error": str(e),
+                }
             ),
             file=sys.stderr,
         )

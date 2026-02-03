@@ -1,10 +1,7 @@
-import asyncio, json
+import asyncio
 import sys
 import traceback
 from datetime import datetime, timezone
-
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import get_browser, spawn_new_browser
 from scripts.core.company_context import (
@@ -12,21 +9,19 @@ from scripts.core.company_context import (
     require_selected_company,
     set_selected_company,
 )
+from scripts.core.httpClient import http_get, http_patch
 from scripts.core.utils import wait_for_element
-from .formSteps import form_steps
-from .formFiller import fill_form
-from .macroFiller import handle_macro_edits
+
 from .createMacros import run_create_assets_by_count
+from .formFiller import fill_form
+from .formSteps import form_steps
 from .grabMacroIds import (
-    update_report_pg_count,
     get_balanced_page_distribution,
     get_macro_ids_from_page,
+    update_report_pg_count,
     update_report_with_macro_ids,
 )
-
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-client = AsyncIOMotorClient(MONGO_URI)
-db = client["test"]
+from .macroFiller import handle_macro_edits
 
 HOME_URL = "https://qima.taqeem.sa/report"
 
@@ -64,21 +59,30 @@ def build_form_payload(record):
 
 
 async def fetch_report(record_id=None):
-    """Fetch a duplicate report record from MongoDB."""
-    if record_id:
-        if not ObjectId.is_valid(record_id):
-            raise ValueError("Invalid record id")
-        rec = await db.duplicatereports.find_one({"_id": ObjectId(record_id)})
-    else:
-        rec = await db.duplicatereports.find_one(sort=[("createdAt", -1)])
+    """Fetch a duplicate report record via HTTP API."""
+    try:
+        if record_id:
+            # Fetch by _id
+            response = await http_get(f"/new-scripts/id/{record_id}")
+        else:
+            # Fetch latest duplicate report (you'll need to add this endpoint or modify)
+            # For now, this will need a specific endpoint - using id as fallback
+            response = await http_get("/new-scripts/latest-duplicate")
 
-    if not rec:
-        raise ValueError("No duplicate report found to process")
+        if response.get("success") and response.get("data"):
+            return response["data"]
+        else:
+            raise ValueError(
+                f"No duplicate report found: {response.get('message', 'Unknown error')}"
+            )
 
-    return rec
+    except Exception as e:
+        raise ValueError(f"Failed to fetch report: {str(e)}")
 
 
-async def get_all_macro_ids_parallel(browser, report_id, tabs_num=3, collection_name="duplicatereports"):
+async def get_all_macro_ids_parallel(
+    browser, report_id, tabs_num=3, collection_name="duplicatereports"
+):
     try:
         if not report_id:
             print("[MACRO_ID] No report_id provided", file=sys.stderr)
@@ -100,7 +104,9 @@ async def get_all_macro_ids_parallel(browser, report_id, tabs_num=3, collection_
 
         total_pages = max(page_numbers) if page_numbers else 1
         print(f"[MACRO_ID] Found {total_pages} pages to scan", file=sys.stderr)
-        await update_report_pg_count(report_id, total_pages, collection_name=collection_name)
+        await update_report_pg_count(
+            report_id, total_pages, collection_name=collection_name
+        )
 
         pages = [main_page] + [
             await browser.get("about:blank", new_tab=True)
@@ -118,10 +124,15 @@ async def get_all_macro_ids_parallel(browser, report_id, tabs_num=3, collection_
 
         async def process_pages_chunk(page, page_numbers_chunk, tab_id):
             local_macro_ids_with_pages = []
-            print(f"[MACRO_ID-TAB-{tab_id}] Processing pages: {page_numbers_chunk}", file=sys.stderr)
+            print(
+                f"[MACRO_ID-TAB-{tab_id}] Processing pages: {page_numbers_chunk}",
+                file=sys.stderr,
+            )
 
             for page_num in page_numbers_chunk:
-                page_macro_ids = await get_macro_ids_from_page(page, base_url, page_num, tab_id)
+                page_macro_ids = await get_macro_ids_from_page(
+                    page, base_url, page_num, tab_id
+                )
                 local_macro_ids_with_pages.extend(page_macro_ids)
 
             async with macro_ids_lock:
@@ -152,14 +163,18 @@ async def get_all_macro_ids_parallel(browser, report_id, tabs_num=3, collection_
                 report_id, all_macro_ids_with_pages, collection_name=collection_name
             )
             if success:
-                print("[MACRO_ID] Successfully updated report in MongoDB", file=sys.stderr)
+                print(
+                    "[MACRO_ID] Successfully updated report in MongoDB", file=sys.stderr
+                )
             else:
                 print("[MACRO_ID] Failed to update report in MongoDB", file=sys.stderr)
 
         return {"status": "SUCCESS", "macro_ids_with_pages": all_macro_ids_with_pages}
 
     except Exception as e:
-        print(f"[MACRO_ID] Error in get_all_macro_ids_parallel: {str(e)}", file=sys.stderr)
+        print(
+            f"[MACRO_ID] Error in get_all_macro_ids_parallel: {str(e)}", file=sys.stderr
+        )
         traceback.print_exc()
         return {"status": "FAILED", "error": str(e)}
 
@@ -175,9 +190,11 @@ async def create_report_for_record(browser, record, tabs_num=3):
         except Exception as ctx_err:
             return {"status": "FAILED", "error": str(ctx_err)}
 
-        await db.duplicatereports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"startSubmitTime": datetime.now(timezone.utc)}},
+        # Update start time via HTTP
+        record_id = record["_id"]
+        await http_patch(
+            f"/new-scripts/set-start-time-with-id/{record_id}",
+            json={"timestamp": datetime.now(timezone.utc).isoformat()},
         )
 
         payload, assets = build_form_payload(record)
@@ -194,7 +211,11 @@ async def create_report_for_record(browser, record, tabs_num=3):
             is_last = step_num == len(form_steps)
 
             results.append(
-                {"status": "STEP_STARTED", "step": step_num, "recordId": str(record["_id"])}
+                {
+                    "status": "STEP_STARTED",
+                    "step": step_num,
+                    "recordId": record_id,
+                }
             )
 
             if step_num == 2 and asset_count > 10:
@@ -222,13 +243,14 @@ async def create_report_for_record(browser, record, tabs_num=3):
                     {
                         "status": "FAILED",
                         "step": step_num,
-                        "recordId": str(record["_id"]),
+                        "recordId": record_id,
                         "error": result.get("error"),
                     }
                 )
-                await db.duplicatereports.update_one(
-                    {"_id": record["_id"]},
-                    {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                # Update end time via HTTP
+                await http_patch(
+                    f"/new-scripts/set-end-time-with-id/{record_id}",
+                    json={"timestamp": datetime.now(timezone.utc).isoformat()},
                 )
                 return {"status": "FAILED", "results": results}
 
@@ -240,56 +262,73 @@ async def create_report_for_record(browser, record, tabs_num=3):
                         {
                             "status": "FAILED",
                             "step": "report_id",
-                            "recordId": str(record["_id"]),
+                            "recordId": record_id,
                             "error": "Could not determine report_id",
                         }
                     )
-                    await db.duplicatereports.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    # Update end time via HTTP
+                    await http_patch(
+                        f"/new-scripts/set-end-time-with-id/{record_id}",
+                        json={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                     return {"status": "FAILED", "results": results}
 
-                await db.duplicatereports.update_one(
-                    {"_id": record["_id"]},
-                    {"$set": {"report_id": form_id, "number_of_macros": asset_count}},
+                # Update report_id and macro count via HTTP
+                await http_patch(
+                    f"/new-scripts/{record_id}/set-report-id",
+                    json={"report_id": form_id, "number_of_macros": asset_count},
                 )
 
                 macro_ids_result = await get_all_macro_ids_parallel(
-                    browser, form_id, tabs_num=tabs_num, collection_name="duplicatereports"
+                    browser,
+                    form_id,
+                    tabs_num=tabs_num,
+                    collection_name="duplicatereports",
                 )
-                if isinstance(macro_ids_result, dict) and macro_ids_result.get("status") == "FAILED":
+                if (
+                    isinstance(macro_ids_result, dict)
+                    and macro_ids_result.get("status") == "FAILED"
+                ):
                     results.append(
                         {
                             "status": "FAILED",
                             "step": "macro_ids",
-                            "recordId": str(record["_id"]),
+                            "recordId": record_id,
                             "error": macro_ids_result.get("error"),
                         }
                     )
-                    await db.duplicatereports.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    # Update end time via HTTP
+                    await http_patch(
+                        f"/new-scripts/set-end-time-with-id/{record_id}",
+                        json={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                     return {"status": "FAILED", "results": results}
 
-                record = await db.duplicatereports.find_one({"report_id": form_id}) or record
+                # Re-fetch updated record via HTTP
+                updated_response = await http_get(f"/new-scripts/report-id/{form_id}")
+                if updated_response.get("success") and updated_response.get("data"):
+                    record = updated_response["data"]
+                # else keep the old record
 
                 macro_result = await handle_macro_edits(
-                    browser, record, tabs_num=tabs_num, record_id=str(record["_id"])
+                    browser, record, tabs_num=tabs_num, record_id=record_id
                 )
-                if isinstance(macro_result, dict) and macro_result.get("status") == "FAILED":
+                if (
+                    isinstance(macro_result, dict)
+                    and macro_result.get("status") == "FAILED"
+                ):
                     results.append(
                         {
                             "status": "FAILED",
                             "step": "macro_edit",
-                            "recordId": str(record["_id"]),
+                            "recordId": record_id,
                             "error": macro_result.get("error"),
                         }
                     )
-                    await db.duplicatereports.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    # Update end time via HTTP
+                    await http_patch(
+                        f"/new-scripts/set-end-time-with-id/{record_id}",
+                        json={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                     return {"status": "FAILED", "results": results}
 
@@ -297,13 +336,14 @@ async def create_report_for_record(browser, record, tabs_num=3):
                     {
                         "status": "MACRO_EDIT_SUCCESS",
                         "message": "All macros filled",
-                        "recordId": str(record["_id"]),
+                        "recordId": record_id,
                     }
                 )
 
-        await db.duplicatereports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+        # Update end time via HTTP
+        await http_patch(
+            f"/new-scripts/set-end-time-with-id/{record_id}",
+            json={"timestamp": datetime.now(timezone.utc).isoformat()},
         )
 
         await main_page.get(HOME_URL)
@@ -311,11 +351,21 @@ async def create_report_for_record(browser, record, tabs_num=3):
         return {"status": "SUCCESS", "report_id": form_id, "results": results}
 
     except Exception as e:
-        await db.duplicatereports.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
-        )
-        return {"status": "FAILED", "error": str(e), "traceback": traceback.format_exc()}
+        # Update end time via HTTP on error
+        if record and "_id" in record:
+            try:
+                await http_patch(
+                    f"/new-scripts/set-end-time/{str(record['_id'])}",
+                    json={"timestamp": datetime.now(timezone.utc).isoformat()},
+                )
+            except:
+                pass  # Don't fail on cleanup error
+
+        return {
+            "status": "FAILED",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
 
 
 async def run_duplicate_report(record_id=None, company_url=None, tabs_num=3):
@@ -323,14 +373,22 @@ async def run_duplicate_report(record_id=None, company_url=None, tabs_num=3):
     try:
         company_hint = company_url if isinstance(company_url, dict) else {}
         if company_url:
-            url_to_set = company_url.get("url") if isinstance(company_url, dict) else company_url
+            url_to_set = (
+                company_url.get("url") if isinstance(company_url, dict) else company_url
+            )
             set_selected_company(
                 url_to_set,
-                name=company_hint.get("name") if isinstance(company_hint, dict) else None,
-                office_id=(company_hint.get("officeId") or company_hint.get("office_id"))
+                name=company_hint.get("name")
                 if isinstance(company_hint, dict)
                 else None,
-                sector_id=(company_hint.get("sectorId") or company_hint.get("sector_id"))
+                office_id=(
+                    company_hint.get("officeId") or company_hint.get("office_id")
+                )
+                if isinstance(company_hint, dict)
+                else None,
+                sector_id=(
+                    company_hint.get("sectorId") or company_hint.get("sector_id")
+                )
                 if isinstance(company_hint, dict)
                 else None,
             )
@@ -349,7 +407,11 @@ async def run_duplicate_report(record_id=None, company_url=None, tabs_num=3):
         return result
 
     except Exception as e:
-        return {"status": "FAILED", "error": str(e), "traceback": traceback.format_exc()}
+        return {
+            "status": "FAILED",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
 
     finally:
         if new_browser:

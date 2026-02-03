@@ -1,12 +1,12 @@
 import json
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import spawn_new_browser
-from scripts.core.httpClient import http_get
+from scripts.core.httpClient import http_get, http_patch
 from scripts.core.processControl import (
     check_and_wait,
     clear_process,
@@ -20,12 +20,6 @@ from scripts.submission.createMacros import run_create_assets
 from scripts.submission.grabMacroIds import get_all_macro_ids_parallel
 from scripts.submission.macroFiller import run_macro_edit
 from scripts.submission.validateReport import validate_report_simple
-
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-
-
-def get_motor_client():
-    return AsyncIOMotorClient(MONGO_URI)
 
 
 async def run_complete_report_flow(browser, report_id, tabs_num=3, batch_size=10):
@@ -53,11 +47,6 @@ async def run_complete_report_flow(browser, report_id, tabs_num=3, batch_size=10
             ),
             file=sys.stderr,
         )
-
-        # Connect to MongoDB
-        client = get_motor_client()
-        db = client["test"]
-        collection = db["reports"]
 
         # ==========================================
         # STEP 1: Fetch Report Data
@@ -130,9 +119,8 @@ async def run_complete_report_flow(browser, report_id, tabs_num=3, batch_size=10
         )
 
         # Update flow start time
-        await collection.update_one(
-            {"report_id": report_id},
-            {"$set": {"flowStartTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"/new-scripts/set-flow-start-time/{report_id}",
         )
 
         new_browser = await spawn_new_browser(browser)
@@ -370,9 +358,8 @@ async def run_complete_report_flow(browser, report_id, tabs_num=3, batch_size=10
         )
 
         # Update flow end time
-        await collection.update_one(
-            {"report_id": report_id},
-            {"$set": {"flowEndTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"/new-scripts/set-flow-end-time/{report_id}",
         )
 
         # Clear process state

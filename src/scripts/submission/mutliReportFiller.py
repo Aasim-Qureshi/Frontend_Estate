@@ -12,6 +12,7 @@ from scripts.core.company_context import (
     build_report_create_url,
     require_selected_company,
 )
+from scripts.core.httpClient import http_get, http_patch
 from scripts.core.utils import wait_for_element
 from scripts.submission.validateReport import validate_for_retry
 
@@ -164,7 +165,9 @@ async def find_record_in_collections(record_id_obj, collection_names):
     """Try to find a record in multiple collections, return (record, collection) or (None, None)"""
     for coll_name in collection_names:
         collection = db[coll_name]
-        record = await collection.find_one({"_id": record_id_obj})
+        print("record_id_obj", record_id_obj)
+        record_data = await http_get(f"new-scripts/id/{record_id_obj}")
+        record = record_data.get("data")
         if record:
             return record, collection
     return None, None
@@ -224,9 +227,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
             return {"status": "FAILED", "error": str(ctx_err)}
 
         # Mark start time
-        await collection.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"startSubmitTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "startSubmitTime"},
         )
 
         emit_progress_update(
@@ -296,9 +299,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                 )
 
                 # Mark end time even on failure
-                await collection.update_one(
-                    {"_id": record["_id"]},
-                    {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                await http_patch(
+                    f"new-scripts/update-report-timestamp/{record['_id']}",
+                    json={"type": "endSubmitTime"},
                 )
                 return {"status": "FAILED", "results": results}
 
@@ -315,9 +318,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                         }
                     )
 
-                    await collection.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
                     )
                     emit_progress_update(
                         record_id, 0, "Failed to create report", "error"
@@ -325,9 +328,11 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     return {"status": "FAILED", "results": results}
 
                 # Save report_id on document - Update instantly
-                await collection.update_one(
-                    {"_id": record["_id"]}, {"$set": {"report_id": form_id}}
+                await http_patch(
+                    f"new-scripts/{record['_id']}/set-report-id",
+                    json={"report_id": form_id},
                 )
+
                 record["report_id"] = form_id
 
                 # Calculate progress: 10% for report creation, +5% if assets already created = 15%
@@ -392,16 +397,17 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                         }
                     )
 
-                    await collection.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
                     )
                     return {"status": "FAILED", "results": results}
 
                 # Reload record from database to get updated macro IDs
                 # Save the original record ID before reloading
                 original_record_id = record.get("_id") if record else None
-                record = await collection.find_one({"report_id": form_id})
+                record_data = await http_get(f"new-scripts/report-id/{form_id}")
+                record = record_data.get("data")
                 if not record:
                     results.append(
                         {
@@ -414,9 +420,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                         }
                     )
                     # Try to update using form_id if we have it
-                    await collection.update_one(
-                        {"report_id": form_id},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{original_record_id}",
+                        json={"type": "endSubmitTime"},
                     )
                     return {"status": "FAILED", "results": results}
 
@@ -473,9 +479,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                         }
                     )
 
-                    await collection.update_one(
-                        {"_id": record["_id"]},
-                        {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
                     )
                     return {"status": "FAILED", "results": results}
 
@@ -488,9 +494,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                 )
 
         # Mark successful end time
-        await collection.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record['_id']}",
+            json={"type": "endSubmitTime"},
         )
 
         emit_progress_update(
@@ -519,10 +525,10 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                 )
                 if collection is None:
                     collection = db.multiapproachreports  # Default fallback
-            await collection.update_one(
-                {"_id": record["_id"]},
-                {"$set": {"endSubmitTime": datetime.now(timezone.utc)}},
-            )
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
+                    )
         return {"status": "FAILED", "error": str(e), "traceback": tb}
 
 
@@ -658,9 +664,9 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
             }
 
         # Update retry start time
-        await collection.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"retryStartTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record_id_str}",
+            json={"type": "retryStartTime"},
         )
 
         emit_progress_update(
@@ -703,9 +709,9 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
         )
 
         # Update retry end time
-        await collection.update_one(
-            {"_id": record["_id"]},
-            {"$set": {"retryEndTime": datetime.now(timezone.utc)}},
+        await http_patch(
+            f"new-scripts/update-report-timestamp/{record_id_str}",
+            json={"type": "retryEndTime"},
         )
 
         # Emit completion message

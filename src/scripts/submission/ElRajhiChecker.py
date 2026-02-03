@@ -1,21 +1,19 @@
-import asyncio, json, traceback
+import asyncio
+import json
+import traceback
 from datetime import datetime, timezone
 
-from motor.motor_asyncio import AsyncIOMotorClient
-
-from scripts.core.utils import wait_for_element, wait_for_table_rows
 from scripts.core.browser import spawn_new_browser
+from scripts.core.httpClient import http_get, http_patch
+from scripts.core.utils import wait_for_element, wait_for_table_rows
 from scripts.submission.ElRajhiFiller import (
     extract_asset_from_report,
     finalize_report_submission,
 )
+
 from .formSteps import macro_form_config
 from .macroFiller import fill_macro_form
 from .validateReport import check_report_existence
-
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-client = AsyncIOMotorClient(MONGO_URI)
-db = client["test"]
 
 VALID_STATUSES = {"INCOMPLETE", "COMPLETE", "SENT", "CONFIRMED"}
 SENT_BUTTON_MARKER = 'id="reject"'
@@ -32,14 +30,16 @@ def chunk_items(items, n):
     start = 0
     for i in range(n):
         size = k + (1 if i < m else 0)
-        chunks.append(items[start:start + size])
+        chunks.append(items[start : start + size])
         start += size
     return chunks
 
-async def _mark_submit_state(report_doc, submit_state, report_status=None, clear_report_id=False):
+
+async def _mark_submit_state(
+    report, submit_state, report_status=None, clear_report_id=False
+):
     update = {
         "submit_state": submit_state,
-        "last_checked_at": datetime.now(timezone.utc),
     }
 
     if report_status:
@@ -48,28 +48,24 @@ async def _mark_submit_state(report_doc, submit_state, report_status=None, clear
     if clear_report_id:
         update["report_id"] = None
 
-    await db.urgentreports.update_one(
-        {"_id": report_doc["_id"]},
-        {"$set": update},
+    record_id = report.get("_id")
+    await http_patch(
+        f"/new-scripts/update-elrajhi-status/{record_id}",
+        json=update,
     )
 
 
-
-
-
-    
-
-async def _check_single_report(page, report_doc):
-    report_id = report_doc.get("report_id")
+async def _check_single_report(page, report):
+    report_id = report.get("report_id")
     if not report_id:
-        await _mark_submit_state(report_doc, 0, "INCOMPLETE")
+        await _mark_submit_state(report, 0, "INCOMPLETE")
         return {
-            "batchId": report_doc.get("batch_id"),
+            "batchId": report.get("batch_id"),
             "reportId": None,
             "status": "INCOMPLETE",
             "reason": "missing_report_id",
-            "client_name": report_doc.get("client_name"),
-            "asset_name": report_doc.get("asset_name"),
+            "client_name": report.get("client_name"),
+            "asset_name": report.get("asset_name"),
             "macroId": None,
         }
 
@@ -84,14 +80,14 @@ async def _check_single_report(page, report_doc):
         existence = await check_report_existence(page, report_id)
 
         if not existence.get("exists"):
-            await _mark_submit_state(report_doc, -1, "NOT_FOUND", clear_report_id=True)
+            await _mark_submit_state(report, -1, "NOT_FOUND", clear_report_id=True)
             return {
-                "batchId": report_doc.get("batch_id"),
+                "batchId": report.get("batch_id"),
                 "reportId": report_id,
                 "status": "NOT_FOUND",
                 "reason": "report_not_accessible_or_missing",
-                "client_name": report_doc.get("client_name"),
-                "asset_name": report_doc.get("asset_name"),
+                "client_name": report.get("client_name"),
+                "asset_name": report.get("asset_name"),
                 "checkedAt": datetime.now(timezone.utc).isoformat(),
             }
 
@@ -108,7 +104,9 @@ async def _check_single_report(page, report_doc):
                 table_ready = await wait_for_table_rows(page, timeout=5)
                 if table_ready:
                     macro_link = await wait_for_element(
-                        page, "#m-table tbody tr:first-child td:nth-child(1) a", timeout=5
+                        page,
+                        "#m-table tbody tr:first-child td:nth-child(1) a",
+                        timeout=5,
                     )
                     if macro_link and macro_link.text:
                         macro_id = macro_link.text.strip()
@@ -121,15 +119,15 @@ async def _check_single_report(page, report_doc):
             html = ""
 
         html_lower = html.lower() if isinstance(html, str) else ""
-        has_sent_marker = SENT_BUTTON_MARKER in html_lower or 'name="reject"' in html_lower
+        has_sent_marker = (
+            SENT_BUTTON_MARKER in html_lower or 'name="reject"' in html_lower
+        )
         has_sent_status_text = (
             isinstance(html, str)
             and SENT_STATUS_LABEL in html
             and SENT_STATUS_VALUE in html
         )
-        has_confirmed_marker = (
-            isinstance(html, str) and CONFIRMED_BUTTON_TEXT in html
-        )
+        has_confirmed_marker = isinstance(html, str) and CONFIRMED_BUTTON_TEXT in html
 
         if has_sent_marker or has_sent_status_text:
             status_value = "SENT"
@@ -139,15 +137,15 @@ async def _check_single_report(page, report_doc):
             status_value = "CONFIRMED"
             submit_state = 1
 
-        await _mark_submit_state(report_doc, submit_state, status_value)
+        await _mark_submit_state(report, submit_state, status_value)
 
         return {
-            "batchId": report_doc.get("batch_id"),
+            "batchId": report.get("batch_id"),
             "reportId": report_id,
             "status": status_value,
             "reportStatus": status_value,
-            "client_name": report_doc.get("client_name"),
-            "asset_name": report_doc.get("asset_name"),
+            "client_name": report.get("client_name"),
+            "asset_name": report.get("asset_name"),
             "macroId": macro_id,
             "checkedAt": datetime.now(timezone.utc).isoformat(),
             "markers": {
@@ -158,35 +156,36 @@ async def _check_single_report(page, report_doc):
         }
 
     except Exception as e:
-        await _mark_submit_state(report_doc, 0, "INCOMPLETE")
+        await _mark_submit_state(report, 0, "INCOMPLETE")
         return {
-            "batchId": report_doc.get("batch_id"),
+            "batchId": report.get("batch_id"),
             "reportId": report_id,
             "status": "FAILED",
             "error": str(e),
-            "client_name": report_doc.get("client_name"),
-            "asset_name": report_doc.get("asset_name"),
+            "client_name": report.get("client_name"),
+            "asset_name": report.get("asset_name"),
         }
 
 
-
 async def check_elrajhi_batches(browser, batch_id=None, tabs_num=3):
-    query = {"batch_id": batch_id} if batch_id else {}
-    reports = await db.urgentreports.find(query).sort("createdAt", -1).to_list(None)
+    report_data = await http_get(f"/new-scripts/batch/{batch_id}")
+    reports = report_data.get("reports", [])
 
     if not reports:
         return {
             "status": "FAILED",
-            "error": "No reports found for provided batch" if batch_id else "No reports found",
+            "error": "No reports found for provided batch"
+            if batch_id
+            else "No reports found",
         }
 
     new_browser = await spawn_new_browser(browser)
     tabs = min(len(reports), tabs_num)
     main_page = new_browser.main_tab
-    
+
     pages = [main_page]
     try:
-        tabs = min(len(reports), tabs_num)  
+        tabs = min(len(reports), tabs_num)
         pages = [main_page] + [
             await new_browser.get("about:blank", new_tab=True)
             for _ in range(max(0, tabs - 1))
@@ -231,7 +230,7 @@ async def check_elrajhi_batches(browser, batch_id=None, tabs_num=3):
         group["total"] = len(group["reports"])
         group["incomplete"] = group["total"] - complete
 
-    new_browser.stop()    
+    new_browser.stop()
     return {"status": "SUCCESS", "batches": list(grouped.values())}
 
 
@@ -240,9 +239,13 @@ async def reupload_elrajhi_report(browser, report_id):
     if not report_id:
         return {"status": "FAILED", "error": "reportId is required"}
 
-    report_doc = await db.urgentreports.find_one({"report_id": report_id})
-    if not report_doc:
-        return {"status": "FAILED", "error": f"Report {report_id} not found in database"}
+    report_data = await http_get(f"/new-scripts/report-id/{report_id}")
+    report = report_data.get("report")
+    if not report:
+        return {
+            "status": "FAILED",
+            "error": f"Report {report_id} not found in database",
+        }
 
     try:
         page = await browser.get(f"https://qima.taqeem.sa/report/{report_id}")
@@ -255,7 +258,7 @@ async def reupload_elrajhi_report(browser, report_id):
             return {"status": "FAILED", "error": "Could not locate macro id for report"}
 
         macro_id = macro_link.text.strip()
-        macro_data = extract_asset_from_report(report_doc)
+        macro_data = extract_asset_from_report(report)
 
         macro_result = await fill_macro_form(
             page,
@@ -269,9 +272,7 @@ async def reupload_elrajhi_report(browser, report_id):
         submit_state = 1 if finalize_result.get("status") == "SUCCESS" else 0
         status_value = "COMPLETE" if submit_state else "INCOMPLETE"
 
-        await _mark_submit_state(report_doc, submit_state, status_value)
-
-
+        await _mark_submit_state(report, submit_state, status_value)
 
         return {
             "status": "SUCCESS" if submit_state else "FAILED",
@@ -284,5 +285,5 @@ async def reupload_elrajhi_report(browser, report_id):
         }
     except Exception as e:
         tb = traceback.format_exc()
-        await _mark_submit_state(report_doc, 0, "INCOMPLETE")
+        await _mark_submit_state(report, 0, "INCOMPLETE")
         return {"status": "FAILED", "error": str(e), "traceback": tb}
