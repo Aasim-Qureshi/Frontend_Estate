@@ -1,11 +1,9 @@
 import asyncio
 import re
-from datetime import datetime
-
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import new_tab
 from scripts.core.company_context import build_report_url, require_selected_company
+from scripts.core.httpClient import update_report_check_status
 from scripts.core.processControl import (
     check_and_wait,
     clear_process,
@@ -51,12 +49,6 @@ MAIN_NEXT_SEL = 'a.page-link[rel="next"]'
 DRAFT_STATUS_AR = "مسودة"
 DRAFT_STATUS_EN = "draft"
 
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-_mongo_client = AsyncIOMotorClient(MONGO_URI)
-_mongo_db = _mongo_client["test"]
-_delete_status_coll = _mongo_db["report_deletions"]
-_check_report_coll = _mongo_db["report_deletions"]
-
 
 async def _record_delete_status(
     report_id: str,
@@ -67,32 +59,26 @@ async def _record_delete_status(
     user_id: str | None = None,
     company_office_id: str | None = None,
 ):
+    """Record deletion status via API instead of direct MongoDB"""
     if not report_id:
         return
-    now = datetime.utcnow()
-    payload = {
-        "report_id": str(report_id),
-        "user_id": str(user_id) if user_id else None,
-        "company_office_id": str(company_office_id) if company_office_id else None,
-        "total_assets": total_assets,
-        "remaining_assets": remaining_assets,
-        "deleted": bool(deleted),
-        "delete_type": delete_type,
-        "updated_at": now,
-    }
-    if deleted:
-        payload["deleted_at"] = now
+
     try:
-        query = {"report_id": str(report_id), "delete_type": delete_type}
-        if user_id:
-            query["user_id"] = str(user_id)
-        if company_office_id:
-            query["company_office_id"] = str(company_office_id)
-        await _delete_status_coll.update_one(query, {"$set": payload}, upsert=True)
-        # Note: We no longer delete records from report_deletions after deletion
-        # All actions (Delete Report, Delete Assets, Check Report) are stored in report_deletions
+        success = await update_report_check_status(
+            report_id=report_id,
+            user_id=user_id,
+            company_office_id=company_office_id,
+            total_assets=total_assets,
+            remaining_assets=remaining_assets,
+            delete_type=delete_type,
+            deleted=deleted,
+        )
+
+        if not success:
+            log(f"[API] Failed to update delete status for report {report_id}", "WARN")
+
     except Exception as e:
-        log(f"[db] failed to update delete status: {e}", "WARN")
+        log(f"[API] Failed to update delete status: {e}", "WARN")
 
 
 async def _ensure_confirm_ok(page):

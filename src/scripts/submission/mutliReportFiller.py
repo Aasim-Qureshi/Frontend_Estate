@@ -74,9 +74,7 @@ async def get_all_macro_ids_parallel(
 
         total_pages = max(page_numbers) if page_numbers else 1
         print(f"[MACRO_ID] Found {total_pages} pages to scan", file=sys.stderr)
-        await update_report_pg_count(
-            report_id, total_pages, collection_name=collection_name
-        )
+        await update_report_pg_count(report_id, total_pages)
 
         # Create pages for parallel processing
         pages = [main_page] + [
@@ -139,7 +137,7 @@ async def get_all_macro_ids_parallel(
                 collection_name = "multiapproachreports"  # Default fallback
 
             success = await update_report_with_macro_ids(
-                report_id, all_macro_ids_with_pages, collection_name=collection_name
+                report_id, all_macro_ids_with_pages
             )
             if success:
                 print(
@@ -161,12 +159,12 @@ async def get_all_macro_ids_parallel(
         return []
 
 
-async def find_record_in_collections(record_id_obj, collection_names):
+async def find_record_in_collections(id, collection_names):
     """Try to find a record in multiple collections, return (record, collection) or (None, None)"""
     for coll_name in collection_names:
         collection = db[coll_name]
-        print("record_id_obj", record_id_obj)
-        record_data = await http_get(f"new-scripts/id/{record_id_obj}")
+        record_data = await http_get(f"new-scripts/id/{id}")
+        print("record_data", record_data)
         record = record_data.get("data")
         if record:
             return record, collection

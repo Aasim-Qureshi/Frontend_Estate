@@ -104,9 +104,7 @@ async def get_all_macro_ids_parallel(
 
         total_pages = max(page_numbers) if page_numbers else 1
         print(f"[MACRO_ID] Found {total_pages} pages to scan", file=sys.stderr)
-        await update_report_pg_count(
-            report_id, total_pages, collection_name=collection_name
-        )
+        await update_report_pg_count(report_id, total_pages)
 
         pages = [main_page] + [
             await browser.get("about:blank", new_tab=True)
@@ -160,7 +158,7 @@ async def get_all_macro_ids_parallel(
 
         if all_macro_ids_with_pages:
             success = await update_report_with_macro_ids(
-                report_id, all_macro_ids_with_pages, collection_name=collection_name
+                report_id, all_macro_ids_with_pages
             )
             if success:
                 print(

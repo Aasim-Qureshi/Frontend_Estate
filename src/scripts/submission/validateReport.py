@@ -319,7 +319,6 @@ async def validate_report(cmd):
                 report_id,
                 user_id,
                 {
-                    "last_status_check_at": datetime.utcnow(),
                     "last_status_check_status": "NOT_FOUND",
                     "last_status_check_source": "validate_report",
                     "status_reason": "COMPANY_MISMATCH",
@@ -388,7 +387,6 @@ async def validate_report(cmd):
                 report_id,
                 user_id,
                 {
-                    "last_status_check_at": datetime.utcnow(),
                     "last_status_check_status": "NOT_FOUND",
                     "last_status_check_source": "validate_report",
                 },
@@ -457,7 +455,6 @@ async def validate_report(cmd):
                 ),
                 file=sys.stderr,
             )
-
             await _update_report_check_status(
                 report_id,
                 user_id,
@@ -465,7 +462,6 @@ async def validate_report(cmd):
                     "report_status": report_status,
                     "report_status_label": report_status_label,
                     "assets_exact": assets_exact,
-                    "last_status_check_at": datetime.utcnow(),
                     "last_status_check_status": "MACROS_EXIST",
                     "last_status_check_source": "validate_report",
                 },
@@ -502,7 +498,6 @@ async def validate_report(cmd):
                 "report_status": report_status,
                 "report_status_label": report_status_label,
                 "assets_exact": None,
-                "last_status_check_at": datetime.utcnow(),
                 "last_status_check_status": "SUCCESS",
                 "last_status_check_source": "validate_report",
             },
