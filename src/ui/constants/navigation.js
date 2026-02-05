@@ -30,6 +30,16 @@ const valueSystemGroups = {
                 id: 'haraj-data-updated',
                 label: 'Haraj Data Updated',
                 description: 'Updated Haraj ads feed with backend filters, comments, and phone visibility.'
+            },
+            {
+                id: 'mobasher-data',
+                label: 'Mobasher Data',
+                description: 'Explore Mobasher ads with brand/model/year/fuel filters and detail insights.'
+            },
+            {
+                id: 'yalla-motor',
+                label: 'Yalla Motor Link',
+                description: 'Filter Yalla Motor listings, inspect scraped headers, and link back to the source.'
             }
         ]
     },
@@ -183,6 +193,8 @@ const viewTitles = {
     'haraj-data': 'Haraj Data',
     'haraj-scrape': 'Haraj Scrape Data',
     'haraj-data-updated': 'Haraj Data Updated',
+    'mobasher-data': 'Mobasher Data',
+    'yalla-motor': 'Yalla Motor',
     'delete-report': 'Delete Assets / Reports',
     'my-reports': 'My Reports',
     'system-status': 'System Operating Status',

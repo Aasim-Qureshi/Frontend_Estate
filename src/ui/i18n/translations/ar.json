@@ -68,7 +68,7 @@
             "refresh": "تحديث",
             "taqeem": "تقييم",
             "company": "الشركة",
-            "companyDefault": "?? ???? ???? ?????"
+            "companyDefault": "لم يتم اختيار شركة بعد"
         },
         "auth": {
             "userFallback": "مستخدم",
@@ -269,6 +269,10 @@
                 "label": "حذف تقرير",
                 "description": "حذف التقارير والملفات المرتبطة بأمان."
             },
+            "yalla-motor": {
+                "label": "يلا موتور",
+                "description": "استعرض بيانات يلا موتور المسحوبة وادرس رؤوس الحقول."
+            },
             "delete-assets": {
                 "label": "حذف الأصول",
                 "description": "حذف الأصول بأمان."
@@ -341,6 +345,7 @@
             "valuation-system": "نظام التقييم",
             "word-copy": "نسخ وورد",
             "delete-report": "حذف تقرير",
+            "yalla-motor": "يلا موتور",
             "system-status": "حالة تشغيل النظام",
             "system-updates": "تحديثات النظام",
             "statics": "الإحصائيات",

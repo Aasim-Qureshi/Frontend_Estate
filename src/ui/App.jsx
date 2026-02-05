@@ -40,6 +40,8 @@ import WordCopy from './screens/WordCopy';
 import HarajData from './screens/HarajData';
 import HarajDataUpdated from './screens/HarajDataUpdated';
 import HarajScrapeData from './screens/HarajScrapeData';
+import MobasherData from './screens/MobasherData';
+import YallaMotor from './screens/YallaMotor';
 import Apps from './screens/Apps';
 import { ValueNavProvider } from './context/ValueNavContext';
 import ComingSoon from './screens/ComingSoon';
@@ -233,6 +235,10 @@ const AppContent = () => {
                 return <HarajData />;
             case 'haraj-data-updated':
                 return <HarajDataUpdated />;
+            case 'mobasher-data':
+                return <MobasherData />;
+            case 'yalla-motor':
+                return <YallaMotor />;
             case 'haraj-scrape':
                 return <HarajScrapeData />;
 

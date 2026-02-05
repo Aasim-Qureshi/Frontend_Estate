@@ -406,11 +406,13 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
     const renderEvaluationSourcesLinks = () => {
         if (selectedCard !== 'evaluation-sources') return null;
-        const evaluationLinks = [
-            { id: 'haraj', label: 'Haraj Data', icon: Database },
-            { id: 'haraj-scrape', label: 'Haraj Scrape Data', icon: Database },
-            { id: 'haraj-data-updated', label: 'Haraj Data Updated', icon: Database }
-        ];
+          const evaluationLinks = [
+              { id: 'yalla-motor', label: 'Yalla Motor', icon: Database },
+              { id: 'haraj', label: 'Haraj Data', icon: Database },
+              { id: 'haraj-scrape', label: 'Haraj Scrape Data', icon: Database },
+              { id: 'haraj-data-updated', label: 'Haraj Data Updated', icon: Database },
+              { id: 'mobasher-data', label: 'Mobasher Data', icon: Database }
+          ];
         return (
             <div
                 className="rounded-lg border border-emerald-400/30 bg-gradient-to-br from-emerald-950/35 via-slate-950/60 to-slate-900/70 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(52,211,153,0.08)] sidebar-animate"
