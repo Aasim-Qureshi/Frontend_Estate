@@ -5,7 +5,6 @@ import traceback
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import spawn_new_browser
 from scripts.core.company_context import (
@@ -26,10 +25,6 @@ from .grabMacroIds import (
     update_report_with_macro_ids,
 )
 from .macroFiller import handle_macro_edits
-
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-client = AsyncIOMotorClient(MONGO_URI)
-db = client["test"]
 
 
 async def navigate_to_existing_report_assets(browser, report_id):
@@ -161,13 +156,11 @@ async def get_all_macro_ids_parallel(
 
 async def find_record_in_collections(id, collection_names):
     """Try to find a record in multiple collections, return (record, collection) or (None, None)"""
-    for coll_name in collection_names:
-        collection = db[coll_name]
-        record_data = await http_get(f"new-scripts/id/{id}")
-        print("record_data", record_data)
-        record = record_data.get("data")
-        if record:
-            return record, collection
+    record_data = await http_get(f"new-scripts/id/{id}")
+    print("record_data", record_data)
+    record = record_data.get("data")
+    if record:
+        return record, "multiapproachreports"
     return None, None
 
 
@@ -215,8 +208,6 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
             _, collection = await find_record_in_collections(
                 record["_id"], collection_names
             )
-            if collection is None:
-                collection = db.multiapproachreports  # Default fallback
 
         try:
             require_selected_company()
@@ -355,12 +346,8 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     )
 
                 # Determine collection name for macro ID update
-                collection_name_map = {
-                    db.multiapproachreports: "multiapproachreports",
-                    db.submitreportsquicklies: "submitreportsquicklies",
-                    db.submitreportsquickly: "submitreportsquickly",
-                }
-                coll_name = collection_name_map.get(collection, "multiapproachreports")
+
+                coll_name = "multiapproachreports"
 
                 # Get macro IDs - Keep progress at 15% (or 10% if assets not created yet)
                 # Preserve current progress percentage and message
@@ -462,7 +449,6 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     tabs_num=tabs_num,
                     record_id=record_id,
                     progress_callback=progress_callback,
-                    collection=collection,
                 )
                 if (
                     isinstance(macro_result, dict)
@@ -521,12 +507,7 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                 _, collection = await find_record_in_collections(
                     record["_id"], collection_names
                 )
-                if collection is None:
-                    collection = db.multiapproachreports  # Default fallback
-                    await http_patch(
-                        f"new-scripts/update-report-timestamp/{record['_id']}",
-                        json={"type": "endSubmitTime"},
-                    )
+
         return {"status": "FAILED", "error": str(e), "traceback": tb}
 
 
@@ -554,23 +535,6 @@ async def create_new_report(browser, record_id, tabs_num=3):
         record, collection = await find_record_in_collections(
             record_id_obj, collection_names
         )
-
-        if not record:
-            # List available collections for debugging
-            try:
-                all_collections = await db.list_collection_names()
-                submit_collections = [
-                    c
-                    for c in all_collections
-                    if "submit" in c.lower() and "quick" in c.lower()
-                ]
-                error_msg = f"Record not found with id: {record_id_str}. "
-                if submit_collections:
-                    error_msg += f"Available submit collections: {', '.join(submit_collections)}. "
-                error_msg += f"Checked collections: {', '.join(collection_names)}"
-            except:
-                error_msg = f"Record not found with id: {record_id_str}"
-            return {"status": "FAILED", "error": error_msg}
 
         return await create_report_for_record(
             browser, record, tabs_num=tabs_num, collection=collection
@@ -601,10 +565,10 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
 
         # Try to find record in all possible collections
         collection_names = [
-            "multiapproachreports",
-            "submitreportsquicklies",
-            "duplicatereports",
-            "submitreportsquickly",
+            "multawdawdiapproacfesfeshrepfesfesorts",
+            "sufesfesfbmitreportsquicawdwaies",
+            "duawdawdfpfesicatereposefesfesrts",
+            "suawdebmitrepasdaortssefsefquickly",
         ]
 
         record, collection = await find_record_in_collections(
@@ -703,7 +667,6 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
             tabs_num=tabs_num,
             record_id=record_id_str,
             progress_callback=progress_callback,
-            collection=collection,
         )
 
         # Update retry end time

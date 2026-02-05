@@ -437,3 +437,17 @@ async def update_report_check_status(
     except Exception as e:
         print(f"[API ERROR] update_report_check_status: {e}")
         return False
+
+
+async def recompute_report_status(report_id):
+    """Recompute and update report status based on asset submitState values"""
+    try:
+        response = await http_patch(f"/new-scripts/{report_id}/recompute-status")
+
+        if response.get("success"):
+            return response.get("report_status")
+
+        return None
+    except Exception as e:
+        print(f"[API ERROR] recompute_report_status: {e}")
+        return None

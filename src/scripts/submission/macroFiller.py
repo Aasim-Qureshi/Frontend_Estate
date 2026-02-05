@@ -1,12 +1,16 @@
 import asyncio
 import sys
 import traceback
-from datetime import datetime, timezone
-
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.browser import spawn_new_browser
-from scripts.core.httpClient import http_get, http_patch
+from scripts.core.httpClient import (
+    find_report_by_id,
+    http_get,
+    http_patch,
+    recompute_report_status,
+    update_macro_submit_state,
+    update_report_status_by_id,
+)
 from scripts.core.processControl import (
     check_and_wait,
     clear_process,
@@ -21,10 +25,6 @@ from scripts.submission.validateReport import validate_for_retry
 
 from .formFiller import fill_form
 from .formSteps import macro_form_config
-
-MONGO_URI = "mongodb+srv://Aasim:userAasim123@electron.cwbi8id.mongodb.net"
-client = AsyncIOMotorClient(MONGO_URI)
-db = client["test"]
 
 
 def balanced_chunks(lst, n):
@@ -44,56 +44,56 @@ def is_asset_complete(asset):
     return val == 1 or val == "1" or val is True
 
 
-async def resolve_collection_for_record(record_id, collection=None):
-    if collection is not None:
-        return collection
+async def update_report_completion_status(record_id):
+    """
+    Update report completion status based on asset submitState values using API
 
-    collections_to_check = [
-        db.multiapproachreports,
-        db.submitreportsquicklies,
-        db.submitreportsquickly,
-    ]
+    Args:
+        record_id: The MongoDB _id of the report
+    """
+    try:
+        # Fetch the report via API
+        report, collection_name, _ = await find_report_by_id(record_id)
+        if not report:
+            print(
+                f"[API] ERROR: Report with _id {record_id} not found",
+                file=sys.stderr,
+            )
+            return None
 
-    for coll in collections_to_check:
-        try:
-            record_doc = await coll.find_one({"_id": record_id})
-            if record_doc:
-                return coll
-        except Exception:
-            continue
+        assets = report.get("asset_data", [])
+        any_incomplete = (
+            any(not is_asset_complete(asset) for asset in assets) if assets else False
+        )
 
-    return None
-
-
-async def update_report_completion_status(record_id, collection=None):
-    target_collection = await resolve_collection_for_record(record_id, collection)
-    if target_collection is None:
-        return None
-
-    report = await target_collection.find_one(
-        {"_id": record_id}, {"asset_data.submitState": 1, "report_status": 1}
-    )
-    if not report:
-        return None
-
-    assets = report.get("asset_data", [])
-    any_incomplete = (
-        any(not is_asset_complete(asset) for asset in assets) if assets else False
-    )
-
-    if any_incomplete:
-        new_status = "incomplete"
-    else:
-        current_status = (report.get("report_status") or "").lower()
-        if current_status in ["sent", "approved"]:
-            new_status = report.get("report_status")
+        if any_incomplete:
+            new_status = "incomplete"
         else:
-            new_status = "complete"
+            current_status = (report.get("report_status") or "").lower()
+            if current_status in ["sent", "approved"]:
+                new_status = report.get("report_status")
+            else:
+                new_status = "complete"
 
-    await target_collection.update_one(
-        {"_id": record_id}, {"$set": {"report_status": new_status}}
-    )
-    return new_status
+        # Update status via API
+        success = await update_report_status_by_id(record_id, new_status)
+
+        if success:
+            print(
+                f"[API] Updated report {record_id} status to {new_status}",
+                file=sys.stderr,
+            )
+            return new_status
+        else:
+            print(
+                f"[API] Failed to update report {record_id} status",
+                file=sys.stderr,
+            )
+            return None
+
+    except Exception as e:
+        print(f"[API ERROR] update_report_completion_status: {e}", file=sys.stderr)
+        return None
 
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types):
@@ -158,6 +158,9 @@ async def handle_macro_edits(
     completed = 0
     failed = 0
 
+    # Get record_id for API calls
+    mongo_record_id = record.get("_id")
+
     async def process_chunk(asset_chunk, page, chunk_index):
         nonlocal completed, failed
         print(f"Processing chunk {chunk_index} with {len(asset_chunk)} assets")
@@ -168,7 +171,7 @@ async def handle_macro_edits(
             if action == "stop":
                 print(f"Chunk {chunk_index} stopped by user request")
                 return {"status": "STOPPED"}
-            #
+
             macro_id = asset.get("id")
 
             if macro_id is None:
@@ -206,56 +209,29 @@ async def handle_macro_edits(
                     macro_form_config["field_types"],
                 )
 
-                # Update submitState in database if save was successful
-                if result.get("status") == "SAVED" and record.get("_id"):
-                    # Use provided collection or find it
-                    target_collection = collection
-                    if target_collection is None:
-                        # Find the collection by searching for the record
-                        collections_to_check = [
-                            (db.multiapproachreports, "multiapproachreports"),
-                            (db.submitreportsquicklies, "submitreportsquicklies"),
-                            (db.submitreportsquickly, "submitreportsquickly"),
-                        ]
+                # Update submitState via API if save was successful
+                if result.get("status") == "SAVED" and mongo_record_id:
+                    try:
+                        # Update macro submit state via API
+                        update_success = await update_macro_submit_state(
+                            mongo_record_id, macro_id, 1
+                        )
 
-                        for coll, coll_name in collections_to_check:
-                            try:
-                                from bson import ObjectId
-
-                                record_doc = await coll.find_one({"_id": record["_id"]})
-                                if record_doc:
-                                    target_collection = coll
-                                    break
-                            except:
-                                continue
-
-                    if target_collection is not None:
-                        try:
-                            # Update using array positional operator
-                            update_result = await target_collection.update_one(
-                                {"_id": record["_id"], "asset_data.id": str(macro_id)},
-                                {"$set": {"asset_data.$.submitState": 1}},
-                            )
-
-                            # If no document matched, try to find by index
-                            if update_result.matched_count == 0:
-                                asset_data = record.get("asset_data", [])
-                                for idx, a in enumerate(asset_data):
-                                    if a.get("id") == str(macro_id):
-                                        await target_collection.update_one(
-                                            {"_id": record["_id"]},
-                                            {
-                                                "$set": {
-                                                    f"asset_data.{idx}.submitState": 1
-                                                }
-                                            },
-                                        )
-                                        break
-                        except Exception as e:
+                        if update_success:
                             print(
-                                f"Error updating submitState for macro {macro_id}: {e}",
+                                f"[API] Successfully updated submitState for macro {macro_id}",
                                 file=sys.stderr,
                             )
+                        else:
+                            print(
+                                f"[API] Failed to update submitState for macro {macro_id}",
+                                file=sys.stderr,
+                            )
+                    except Exception as e:
+                        print(
+                            f"[API ERROR] updating submitState for macro {macro_id}: {e}",
+                            file=sys.stderr,
+                        )
 
                 # Update counters (batch progress update)
                 lock = process_manager.get_lock(record_id)
@@ -348,8 +324,9 @@ async def handle_macro_edits(
             "total": total_assets,
         }
 
-    if record and record.get("_id"):
-        await update_report_completion_status(record.get("_id"), collection)
+    # Update report completion status via API
+    if mongo_record_id:
+        await update_report_completion_status(mongo_record_id)
 
     return {
         "status": "SUCCESS",
@@ -360,7 +337,7 @@ async def handle_macro_edits(
     }
 
 
-async def run_macro_edit(browser, report_id, tabs_num=3):
+async def run_macro_edit(browser, report_id, tabs_num=3, collection=None):
     try:
         record_data = await http_get(f"/new-scripts/report-id/{report_id}")
         record = record_data.get("data", [])
@@ -406,10 +383,11 @@ async def run_macro_edit(browser, report_id, tabs_num=3):
     except Exception as e:
         # Clear process state on error
         clear_process(report_id)
+        tb = traceback.format_exc()
         return {"status": "FAILED", "error": str(e), "traceback": tb}
 
 
-async def run_macro_edit_retry(browser, report_id, tabs_num=3):
+async def run_macro_edit_retry(browser, report_id, tabs_num=3, collection=None):
     new_browser = None
     try:
         record_data = await http_get(f"/new-scripts/report-id/{report_id}")
@@ -421,7 +399,7 @@ async def run_macro_edit_retry(browser, report_id, tabs_num=3):
         if not asset_data:
             return {"status": "SUCCESS", "message": "No assets found"}
 
-            # Verify Report
+        # Verify Report
         new_browser = await spawn_new_browser(browser)
 
         validation_result = await validate_for_retry(new_browser, report_id, asset_data)

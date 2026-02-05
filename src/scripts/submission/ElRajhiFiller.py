@@ -1,9 +1,6 @@
 import asyncio
 import traceback
-from datetime import datetime, timezone
-
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
+from datetime import datetime
 
 from scripts.core.browser import spawn_new_browser
 from scripts.core.company_context import (

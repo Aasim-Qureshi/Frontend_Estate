@@ -161,11 +161,9 @@ async def get_all_macro_ids_parallel(
                 report_id, all_macro_ids_with_pages
             )
             if success:
-                print(
-                    "[MACRO_ID] Successfully updated report in MongoDB", file=sys.stderr
-                )
+                print("[MACRO_ID] Successfully updated report", file=sys.stderr)
             else:
-                print("[MACRO_ID] Failed to update report in MongoDB", file=sys.stderr)
+                print("[MACRO_ID] Failed to update report", file=sys.stderr)
 
         return {"status": "SUCCESS", "macro_ids_with_pages": all_macro_ids_with_pages}
 

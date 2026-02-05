@@ -3,8 +3,6 @@ import sys
 import traceback
 from datetime import datetime
 
-from motor.motor_asyncio import AsyncIOMotorClient
-
 from scripts.core.browser import spawn_new_browser
 from scripts.core.httpClient import http_get, http_patch
 from scripts.core.processControl import (
