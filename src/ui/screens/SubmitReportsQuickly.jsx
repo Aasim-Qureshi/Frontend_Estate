@@ -82,6 +82,72 @@ const reportStatusClasses = {
 const QUICK_PAGE_NAME = "Submit Reports Quickly";
 const QUICK_PAGE_SOURCE = "submit-reports-quickly";
 
+const isTaqeemAuthSuccess = (authStatus) => {
+    if (authStatus === true) return true;
+    if (authStatus?.success === true) return true;
+    const status = String(authStatus?.status || "").toUpperCase();
+    return status === "SUCCESS" || status === "CHECK";
+};
+
+const getTaqeemAuthErrorMessage = (authStatus, fallback) =>
+    authStatus?.error || authStatus?.message || fallback;
+
+const ASSET_USAGE_TEXT_TO_ID = {
+    "زراعي": 38,
+    "بحري": 39,
+    "المواصلات": 40,
+    "طيران": 41,
+    "الخدمات اللوجستية": 42,
+    "طباعة": 43,
+    "بناء": 44,
+    "الغزل والنسيج": 45,
+    "ضيافة": 46,
+    "التعدين": 47,
+    "الدباغة والتغليف": 48,
+    "الاتصالات": 49,
+    "النفط والغاز": 50,
+    "المستشفيات": 51,
+    "الأدوية": 52,
+    "مأكولات ومشروبات": 53,
+    "مياه": 54,
+    "مياه الصرف الصحي": 55,
+    "الكهرباء": 56,
+};
+
+const normalizeAssetUsageText = (value) =>
+    String(value || "")
+        .toLowerCase()
+        .normalize("NFC")
+        .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+        .replace(/[ـ]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+const NORMALIZED_ASSET_USAGE_TEXT_TO_ID = Object.entries(ASSET_USAGE_TEXT_TO_ID).reduce(
+    (acc, [label, id]) => {
+        acc[normalizeAssetUsageText(label)] = id;
+        return acc;
+    },
+    {}
+);
+
+const VALID_ASSET_USAGE_IDS = new Set(Object.values(ASSET_USAGE_TEXT_TO_ID));
+const VALID_ASSET_USAGE_LABELS = Object.keys(ASSET_USAGE_TEXT_TO_ID);
+
+const resolveAssetUsageId = (rawValue) => {
+    if (!hasValue(rawValue)) return null;
+    if (typeof rawValue === "number" && Number.isInteger(rawValue)) {
+        return rawValue;
+    }
+    const rawText = String(rawValue || "").trim();
+    if (!rawText) return null;
+    if (isStrictInteger(rawText)) {
+        return Number(rawText);
+    }
+    const normalized = normalizeAssetUsageText(rawText);
+    return NORMALIZED_ASSET_USAGE_TEXT_TO_ID[normalized] || null;
+};
+
 // Helper functions for validation
 const normalizeCellValue = (value) => {
     if (value === null || value === undefined) return "";
@@ -166,10 +232,6 @@ const parseExcelDateValue = (value) => {
 
     return null;
 };
-
-const VALID_ASSET_USAGE_IDS = new Set([
-    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56
-]);
 
 const OPTIONAL_COLUMN_KEYS = new Set(["id"]);
 const REQUIRED_COLUMN_RANGE = { start: 2, end: 7 };
@@ -346,15 +408,15 @@ const validateRequiredAssetFields = (sheetName, rows = [], localize = (key, defa
                 localize("missingAssetUsageId", "Missing asset_usage_id.")
             );
         } else {
-            const usageId = Number(assetUsageRaw);
-            if (!VALID_ASSET_USAGE_IDS.has(usageId)) {
+            const usageId = resolveAssetUsageId(assetUsageRaw);
+            if (!usageId || !VALID_ASSET_USAGE_IDS.has(usageId)) {
                 addIssue(
                     "asset_usage_id",
                     location,
                     localize(
                         "invalidAssetUsageId",
-                        `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")}`,
-                        { allowed: Array.from(VALID_ASSET_USAGE_IDS).join(", ") }
+                        `asset_usage_id must be one of: ${VALID_ASSET_USAGE_LABELS.join(", ")}`,
+                        { allowed: VALID_ASSET_USAGE_LABELS.join(", ") }
                     )
                 );
             }
@@ -460,15 +522,15 @@ const validateAssetUsageId = (sheetName, rows = [], localize = (key, defaultValu
                     )
                 );
             } else {
-                const num = Number(assetUsageId);
-                if (!VALID_ASSET_USAGE_IDS.has(num)) {
+                const usageId = resolveAssetUsageId(assetUsageId);
+                if (!usageId || !VALID_ASSET_USAGE_IDS.has(usageId)) {
                     addIssue(
                         "asset_usage_id",
                         `${sheetName} row ${idx + 2}`,
                         localize(
                             "invalidAssetUsageForAsset",
-                            `asset_usage_id must be one of: ${Array.from(VALID_ASSET_USAGE_IDS).join(", ")} for asset "${assetName}"`,
-                            { allowed: Array.from(VALID_ASSET_USAGE_IDS).join(", "), asset: assetName }
+                            `asset_usage_id must be one of: ${VALID_ASSET_USAGE_LABELS.join(", ")} for asset "${assetName}"`,
+                            { allowed: VALID_ASSET_USAGE_LABELS.join(", "), asset: assetName }
                         )
                     );
                 }
@@ -602,6 +664,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ensureCompaniesLoaded,
         setSelectedCompany
     } = useValueNav();
+    const isGuestUser = isGuest || !user?.phone;
     const selectedCompanyOfficeId = useMemo(() => {
         const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
         return officeId ? String(officeId) : "";
@@ -637,10 +700,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const [validationMessage, setValidationMessage] = useState(null);
     const [validationTableTab, setValidationTableTab] = useState("assets");
     const [showValidationModal, setShowValidationModal] = useState(false);
+    const [showTemporaryModal, setShowTemporaryModal] = useState(false);
     const [showInsufficientPointsModal, setShowInsufficientPointsModal] = useState(false);
     const [insufficientPointsMeta, setInsufficientPointsMeta] = useState(null);
     const [reports, setReports, resetReports] = usePersistentState("submitReportsQuickly:reports", [], { storage: "session" });
     const [reportsLoading, setReportsLoading] = useState(false);
+    const [unassignedReports, setUnassignedReports] = useState([]);
+    const [unassignedLoading, setUnassignedLoading] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [expandedReports, setExpandedReports] = useState([]);
@@ -781,22 +847,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 );
             }
 
+            const totalAssetsToCharge = validationItems.reduce((sum, item) => {
+                const market = Number(item?.counts?.marketAssets) || 0;
+                const cost = Number(item?.counts?.costAssets) || 0;
+                return sum + market + cost;
+            }, 0);
+            const requiredPoints = totalAssetsToCharge || excelFiles.length || 0;
+
             const authStatus = await ensureTaqeemAuthorized(
                 token,
                 onViewChange,
                 isTaqeemLoggedIn,
-                excelFiles.length || 0,
+                requiredPoints,
                 login,
                 setTaqeemStatus,
                 authOptions
             );
-            const activeToken = authStatus?.token || token;
 
             if (authStatus?.status === "INSUFFICIENT_POINTS") {
                 openInsufficientPointsModal({
-                    requiredPoints: authStatus.required ?? excelFiles.length,
+                    requiredPoints: authStatus.required ?? requiredPoints,
                     availablePoints: authStatus.available,
-                    assetCount: excelFiles.length,
+                    assetCount: requiredPoints,
                     customMessage:
                         authStatus.message ||
                         authStatus.reason ||
@@ -809,9 +881,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 throw new Error("Please log in to continue. You'll need to re-select your files after logging in.");
             }
 
-            if (!authStatus) {
-                throw new Error("Please login to Taqeem first to submit reports.");
+            if (!isTaqeemAuthSuccess(authStatus)) {
+                throw new Error(
+                    getTaqeemAuthErrorMessage(
+                        authStatus,
+                        "Please login to Taqeem first to submit reports."
+                    )
+                );
             }
+
+            const activeToken = authStatus?.token || token;
 
             setSuccess(
                 translate(
@@ -1058,7 +1137,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 page: currentPage.toString(),
                 limit: itemsPerPage.toString(),
             });
-            if (selectedCompanyOfficeId) {
+            if (selectedCompanyOfficeId && !isGuestUser) {
                 params.append("companyOfficeId", selectedCompanyOfficeId);
             }
 
@@ -1097,7 +1176,51 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         } finally {
             setReportsLoading(false);
         }
-    }, [token, currentPage, itemsPerPage, selectedCompanyOfficeId, setReports, setReportsPagination, setError]);
+    }, [token, currentPage, itemsPerPage, selectedCompanyOfficeId, isGuestUser, setReports, setReportsPagination, setError]);
+
+    const loadUnassignedReports = useCallback(async (overrideToken) => {
+        try {
+            const activeToken = overrideToken || token;
+            if (!activeToken) {
+                setUnassignedReports([]);
+                return [];
+            }
+            if (isGuestUser) {
+                setUnassignedReports([]);
+                return [];
+            }
+            setUnassignedLoading(true);
+
+            const params = new URLSearchParams({
+                page: "1",
+                limit: String(Math.max(20, itemsPerPage || 20)),
+                unassigned: "true",
+            });
+
+            const result = await window.electronAPI.apiRequest(
+                "GET",
+                `/api/submit-reports-quickly/user?${params.toString()}`,
+                {},
+                {
+                    Authorization: `Bearer ${activeToken}`
+                }
+            );
+
+            if (!result?.success) {
+                throw new Error(result?.message || "Failed to load unassigned reports.");
+            }
+
+            const reportList = Array.isArray(result.reports) ? result.reports : [];
+            setUnassignedReports(reportList);
+            return reportList;
+        } catch (err) {
+            console.warn("[SubmitReportsQuickly] Failed to load unassigned reports:", err);
+            setUnassignedReports([]);
+            return [];
+        } finally {
+            setUnassignedLoading(false);
+        }
+    }, [token, itemsPerPage, isGuestUser]);
 
     const clearReportCreatedCache = useCallback((recordId) => {
         reportCreatedCacheRef.current.delete(recordId);
@@ -1163,6 +1286,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     useEffect(() => {
         loadReports();
     }, [currentPage, itemsPerPage, token, loadReports]);
+
+    useEffect(() => {
+        if (!isGuestUser) {
+            loadUnassignedReports();
+        }
+    }, [token, loadUnassignedReports, isGuestUser]);
 
     useEffect(() => {
         return () => {
@@ -1748,6 +1877,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 )
             );
             await loadReports(activeToken);
+            await loadUnassignedReports(activeToken);
             setExcelFiles([]);
             setPdfFiles([]);
             setWantsPdfUpload(false);
@@ -2016,8 +2146,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         []
     );
 
-    const ensureCompanySelected = useCallback(async () => {
-        if (selectedCompany) return selectedCompany;
+    const ensureCompanySelected = useCallback(async (options = {}) => {
+        const { forceSelection = false, ignorePreferred = false } = options;
+
+        if (forceSelection && selectedCompany) {
+            await setSelectedCompany(null, { skipNavigation: true, quiet: true });
+        }
+        if (!forceSelection && selectedCompany) return selectedCompany;
 
         let list = companies;
         try {
@@ -2043,7 +2178,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             throw new Error("No companies available. Login to Taqeem and try again.");
         }
 
-        if (preferredCompany) {
+        if (preferredCompany && !ignorePreferred) {
             const chosen = await setSelectedCompany(preferredCompany, { skipNavigation: false, quiet: true });
             setCompanyStatus?.("success", `Company: ${chosen?.name || "Selected"}`);
             return chosen;
@@ -2087,9 +2222,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
             // Use global recommendedTabs if tabsNum not provided, otherwise use the provided value
             const resolvedTabs = tabsNum || Math.max(1, Number(recommendedTabs) || 3);
-            const report = reports.find((item) => getReportRecordId(item) === recordId);
+            const report =
+                reports.find((item) => getReportRecordId(item) === recordId) ||
+                unassignedReports.find((item) => getReportRecordId(item) === recordId);
             const assetList = Array.isArray(report?.asset_data) ? report.asset_data : [];
             const assetCount = assetList.length;
+            let assignedOfficeId = report?.company_office_id
+                ? String(report.company_office_id)
+                : "";
 
             // Initialize progress for this report
             setReportProgress((prev) => ({
@@ -2125,16 +2265,60 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     return;
                 }
                 if (authStatus?.status === "LOGIN_REQUIRED") {
-                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+                    const message = translate(
+                        "messages.error.taqeemLoginRequired",
+                        "Taqeem login required. Finish login and choose a company to continue."
+                    );
+                    setReportProgress((prev) => ({
+                        ...prev,
+                        [recordId]: { percentage: 0, status: "error", message }
+                    }));
+                    setError(message);
                     return;
                 }
-                if (!authStatus) {
-                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+                if (!isTaqeemAuthSuccess(authStatus)) {
+                    const message = getTaqeemAuthErrorMessage(
+                        authStatus,
+                        translate(
+                            "messages.error.taqeemLoginRequired",
+                            "Taqeem login required. Finish login and choose a company to continue."
+                        )
+                    );
+                    setReportProgress((prev) => ({
+                        ...prev,
+                        [recordId]: { percentage: 0, status: "error", message }
+                    }));
+                    setError(message);
                     return;
                 }
 
                 if (!skipCompanySelect) {
-                    await ensureCompanySelected();
+                    const requiresManualCompany = !report?.company_office_id;
+                    const chosen = await ensureCompanySelected({
+                        forceSelection: requiresManualCompany,
+                        ignorePreferred: requiresManualCompany
+                    });
+                    const officeId =
+                        chosen?.officeId || chosen?.office_id || selectedCompanyOfficeId;
+                    if (requiresManualCompany && officeId) {
+                        try {
+                            const nextOfficeId = String(officeId);
+                            assignedOfficeId = nextOfficeId;
+                            await updateSubmitReportsQuickly(recordId, {
+                                company_office_id: nextOfficeId
+                            });
+                            if (report) {
+                                report.company_office_id = nextOfficeId;
+                            }
+                            setUnassignedReports((prev) =>
+                                prev.filter((item) => getReportRecordId(item) !== recordId)
+                            );
+                            await loadReports();
+                            await loadUnassignedReports();
+                        } catch (err) {
+                            console.warn("Failed to update report company office id", err);
+                        }
+                    }
                 }
 
                 setSuccess(
@@ -2161,16 +2345,31 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         )
                     );
                     const activeToken = authStatus?.token || token;
+                    const createdReportId =
+                        result?.reportId ||
+                        result?.report_id ||
+                        report?.report_id ||
+                        recordId;
+                    if (createdReportId && report) {
+                        report.report_id = createdReportId;
+                    }
+                    if (createdReportId) {
+                        try {
+                            await updateSubmitReportsQuickly(recordId, {
+                                report_id: createdReportId,
+                                ...(assignedOfficeId
+                                    ? { company_office_id: assignedOfficeId }
+                                    : {}),
+                            });
+                        } catch (err) {
+                            console.warn(
+                                "Failed to update report_id after submission",
+                                err
+                            );
+                        }
+                    }
                     try {
                         if (assetCount > 0 && activeToken) {
-                            const createdReportId =
-                                result?.reportId ||
-                                result?.report_id ||
-                                report?.report_id ||
-                                recordId;
-                            if (createdReportId && report) {
-                                report.report_id = createdReportId;
-                            }
                             const reportIds = createdReportId ? [createdReportId] : [recordId];
                             await deductPoints(activeToken, assetCount, {
                                 reportIds,
@@ -2187,6 +2386,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         console.error("[SubmitReportsQuickly] Failed to deduct points:", deductErr);
                     }
                     await loadReports();
+                    await loadUnassignedReports();
                     return;
                 }
 
@@ -2204,9 +2404,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             isTaqeemLoggedIn,
             loadReports,
             onViewChange,
+            reports,
+            selectedCompanyOfficeId,
             token,
+            unassignedReports,
             recommendedTabs,
             setTaqeemStatus,
+            setUnassignedReports,
             taqeemStatus?.state
         ]
     );
@@ -2215,10 +2419,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         () => user?._id || user?.id || user?.userId || user?.user?._id || null,
         [user]
     );
+    const temporaryReports = isGuestUser ? reports : unassignedReports;
+    const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
+    const showTemporarySection =
+        isGuestUser || unassignedLoading || unassignedReports.length > 0;
 
     const getReportByRecordId = useCallback(
-        (recordId) => reports.find((report) => getReportRecordId(report) === recordId),
-        [reports]
+        (recordId) =>
+            reports.find((report) => getReportRecordId(report) === recordId) ||
+            unassignedReports.find((report) => getReportRecordId(report) === recordId),
+        [reports, unassignedReports]
     );
 
     const handleDeleteReport = async (reportOrId, options = {}) => {
@@ -2373,7 +2583,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
         if (bulkAction === "upload-submit" || bulkAction === "retry-submit") {
             // Ensure login and company selection before any submission/retry
-            const ok = await ensureTaqeemAuthorized(
+            const authStatus = await ensureTaqeemAuthorized(
                 token,
                 onViewChange,
                 taqeemStatus?.state === "success",
@@ -2382,11 +2592,62 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 setTaqeemStatus,
                 authOptions
             );
-            if (!ok) {
-                setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+            if (authStatus?.status === "INSUFFICIENT_POINTS") {
+                setError(
+                    getTaqeemAuthErrorMessage(
+                        authStatus,
+                        translate(
+                            "messages.error.insufficientPoints",
+                            "You don't have enough points to submit reports."
+                        )
+                    )
+                );
                 return;
             }
-            await ensureCompanySelected();
+            if (authStatus?.status === "LOGIN_REQUIRED" || !isTaqeemAuthSuccess(authStatus)) {
+                setError(
+                    getTaqeemAuthErrorMessage(
+                        authStatus,
+                        translate(
+                            "messages.error.taqeemLoginRequired",
+                            "Taqeem login required. Finish login and choose a company to continue."
+                        )
+                    )
+                );
+                return;
+            }
+            const selectedReports = selectedIds
+                .map((id) => getReportByRecordId(id))
+                .filter(Boolean);
+            const requiresManualCompany = selectedReports.some(
+                (report) => !report?.company_office_id
+            );
+            const chosen = await ensureCompanySelected({
+                forceSelection: requiresManualCompany,
+                ignorePreferred: requiresManualCompany
+            });
+            const officeId =
+                chosen?.officeId || chosen?.office_id || selectedCompanyOfficeId;
+            if (requiresManualCompany && officeId) {
+                try {
+                    const nextOfficeId = String(officeId);
+                    await Promise.all(
+                        selectedReports.map((report) => {
+                            if (report?.company_office_id) return Promise.resolve();
+                            const id = getReportRecordId(report);
+                            if (!id) return Promise.resolve();
+                            report.company_office_id = nextOfficeId;
+                            return updateSubmitReportsQuickly(id, {
+                                company_office_id: nextOfficeId
+                            });
+                        })
+                    );
+                    await loadReports();
+                    await loadUnassignedReports();
+                } catch (err) {
+                    console.warn("Failed to update company office id for bulk reports", err);
+                }
+            }
 
             // Calculate initial tabs per browser (distribute evenly)
             const totalTabs = Math.max(1, Number(recommendedTabs) || 3);
@@ -2583,7 +2844,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         if (!recordId) return;
         const assetList = report?.asset_data || [];
 
-        if (action === "check-status") {
+        if (action === "submit-taqeem") {
+            const assetCount = Array.isArray(assetList) ? assetList.length : 0;
+            const tabsNum = resolveTabsForAssets(assetCount);
+            try {
+                await submitToTaqeem(recordId, tabsNum, { withLoading: false });
+            } catch (err) {
+                setError(err?.message || translate("messages.error.submitTaqeem", "Failed to submit report to Taqeem."));
+            }
+        } else if (action === "check-status") {
             const taqeemReportId = report.report_id;
             if (!taqeemReportId) {
                 setError(translate("messages.error.reportNeedsTaqeemId", "Report must have a Taqeem report_id to check status."));
@@ -2626,7 +2895,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             const tabsNum = resolveTabsForAssets(assetCount);
             setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
             try {
-                const ok = await ensureTaqeemAuthorized(
+                const authStatus = await ensureTaqeemAuthorized(
                     token,
                     onViewChange,
                     taqeemStatus?.state === "success",
@@ -2635,15 +2904,71 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     setTaqeemStatus,
                     authOptions
                 );
-                if (!ok) {
-                    setError(translate("messages.error.taqeemLoginRequired", "Taqeem login required. Finish login and choose a company to continue."));
+                if (authStatus?.status === "INSUFFICIENT_POINTS") {
+                    setError(
+                        getTaqeemAuthErrorMessage(
+                            authStatus,
+                            translate(
+                                "messages.error.insufficientPoints",
+                                "You don't have enough points to submit reports."
+                            )
+                        )
+                    );
                     return;
                 }
-                await ensureCompanySelected();
+                if (authStatus?.status === "LOGIN_REQUIRED" || !isTaqeemAuthSuccess(authStatus)) {
+                    setError(
+                        getTaqeemAuthErrorMessage(
+                            authStatus,
+                            translate(
+                                "messages.error.taqeemLoginRequired",
+                                "Taqeem login required. Finish login and choose a company to continue."
+                            )
+                        )
+                    );
+                    return;
+                }
+                const requiresManualCompany = !report?.company_office_id;
+                const chosen = await ensureCompanySelected({
+                    forceSelection: requiresManualCompany,
+                    ignorePreferred: requiresManualCompany
+                });
+                const officeId =
+                    chosen?.officeId || chosen?.office_id || selectedCompanyOfficeId;
+                const assignedOfficeId = officeId ? String(officeId) : "";
+                if (requiresManualCompany && assignedOfficeId) {
+                    try {
+                        await updateSubmitReportsQuickly(recordId, {
+                            company_office_id: assignedOfficeId
+                        });
+                        if (report) {
+                            report.company_office_id = assignedOfficeId;
+                        }
+                        await loadReports();
+                        await loadUnassignedReports();
+                    } catch (err) {
+                        console.warn("Failed to update report company office id", err);
+                    }
+                }
                 const result = await window.electronAPI?.retryCreateReportById?.(recordId, tabsNum);
                 const isSuccess = result?.success || result?.status === "SUCCESS";
                 if (!isSuccess) {
                     throw new Error(result?.message || result?.error || "Retry failed");
+                }
+                const createdReportId =
+                    result?.reportId || result?.report_id || report?.report_id;
+                if (createdReportId) {
+                    try {
+                        await updateSubmitReportsQuickly(recordId, {
+                            report_id: createdReportId,
+                            ...(assignedOfficeId ? { company_office_id: assignedOfficeId } : {}),
+                        });
+                        if (report) {
+                            report.report_id = createdReportId;
+                        }
+                    } catch (err) {
+                        console.warn("Failed to update report_id after retry", err);
+                    }
                 }
                 setSuccess(
                     result?.message ||
@@ -3049,6 +3374,136 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 </span>
             </button>
 
+            {showTemporarySection && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 shadow-sm p-3 mb-3">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-sm font-semibold text-amber-900">Temporary Reports</h3>
+                            <p className="text-[10px] text-amber-700">Reports without company assignment.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowTemporaryModal(true)}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-50"
+                        >
+                            <Table className="w-3 h-3" />
+                            Show Temporary Reports
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {showTemporaryModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-3 py-6 overflow-auto"
+                    onClick={() => setShowTemporaryModal(false)}
+                >
+                    <div
+                        className="w-full max-w-5xl rounded-lg bg-white shadow-lg border border-amber-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-amber-100">
+                            <div>
+                                <h3 className="text-base font-semibold text-amber-900">Temporary Reports</h3>
+                                <p className="text-[11px] text-amber-700">Reports without company assignment.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowTemporaryModal(false)}
+                                className="text-amber-700 hover:text-amber-900 text-sm font-semibold"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="px-4 py-3 flex items-center justify-between">
+                            <div className="text-[11px] text-amber-700">
+                                {isGuestUser ? "Guest session reports." : "Unassigned reports."}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => (isGuestUser ? loadReports() : loadUnassignedReports())}
+                                disabled={temporaryLoading}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                            >
+                                <RefreshCw className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`} />
+                                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                            </button>
+                        </div>
+                        <div className="px-4 pb-4">
+                            {temporaryLoading ? (
+                                <div className="text-[11px] text-amber-700">Loading temporary reports...</div>
+                            ) : temporaryReports.length === 0 ? (
+                                <div className="text-[11px] text-amber-700">No temporary reports found.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-slate-700">
+                                        <thead className="bg-amber-100/70 text-amber-900">
+                                            <tr>
+                                                <th className="px-2 py-1.5 text-left">Report ID</th>
+                                                <th className="px-2 py-1.5 text-left">Client</th>
+                                                <th className="px-2 py-1.5 text-left">Assets</th>
+                                                <th className="px-2 py-1.5 text-left">Status</th>
+                                                <th className="px-2 py-1.5 text-left">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-amber-100">
+                                            {temporaryReports.map((report) => {
+                                                const recordId = getReportRecordId(report);
+                                                const assetCount = Array.isArray(report?.asset_data) ? report.asset_data.length : 0;
+                                                const statusKey = getReportStatus(report);
+                                                const statusLabel = reportStatusLabels[statusKey] || statusKey || "New";
+                                                const statusClass = reportStatusClasses[statusKey] || "border-slate-200 bg-slate-50 text-slate-700";
+                                                return (
+                                                    <tr key={recordId || report._id} className="hover:bg-amber-50/60">
+                                                        <td className="px-2 py-1.5 text-[11px] text-slate-800">
+                                                            {report.report_id || "Not Submitted"}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-[11px] text-slate-700">
+                                                            {report.client_name || report.title || "???"}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-[11px] text-slate-700">{assetCount}</td>
+                                                        <td className="px-2 py-1.5 text-[11px]">
+                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
+                                                                {statusLabel}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-[11px]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const tabs = resolveTabsForAssets(assetCount);
+                                                                    submitToTaqeem(recordId, tabs);
+                                                                }}
+                                                                className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-700"
+                                                            >
+                                                                Assign & Submit
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                            {isGuestUser && (
+                                <div className="mt-3 flex items-center justify-between rounded-md border border-amber-200 bg-amber-100/60 px-2 py-1 text-[10px] text-amber-900">
+                                    <span>Register your account to keep these reports linked to your phone.</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onViewChange?.("registration")}
+                                        className="rounded-md bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-amber-800"
+                                    >
+                                        Register
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
             <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3 mb-3">
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-slate-800">
@@ -3063,7 +3518,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer truncate"
                         >
                             <option value="">{translate("reports.bulkActions", "Bulk Actions")}</option>
-                            <option value="upload-submit">{translate("reports.bulk.uploadAndSubmit", "Upload & Submit to Taqeem")}</option>
+                            <option value="upload-submit">{translate("reports.bulk.uploadAndSubmit", "Submit to Taqeem")}</option>
                             <option value="delete">{translate("reports.bulk.delete", "Delete")}</option>
                             <option value="send-approver">{translate("reports.bulk.sendToApprover", "Send to Approver")}</option>
                             <option value="approve">{translate("reports.bulk.approve", "Approve")}</option>
@@ -3375,6 +3830,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                                         className="flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                                                                     >
                                                                         <option value="">{translate("reports.row.actions", "Actions")}</option>
+                                                                        <option value="submit-taqeem">{translate("reports.row.submitToTaqeem", "Submit to Taqeem")}</option>
                                                                         <option value="check-status">{translate("reports.row.checkStatus", "Check status")}</option>
                                                                         <option value="retry">{translate("reports.row.retryIncomplete", "retry incomplete assets")}</option>
                                                                         <option value="delete">{translate("reports.row.delete", "Delete")}</option>

@@ -293,7 +293,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         const needsCompany = uploadViewsRequiringCompany.has(currentView);
         const taqeemOn = taqeemStatus?.state === 'success';
         const hasCompanies = companies && companies.length > 0;
-        const shouldPrompt = needsCompany && hasCompanies && !selectedCompany && (taqeemOn || isGuest);
+        const shouldPrompt = needsCompany && hasCompanies && !selectedCompany;
         if (shouldPrompt) {
             setCompanyStatus('info', 'Select a company to complete uploading');
             setForceCompanyModal(true);
@@ -459,7 +459,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         }
         const company = companies?.find((c) => c.url === value);
         if (company) {
-            await setSelectedCompany(company);
+            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
         }
     };
 
@@ -469,7 +469,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         if (!company) return;
         setCompanyModalBusy(true);
         try {
-            await setSelectedCompany(company);
+            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
             setForceCompanyModal(false);
         } finally {
             setCompanyModalBusy(false);
@@ -786,7 +786,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 chooseCard('uploading-reports');
                 chooseDomain('equipments');
                 if (item.value) {
-                    setSelectedCompany(item.value);
+            setSelectedCompany(item.value, { setAsDefault: true, onlyIfUnset: true });
                 }
                 onViewChange('apps');
                 break;

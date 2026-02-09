@@ -882,12 +882,20 @@ async def RunCheckMacroStatus(browser, report_id, tabs_num=3, same=False):
             new_browser.stop()
 
 
-async def RunHalfCheckMacroStatus(browser, report_id, tabs_num=3):
-    new_browser = None
-    try:
-        new_browser = await spawn_new_browser(browser)
+async def RunHalfCheckMacroStatus(browser, report_id, tabs_num=3, same=False):
+    if same and not browser:
+        raise ValueError("same=True requires an existing browser")
 
-        return await half_check_incomplete_macros(new_browser, report_id, tabs_num)
+    new_browser = None
+    browser_to_use = None
+    try:
+        if not same:
+            new_browser = await spawn_new_browser(browser)
+            browser_to_use = new_browser
+        else:
+            browser_to_use = browser
+
+        return await half_check_incomplete_macros(browser_to_use, report_id, tabs_num)
 
     finally:
         if new_browser:

@@ -1385,6 +1385,57 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         });
     };
 
+    const waitForTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            if (!window?.electronAPI?.checkStatus) return true;
+            const status = await window.electronAPI.checkStatus();
+            const ok =
+                status?.browserOpen &&
+                String(status?.status || "").toUpperCase().includes("SUCCESS");
+            if (ok) return true;
+            await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        }
+        throw new Error("Timed out waiting for Taqeem login.");
+    };
+
+    const ensureTaqeemAutomationReady = async () => {
+        if (!window?.electronAPI?.checkStatus) return true;
+
+        let status = null;
+        try {
+            status = await window.electronAPI.checkStatus();
+        } catch (err) {
+            status = null;
+        }
+
+        const statusCode = String(status?.status || "").toUpperCase();
+        const isLoggedIn = status?.browserOpen && statusCode.includes("SUCCESS");
+        if (isLoggedIn) return true;
+
+        if (!window?.electronAPI?.openTaqeemLogin) {
+            throw new Error("Taqeem login handler unavailable.");
+        }
+
+        setBatchMessage({
+            type: "info",
+            text: "Taqeem login required. Opening login window...",
+        });
+
+        const loginResult = await window.electronAPI.openTaqeemLogin({
+            automationOnly: true,
+            onlyIfClosed: false,
+            navigateIfOpen: true,
+        });
+
+        if (loginResult?.status !== "SUCCESS") {
+            throw new Error(loginResult?.error || "Failed to open Taqeem login.");
+        }
+
+        await waitForTaqeemLogin();
+        return true;
+    };
+
     const attachPdfToReport = async (batchId, report, file) => {
         if (!file) return;
         const targetId = report.report_id || report.reportId || report._id || report.id;
@@ -1476,6 +1527,16 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             setBatchMessage({
                 type: "info",
                 text: "No reports with IDs found to download certificates.",
+            });
+            return;
+        }
+
+        try {
+            await ensureTaqeemAutomationReady();
+        } catch (err) {
+            setBatchMessage({
+                type: "error",
+                text: err?.message || "Please login to Taqeem in the opened browser.",
             });
             return;
         }

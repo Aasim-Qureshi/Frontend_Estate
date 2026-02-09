@@ -30,6 +30,14 @@ const usePersistentState = (key, defaultValue, options = {}) => {
 
     const [state, setState] = useState(readInitial);
     const initial = useRef(true);
+    const keyRef = useRef(key);
+
+    useEffect(() => {
+        if (keyRef.current === key) return;
+        keyRef.current = key;
+        initial.current = true;
+        setState(readInitial());
+    }, [key]);
 
     useEffect(() => {
         if (!storageImpl) return;

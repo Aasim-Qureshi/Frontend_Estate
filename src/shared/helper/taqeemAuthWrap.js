@@ -45,14 +45,27 @@ async function ensureTaqeemAuthorized(
     };
     try {
         // Check browser status first to see if we're actually logged in
-        const browserStatus = await window.electronAPI.checkStatus();
-        if (browserStatus?.browserOpen && browserStatus?.status === "SUCCESS") {
+        let browserStatus = null;
+        let browserStatusFailed = false;
+        if (window?.electronAPI?.checkStatus) {
+            try {
+                browserStatus = await window.electronAPI.checkStatus();
+            } catch (err) {
+                browserStatusFailed = true;
+            }
+        }
+
+        const browserStatusCode = String(browserStatus?.status || "").toUpperCase();
+        if (browserStatus?.browserOpen && browserStatusCode.includes("SUCCESS")) {
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
+        if (browserStatus?.browserOpen && browserStatusCode.includes("NOT_LOGGED_IN")) {
+            setTaqeemStatus?.("info", "Taqeem login: Off");
+        }
 
-        // If the automation browser is already logged into Taqeem, skip any extra login flow.
-        if (isTaqeemLoggedIn) {
+        // Only trust UI state if we cannot confirm via browser status.
+        if ((browserStatusFailed || !browserStatus) && isTaqeemLoggedIn) {
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
@@ -114,7 +127,7 @@ async function ensureTaqeemAuthorized(
         }
 
         if (res?.status === "INSUFFICIENT_POINTS") {
-            return { status: "INSUFFICIENT_POINTS" };
+            return res;
         }
 
         if (res?.status === "AUTHORIZED") {

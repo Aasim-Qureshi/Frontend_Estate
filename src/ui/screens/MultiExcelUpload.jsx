@@ -21,6 +21,7 @@ import {
     RefreshCw,
     Info,
     Send,
+    Table,
     ChevronDown,
     ChevronUp,
     ChevronRight,
@@ -714,6 +715,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
         setSelectedCompany,
         setPreferredCompany,
     } = useValueNav();
+    const isGuestUser = isGuest || !user?.phone;
     const selectedCompanyOfficeId = useMemo(() => {
         const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
         return officeId ? String(officeId) : "";
@@ -753,6 +755,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const [isValidationTableCollapsed, setIsValidationTableCollapsed] = useState(false);
     const [reports, setReports, resetReports] = usePersistentState("multiExcel:reports", [], { storage: "session" });
     const [reportsLoading, setReportsLoading] = useState(false);
+    const [unassignedReports, setUnassignedReports] = useState([]);
+    const [unassignedLoading, setUnassignedLoading] = useState(false);
+    const [showTemporaryModal, setShowTemporaryModal] = useState(false);
     const [reportsError, setReportsError] = useState(null);
     const [expandedReports, setExpandedReports] = useState([]);
     const [selectedReportIds, setSelectedReportIds] = useState([]);
@@ -848,10 +853,125 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const fetchCompanyValuersPromiseRef = useRef(null);
     const valuerModalPromiseRef = useRef(null);
     const valuerModalResolveRef = useRef(null);
+    const pendingCompanySelectionRef = useRef(null);
 
     useEffect(() => {
         selectedCompanyRef.current = selectedCompany;
     }, [selectedCompany]);
+
+    useEffect(() => {
+        if (selectedCompany && pendingCompanySelectionRef.current?.resolve) {
+            pendingCompanySelectionRef.current.resolve(selectedCompany);
+            pendingCompanySelectionRef.current = null;
+        }
+    }, [selectedCompany]);
+
+    useEffect(() => {
+        return () => {
+            if (pendingCompanySelectionRef.current?.timeoutId) {
+                clearTimeout(pendingCompanySelectionRef.current.timeoutId);
+            }
+            pendingCompanySelectionRef.current = null;
+        };
+    }, []);
+
+    const waitForCompanySelection = useCallback(
+        (timeoutMs = 120000) => {
+            if (selectedCompany) return Promise.resolve(selectedCompany);
+            if (pendingCompanySelectionRef.current?.promise) {
+                return pendingCompanySelectionRef.current.promise;
+            }
+
+            let resolveFn;
+            let timeoutId;
+            const promise = new Promise((resolve, reject) => {
+                resolveFn = resolve;
+                timeoutId = setTimeout(() => {
+                    pendingCompanySelectionRef.current = null;
+                    reject(new Error("Company selection timed out."));
+                }, timeoutMs);
+            });
+
+            pendingCompanySelectionRef.current = {
+                promise,
+                timeoutId,
+                resolve: (company) => {
+                    clearTimeout(timeoutId);
+                    resolveFn(company);
+                }
+            };
+
+            return promise;
+        },
+        [selectedCompany]
+    );
+
+    const ensureCompanySelected = useCallback(async (options = {}) => {
+        const { forceSelection = false, ignorePreferred = false } = options;
+
+        if (forceSelection && selectedCompany) {
+            await setSelectedCompany(null, { skipNavigation: true, quiet: true });
+        }
+        if (!forceSelection && selectedCompany) return selectedCompany;
+
+        let list = companies;
+        try {
+            if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
+                const data = await window.electronAPI.getCompanies();
+                const fetched = Array.isArray(data?.data)
+                    ? data.data
+                    : Array.isArray(data?.companies)
+                        ? data.companies
+                        : [];
+                if (fetched.length > 0 && replaceCompanies) {
+                    list = await replaceCompanies(
+                        fetched.map((c) => ({ ...c, type: c.type || "equipment" })),
+                        { autoSelect: false, skipNavigation: true, quiet: true }
+                    );
+                }
+            }
+            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+                list = await ensureCompaniesLoaded("equipment");
+            }
+            if ((!list || list.length === 0) && loadSavedCompanies) {
+                list = await loadSavedCompanies("equipment");
+            }
+        } catch (err) {
+            console.warn("Failed to fetch companies for submission", err);
+        }
+
+        if (!list || list.length === 0) {
+            throw new Error("No companies available. Login to Taqeem and try again.");
+        }
+
+        if (preferredCompany && !ignorePreferred) {
+            const chosen = await setSelectedCompany(preferredCompany, { skipNavigation: false, quiet: true });
+            setCompanyStatus?.("success", `Company: ${chosen?.name || "Selected"}`);
+            return chosen;
+        }
+
+        if (list.length === 1) {
+            const chosen = list[0];
+            await setSelectedCompany(chosen, { skipNavigation: false, quiet: true });
+            setCompanyStatus?.("success", `Company: ${chosen.name || "Selected"}`);
+            return chosen;
+        }
+
+        setCompanyStatus?.("info", "Select a company to continue.");
+        setSuccess("Select a company to continue.");
+        return waitForCompanySelection();
+    }, [
+        companies,
+        ensureCompaniesLoaded,
+        loadSavedCompanies,
+        preferredCompany,
+        replaceCompanies,
+        selectedCompany,
+        setCompanyStatus,
+        setSelectedCompany,
+        setSuccess,
+        waitForCompanySelection
+    ]);
 
     useEffect(() => {
         selectedValuersRef.current = selectedValuers;
@@ -1110,6 +1230,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
     };
     const selectedReportSet = useMemo(() => new Set(selectedReportIds), [selectedReportIds]);
     const isEditing = Boolean(editingReportId);
+    const temporaryReports = isGuestUser ? reports : unassignedReports;
+    const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
+    const showTemporarySection =
+        isGuestUser || unassignedLoading || unassignedReports.length > 0;
 
     const loadReports = useCallback(async (append = false) => {
         try {
@@ -1135,7 +1259,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 page: pageToUse.toString(),
                 limit: itemsPerPage.toString(),
             });
-            if (selectedCompanyOfficeId) {
+            if (selectedCompanyOfficeId && !isGuestUser) {
                 params.append("companyOfficeId", selectedCompanyOfficeId);
             }
 
@@ -1171,7 +1295,50 @@ const MultiExcelUpload = ({ onViewChange }) => {
         } finally {
             setReportsLoading(false);
         }
-    }, [setReports, setReportsPagination, setReportsError, token, currentPage, itemsPerPage, selectedCompanyOfficeId]);
+    }, [setReports, setReportsPagination, setReportsError, token, currentPage, itemsPerPage, selectedCompanyOfficeId, isGuestUser]);
+
+    const loadUnassignedReports = useCallback(async () => {
+        try {
+            if (!token) {
+                setUnassignedReports([]);
+                return [];
+            }
+            if (isGuestUser) {
+                setUnassignedReports([]);
+                return [];
+            }
+            setUnassignedLoading(true);
+
+            const params = new URLSearchParams({
+                page: "1",
+                limit: String(Math.max(20, itemsPerPage || 20)),
+                unassigned: "true",
+            });
+
+            const result = await window.electronAPI.apiRequest(
+                "GET",
+                `/api/multi-approach/user?${params.toString()}`,
+                {},
+                {
+                    Authorization: `Bearer ${token}`
+                }
+            );
+
+            if (!result?.success) {
+                throw new Error(result?.message || "Failed to load unassigned reports.");
+            }
+
+            const reportList = Array.isArray(result.reports) ? result.reports : [];
+            setUnassignedReports(reportList);
+            return reportList;
+        } catch (err) {
+            console.warn("[MultiExcelUpload] Failed to load unassigned reports:", err);
+            setUnassignedReports([]);
+            return [];
+        } finally {
+            setUnassignedLoading(false);
+        }
+    }, [token, itemsPerPage, isGuestUser]);
 
     const handlePageChange = useCallback(async (newPage) => {
         if (newPage < 1 || reportsLoading) return;
@@ -1198,6 +1365,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
     useEffect(() => {
         loadReports(false);
     }, [currentPage, itemsPerPage, token, loadReports]);
+
+    useEffect(() => {
+        if (!isGuestUser) {
+            loadUnassignedReports();
+        }
+    }, [token, loadUnassignedReports, isGuestUser]);
 
     const pdfMatchInfo = useMemo(() => {
         if (!wantsPdfUpload) {
@@ -1463,9 +1636,50 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     return;
                 }
 
-                const result = await executeWithAuth(
-                    async (params) => {
-                        const { token: authToken } = params;
+                  const reportForCount =
+                      reports.find((item) => getReportRecordId(item) === recordId) ||
+                      unassignedReports.find((item) => getReportRecordId(item) === recordId);
+                  const assetCount = Array.isArray(reportForCount?.asset_data)
+                      ? reportForCount.asset_data.length
+                      : 0;
+                  const reportBatchId =
+                      reportForCount?.batchId || reportForCount?.batch_id || null;
+
+                  const result = await executeWithAuth(
+                      async (params) => {
+                          const { token: authToken } = params;
+                          const targetReport =
+                              reports.find((item) => getReportRecordId(item) === recordId) ||
+                              unassignedReports.find((item) => getReportRecordId(item) === recordId);
+                        const needsCompany = !targetReport?.company_office_id;
+                        let assignedOfficeId = targetReport?.company_office_id
+                            ? String(targetReport.company_office_id)
+                            : "";
+                        if (needsCompany) {
+                            const chosen = await ensureCompanySelected({
+                                forceSelection: true,
+                                ignorePreferred: true,
+                            });
+                            const officeId = chosen?.officeId || chosen?.office_id;
+                            if (officeId) {
+                                try {
+                                    assignedOfficeId = String(officeId);
+                                    await updateMultiApproachReport(recordId, {
+                                        company_office_id: assignedOfficeId,
+                                    });
+                                    if (targetReport) {
+                                        targetReport.company_office_id = assignedOfficeId;
+                                    }
+                                    setUnassignedReports((prev) =>
+                                        prev.filter((item) => getReportRecordId(item) !== recordId)
+                                    );
+                                    await loadReports(false);
+                                    await loadUnassignedReports();
+                                } catch (err) {
+                                    console.warn("Failed to update report company office id", err);
+                                }
+                            }
+                        }
 
                         setActionStatus({
                             type: "info",
@@ -1478,16 +1692,42 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
                         const result = await window.electronAPI.createReportById(recordId, resolvedTabs);
 
-                        if (result?.status === "SUCCESS") {
-                            setActionStatus({
-                                type: "success",
-                                message: "Report submitted to Taqeem. Browser closed after completion.",
-                            });
-                            resetPendingSubmit();
-                            resetReturnView();
-                            await loadReports();
-                            return { success: true };
-                        }
+                          if (result?.status === "SUCCESS") {
+                              setActionStatus({
+                                  type: "success",
+                                  message: "Report submitted to Taqeem. Browser closed after completion.",
+                              });
+                              const createdReportId = result?.reportId || result?.report_id;
+                              if (createdReportId) {
+                                try {
+                                    await updateMultiApproachReport(recordId, {
+                                        report_id: createdReportId,
+                                        ...(assignedOfficeId
+                                            ? { company_office_id: assignedOfficeId }
+                                            : {}),
+                                    });
+                                    if (targetReport) {
+                                        targetReport.report_id = createdReportId;
+                                    }
+                                } catch (err) {
+                                    console.warn(
+                                        "Failed to update report_id after submission",
+                                        err
+                                    );
+                                }
+                            }
+                              resetPendingSubmit();
+                              resetReturnView();
+                              await loadReports();
+                              await loadUnassignedReports();
+                              return {
+                                  success: true,
+                                  reportId: createdReportId || recordId,
+                                  recordId,
+                                  assetCount,
+                                  batchId: reportBatchId,
+                              };
+                          }
 
                         const errMsg =
                             result?.error ||
@@ -1506,14 +1746,40 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
                         throw new Error(errMsg);
                     },
-                    { token, recordId, tabsNum: resolvedTabs },
-                    {
-                        requiredPoints: 1, // Each report submission costs 1 point
-                        showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
-                        onViewChange,
-                        onAuthSuccess: () => {
-                            console.log("[MultiExcelUpload] Authentication successful for Taqeem submission");
-                        },
+                      { token, recordId, tabsNum: resolvedTabs },
+                      {
+                          requiredPoints: assetCount,
+                          deductPoints: (deductResult) => {
+                              const amount =
+                                  Number(deductResult?.assetCount ?? assetCount) || 0;
+                              if (!amount) return null;
+                              if (
+                                  reportBatchId &&
+                                  (chargedBatchesRef.current.has(reportBatchId) ||
+                                      (pendingBatch?.batchId === reportBatchId && pendingBatch.charged))
+                              ) {
+                                  return null;
+                              }
+                              const reportId =
+                                  deductResult?.reportId || deductResult?.recordId || recordId;
+                              const reportIds = reportId ? [reportId] : [];
+                              return {
+                                  amount,
+                                  reportIds,
+                                  reportId,
+                                  recordId,
+                                  batchId: reportBatchId,
+                                  source: "multi-batch",
+                                  pageName: MULTI_UPLOAD_PAGE_NAME,
+                                  pageSource: MULTI_UPLOAD_PAGE_SOURCE,
+                                  assetCount: amount,
+                              };
+                          },
+                          showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
+                          onViewChange,
+                          onAuthSuccess: () => {
+                              console.log("[MultiExcelUpload] Authentication successful for Taqeem submission");
+                          },
                         onAuthFailure: (reason) => {
                             console.warn("[MultiExcelUpload] Authentication failed for Taqeem:", reason);
                             if (!withLoading) {
@@ -1546,15 +1812,20 @@ const MultiExcelUpload = ({ onViewChange }) => {
         },
         [
             executeWithAuth,
+            ensureCompanySelected,
             isTaqeemLoggedIn,
             loadReports,
+            loadUnassignedReports,
             onViewChange,
+            reports,
             resolveTabsForAssets,
             resetPendingSubmit,
             resetReturnView,
             setPendingSubmit,
             setReturnView,
+            setUnassignedReports,
             token,
+            unassignedReports,
         ]
     );
 
@@ -1859,6 +2130,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
                 // Load new reports
                 await loadReports();
+                await loadUnassignedReports();
 
                 return {
                     success: true,
@@ -1938,6 +2210,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
                 // ... rest of the logic
                 await loadReports();
+                await loadUnassignedReports();
                 return { success: true, batchId: data.batchId, insertedCount: data.created || 0 };
             },
             { token },
@@ -3776,7 +4049,135 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 </div>
             )}
 
-            
+            {showTemporarySection && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 shadow-sm p-3 mb-3">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-sm font-semibold text-slate-800">Temporary Reports</h3>
+                            <p className="text-[10px] text-slate-500">Reports without company assignment.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowTemporaryModal(true)}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                            <Table className="w-3 h-3" />
+                            Show Temporary Reports
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {showTemporaryModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-3 py-6 overflow-auto"
+                    onClick={() => setShowTemporaryModal(false)}
+                >
+                    <div
+                        className="w-full max-w-5xl rounded-lg bg-white shadow-lg border border-slate-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                            <div>
+                                <h3 className="text-base font-semibold text-slate-800">Temporary Reports</h3>
+                                <p className="text-[11px] text-slate-500">Reports without company assignment.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowTemporaryModal(false)}
+                                className="text-slate-600 hover:text-slate-900 text-sm font-semibold"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="px-4 py-3 flex items-center justify-between">
+                            <div className="text-[11px] text-slate-600">
+                                {isGuestUser ? "Guest session reports." : "Unassigned reports."}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => (isGuestUser ? loadReports(false) : loadUnassignedReports())}
+                                disabled={temporaryLoading}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                                <RefreshCw className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`} />
+                                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                            </button>
+                        </div>
+                        <div className="px-4 pb-4">
+                            {temporaryLoading ? (
+                                <div className="text-xs text-slate-600">Loading temporary reports...</div>
+                            ) : temporaryReports.length === 0 ? (
+                                <div className="text-xs text-slate-600">No temporary reports found.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-xs text-slate-700">
+                                        <thead className="bg-slate-100 text-slate-600 uppercase">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-semibold">Report ID</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Client</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Assets</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Status</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200">
+                                            {temporaryReports.map((report) => {
+                                                const recordId = getReportRecordId(report);
+                                                const assetCount = Array.isArray(report?.asset_data) ? report.asset_data.length : 0;
+                                                const statusKey = getReportStatus(report);
+                                                const statusLabel = reportStatusLabels[statusKey] || statusKey || "New";
+                                                const statusClass = reportStatusClasses[statusKey] || "border-slate-200 bg-slate-50 text-slate-700";
+                                                return (
+                                                    <tr key={recordId || report._id} className="hover:bg-slate-50">
+                                                        <td className="px-3 py-2 text-[11px] text-slate-800">
+                                                            {report.report_id || "Not Submitted"}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-[11px] text-slate-700">
+                                                            {report.client_name || report.title || "???"}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-[11px] text-slate-700">{assetCount}</td>
+                                                        <td className="px-3 py-2 text-[11px]">
+                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
+                                                                {statusLabel}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3 py-2 text-[11px]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const tabsForAssets = resolveTabsForAssets(assetCount);
+                                                                    submitToTaqeem(recordId, tabsForAssets, { withLoading: false });
+                                                                }}
+                                                                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700"
+                                                            >
+                                                                Assign & Submit
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                            {isGuestUser && (
+                                <div className="mt-3 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700">
+                                    <span>Register your account to keep these reports linked to your phone.</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onViewChange?.("registration")}
+                                        className="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-slate-900"
+                                    >
+                                        Register
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
 
             <Section title="Reports">
                 <div className="space-y-2 mb-2">

@@ -1,5 +1,5 @@
 ﻿
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,10 +14,11 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { createManualMultiApproachReport } from "../../api/report";
+import { createManualMultiApproachReport, updateMultiApproachReport } from "../../api/report";
 import { deductPoints } from "../utils/points";
 import { useSession } from "../context/SessionContext";
 import { useValueNav } from "../context/ValueNavContext";
+import { useNavStatus } from "../context/NavStatusContext";
 const MANUAL_MULTI_PAGE_NAME = "Manual Multi Report";
 const MANUAL_MULTI_PAGE_SOURCE = "manual-report";
 const {
@@ -191,9 +192,18 @@ const InfoBanner = ({ tone = "info", message }) => {
     </div>
   );
 };
-const ManualMultiReport = () => {
-  const { selectedCompany } = useValueNav();
-  const { token } = useSession();
+const ManualMultiReport = ({ onViewChange }) => {
+  const {
+    selectedCompany,
+    companies,
+    preferredCompany,
+    ensureCompaniesLoaded,
+    replaceCompanies,
+    setSelectedCompany,
+  } = useValueNav();
+  const { setCompanyStatus } = useNavStatus();
+  const { token, isGuest, user } = useSession();
+  const isGuestUser = isGuest || !user?.phone;
   const selectedCompanyOfficeId = useMemo(() => {
     const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
     return officeId ? String(officeId) : "";
@@ -220,10 +230,15 @@ const ManualMultiReport = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [tabsNum, setTabsNum] = useState(3);
+  const reportsTitle = isGuestUser ? "التقارير المؤقتة (زائر)" : "جدول التقارير";
+  const reportsHint = isGuestUser
+    ? "تقارير جلسة الضيف مؤقتة. قم بالتسجيل لربطها برقم هاتفك."
+    : "استعرض التقارير التي تم حفظها لإرسالها إلى تقييم لاحقاً.";
   const [createdBatchId, setCreatedBatchId] = useState("");
   const [createdReports, setCreatedReports] = useState([]);
   const [expandedReports, setExpandedReports] = useState([]);
   const [selectedReportId, setSelectedReportId] = useState("");
+  const pendingCompanySelectionRef = useRef(null);
 
   const assetsTotal = useMemo(
     () =>
@@ -232,6 +247,121 @@ const ManualMultiReport = () => {
         return sum + (Number.isFinite(value) ? value : 0);
       }, 0),
     [assets]
+  );
+
+  useEffect(() => {
+    if (selectedCompany && pendingCompanySelectionRef.current?.resolve) {
+      pendingCompanySelectionRef.current.resolve(selectedCompany);
+      pendingCompanySelectionRef.current = null;
+    }
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingCompanySelectionRef.current?.timeoutId) {
+        clearTimeout(pendingCompanySelectionRef.current.timeoutId);
+      }
+      pendingCompanySelectionRef.current = null;
+    };
+  }, []);
+
+  const waitForCompanySelection = useCallback((timeoutMs = 120000) => {
+    if (selectedCompany) return Promise.resolve(selectedCompany);
+    if (pendingCompanySelectionRef.current?.promise) {
+      return pendingCompanySelectionRef.current.promise;
+    }
+
+    let resolveFn;
+    let timeoutId;
+    const promise = new Promise((resolve, reject) => {
+      resolveFn = resolve;
+      timeoutId = setTimeout(() => {
+        pendingCompanySelectionRef.current = null;
+        reject(new Error("Company selection timed out."));
+      }, timeoutMs);
+    });
+
+    pendingCompanySelectionRef.current = {
+      promise,
+      timeoutId,
+      resolve: (company) => {
+        clearTimeout(timeoutId);
+        resolveFn(company);
+      },
+    };
+
+    return promise;
+  }, [selectedCompany]);
+
+  const ensureCompanySelected = useCallback(
+    async (options = {}) => {
+      const { forceSelection = false, ignorePreferred = false } = options;
+
+      if (forceSelection && selectedCompany) {
+        await setSelectedCompany(null, { skipNavigation: true, quiet: true });
+      }
+      if (!forceSelection && selectedCompany) return selectedCompany;
+
+      let list = companies;
+      try {
+        if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
+          const data = await window.electronAPI.getCompanies();
+          const fetched = Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.companies)
+            ? data.companies
+            : [];
+          if (fetched.length > 0 && replaceCompanies) {
+            list = await replaceCompanies(
+              fetched.map((c) => ({ ...c, type: c.type || "equipment" })),
+              { autoSelect: false, skipNavigation: true, quiet: true }
+            );
+          }
+        }
+        if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+          list = await ensureCompaniesLoaded("equipment");
+        }
+      } catch (err) {
+        console.warn("Failed to fetch companies for submission", err);
+      }
+
+      if (!list || list.length === 0) {
+        throw new Error("No companies available. Login to Taqeem and try again.");
+      }
+
+      if (preferredCompany && !ignorePreferred) {
+        const chosen = await setSelectedCompany(preferredCompany, {
+          skipNavigation: false,
+          quiet: true,
+        });
+        setCompanyStatus?.("success", `Company: ${chosen?.name || "Selected"}`);
+        return chosen;
+      }
+
+      if (list.length === 1) {
+        const chosen = list[0];
+        await setSelectedCompany(chosen, { skipNavigation: false, quiet: true });
+        setCompanyStatus?.("success", `Company: ${chosen.name || "Selected"}`);
+        return chosen;
+      }
+
+      setCompanyStatus?.("info", "Select a company to continue.");
+      setStatus({
+        type: "info",
+        message: "Select a company to continue.",
+      });
+      return waitForCompanySelection();
+    },
+    [
+      companies,
+      ensureCompaniesLoaded,
+      preferredCompany,
+      replaceCompanies,
+      selectedCompany,
+      setCompanyStatus,
+      setSelectedCompany,
+      waitForCompanySelection,
+    ],
   );
 
   const getReportId = (report, index) =>
@@ -686,7 +816,7 @@ const validateAssets = (requireAssets = true) => {
       const payload = buildPayload();
       const response = await createManualMultiApproachReport(
         payload,
-        selectedCompanyOfficeId || null
+        isGuestUser ? null : (selectedCompanyOfficeId || null)
       );
       if (response?.status !== "success") {
         throw new Error(response?.error || "حدث خطأ غير متوقع أثناء حفظ البيانات.");
@@ -782,6 +912,39 @@ const validateAssets = (requireAssets = true) => {
             "مكتبة Electron غير متاحة. تأكد أن التطبيق يعمل داخل الحاوية الصحيحة."
           );
         }
+
+        const chosen = await ensureCompanySelected({
+          forceSelection: true,
+          ignorePreferred: true,
+        });
+        const officeId = chosen?.officeId || chosen?.office_id || "";
+
+        if (officeId) {
+          try {
+            await Promise.all(
+              createdReports.map((report) => {
+                const recordId = report?._id || report?.id;
+                if (!recordId) return Promise.resolve();
+                if (report?.company_office_id) return Promise.resolve();
+                return updateMultiApproachReport(recordId, {
+                  company_office_id: String(officeId),
+                });
+              })
+            );
+            setCreatedReports((prev) =>
+              prev.map((report) => ({
+                ...report,
+                company_office_id: report.company_office_id || String(officeId),
+              }))
+            );
+          } catch (err) {
+            console.warn(
+              "[ManualMultiReport] Failed to update company office id",
+              err
+            );
+          }
+        }
+
         const result = await window.electronAPI.createReportsByBatch(
           createdBatchId,
           Number(tabsNum)
@@ -792,6 +955,63 @@ const validateAssets = (requireAssets = true) => {
             message:
               "تم إرسال التقرير إلى تقييم باستخدام نفس لوجيك Upload Report Elrajhi.",
           });
+          try {
+            const batchReportIds = Array.isArray(result?.reportIds)
+              ? result.reportIds
+              : Array.isArray(result?.report_ids)
+              ? result.report_ids
+              : [];
+            const singleReportId = result?.reportId || result?.report_id || "";
+
+            if (batchReportIds.length > 0) {
+              await Promise.all(
+                createdReports.map((report, idx) => {
+                  const recordId = report?._id || report?.id;
+                  const reportIdValue = batchReportIds[idx];
+                  if (!recordId || !reportIdValue) return Promise.resolve();
+                  return updateMultiApproachReport(recordId, {
+                    report_id: reportIdValue,
+                    ...(officeId ? { company_office_id: String(officeId) } : {}),
+                  });
+                })
+              );
+              setCreatedReports((prev) =>
+                prev.map((report, idx) => ({
+                  ...report,
+                  report_id: batchReportIds[idx] || report.report_id,
+                  company_office_id: report.company_office_id || String(officeId || ""),
+                }))
+              );
+            } else if (singleReportId) {
+              const selectedReport = createdReports.find(
+                (report, idx) => getReportId(report, idx) === selectedReportId
+              );
+              const recordId = selectedReport?._id || selectedReport?.id;
+              if (recordId) {
+                await updateMultiApproachReport(recordId, {
+                  report_id: singleReportId,
+                  ...(officeId ? { company_office_id: String(officeId) } : {}),
+                });
+                setCreatedReports((prev) =>
+                  prev.map((report, idx) =>
+                    getReportId(report, idx) === selectedReportId
+                      ? {
+                          ...report,
+                          report_id: singleReportId,
+                          company_office_id:
+                            report.company_office_id || String(officeId || ""),
+                        }
+                      : report
+                  )
+                );
+              }
+            }
+          } catch (err) {
+            console.warn(
+              "[ManualMultiReport] Failed to update report_id after submission",
+              err
+            );
+          }
           const reportIds = createdReports
             .map((report) => report.report_id)
             .filter(Boolean);
@@ -1404,8 +1624,8 @@ const validateAssets = (requireAssets = true) => {
     </div>
   );
   const renderReportsTable = () => (
-    <Section title="جدول التقارير">
-      <div className="flex items-center gap-3 mb-3">
+    <Section title={reportsTitle}>
+      <div className="flex items-center gap-3 mb-2">
         <InputField
           label="عدد التبويبات (Tabs)"
           type="number"
@@ -1415,6 +1635,7 @@ const validateAssets = (requireAssets = true) => {
           className="w-48"
         />
       </div>
+      <div className="text-xs text-gray-600 mb-3">{reportsHint}</div>
       {!createdReports.length && (
         <p className="text-sm text-gray-600">لا توجد تقارير محفوظة بعد. قم بحفظ تقرير لإظهاره هنا.</p>
       )}
@@ -1530,6 +1751,18 @@ const validateAssets = (requireAssets = true) => {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {isGuestUser && (
+        <div className="mt-3 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+          <span>قم بالتسجيل لحفظ هذه التقارير بشكل دائم وربطها برقم هاتفك.</span>
+          <button
+            type="button"
+            onClick={() => onViewChange?.("registration")}
+            className="rounded-md bg-amber-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-800"
+          >
+            تسجيل
+          </button>
         </div>
       )}
     </Section>

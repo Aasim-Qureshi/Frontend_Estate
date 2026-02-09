@@ -71,7 +71,20 @@ export const useAuthAction = () => {
 
         if (authStatus?.status === "INSUFFICIENT_POINTS") {
           console.log("[useAuthAction] insufficient points");
-          showInsufficientPointsModal();
+          const required =
+            Number(authStatus?.required ?? authStatus?.requiredPoints ?? requiredPoints) ||
+            Number(requiredPoints) ||
+            0;
+          const availableRaw = Number(
+            authStatus?.available ?? authStatus?.remainingPoints,
+          );
+          const available = Number.isFinite(availableRaw) ? availableRaw : undefined;
+          showInsufficientPointsModal({
+            requiredPoints: required || undefined,
+            availablePoints: available,
+            assetCount: required || undefined,
+            customMessage: authStatus?.message || authStatus?.reason,
+          });
           onAuthFailure("INSUFFICIENT_POINTS");
           return null;
         }

@@ -160,10 +160,11 @@ const multiExcelUpload = async (validationExcelFiles, validationPdfFiles, valuer
     return response.data;
 };
 
-const fetchMultiApproachReports = async (companyOfficeId = null) => {
-    const response = await httpClient.get("/multi-approach", {
-        params: companyOfficeId ? { companyOfficeId } : {}
-    });
+const fetchMultiApproachReports = async (companyOfficeId = null, options = {}) => {
+    const params = {};
+    if (companyOfficeId) params.companyOfficeId = companyOfficeId;
+    if (options?.unassigned) params.unassigned = true;
+    const response = await httpClient.get("/multi-approach", { params });
     return response.data;
 };
 
@@ -241,9 +242,10 @@ const createDuplicateReport = async (payload, companyOfficeId = null) => {
     return response.data;
 }
 
-const fetchDuplicateReports = async ({ page = 1, limit = 10, status = "all", companyOfficeId = null } = {}) => {
+const fetchDuplicateReports = async ({ page = 1, limit = 10, status = "all", companyOfficeId = null, unassigned = false } = {}) => {
   const params = { page, limit, status };
   if (companyOfficeId) params.companyOfficeId = companyOfficeId;
+  if (unassigned) params.unassigned = true;
   const response = await httpClient.get("/duplicate-report", {
     params,
   });
@@ -326,10 +328,11 @@ const submitReportsQuicklyUpload = async (validationExcelFiles, validationPdfFil
     return response.data;
 };
 
-const fetchSubmitReportsQuickly = async (companyOfficeId = null) => {
-    const response = await httpClient.get("/submit-reports-quickly", {
-        params: companyOfficeId ? { companyOfficeId } : {}
-    });
+const fetchSubmitReportsQuickly = async (companyOfficeId = null, options = {}) => {
+    const params = {};
+    if (companyOfficeId) params.companyOfficeId = companyOfficeId;
+    if (options?.unassigned) params.unassigned = true;
+    const response = await httpClient.get("/submit-reports-quickly", { params });
     return response.data;
 };
 
@@ -350,6 +353,12 @@ const updateSubmitReportsQuicklyAsset = async (reportId, assetIndex, payload) =>
 
 const deleteSubmitReportsQuicklyAsset = async (reportId, assetIndex) => {
     const response = await httpClient.delete(`/submit-reports-quickly/${reportId}/assets/${assetIndex}`);
+    return response.data;
+};
+
+const updateReportCompanyOffice = async (recordId, companyOfficeId) => {
+    const payload = { companyOfficeId };
+    const response = await httpClient.patch(`/report/${recordId}/company-office`, payload);
     return response.data;
 };
 
@@ -385,5 +394,6 @@ module.exports = {
     updateSubmitReportsQuickly,
     deleteSubmitReportsQuickly,
     updateSubmitReportsQuicklyAsset,
-    deleteSubmitReportsQuicklyAsset
+    deleteSubmitReportsQuicklyAsset,
+    updateReportCompanyOffice
 };

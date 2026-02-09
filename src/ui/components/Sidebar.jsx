@@ -153,8 +153,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     } catch (err) {
                         console.warn('Failed to sync companies after Taqeem login', err);
                     }
-                    await replaceCompanies(synced, { quiet: true, skipNavigation: true, autoSelect: !isGuest });
-                    const defaultCompany = !isGuest ? synced?.[0] : null;
+                    await replaceCompanies(synced, { quiet: true, skipNavigation: true, autoSelect: true });
+                    const defaultCompany = synced?.[0] || null;
                     if (defaultCompany) {
                         setCompanyStatus('success', t('sidebar.company.companySelected', {
                             defaultValue: `Company: ${defaultCompany.name || t('sidebar.company.fallback')}`
@@ -294,7 +294,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
                                     <button
                                         onClick={async () => {
                                             if (isDisabled) return;
-                                            await setSelectedCompany(company);
+                                            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
                                             setActiveGroup(null);
                                             delayViewChange('apps');
                                         }}

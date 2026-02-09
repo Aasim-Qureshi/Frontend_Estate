@@ -491,7 +491,7 @@ async def handle_command(cmd):
         report_id = cmd.get("reportId")
         tabs_num = int(cmd.get("tabsNum", 3))
 
-        result = await RunCheckMacroStatus(browser, report_id, tabs_num)
+        result = await RunCheckMacroStatus(browser, report_id, tabs_num, same=True)
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)
@@ -502,7 +502,7 @@ async def handle_command(cmd):
         report_id = cmd.get("reportId")
         tabs_num = int(cmd.get("tabsNum", 3))
 
-        result = await RunHalfCheckMacroStatus(browser, report_id, tabs_num)
+        result = await RunHalfCheckMacroStatus(browser, report_id, tabs_num, same=True)
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)

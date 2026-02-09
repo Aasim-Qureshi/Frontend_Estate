@@ -593,7 +593,7 @@
             "title": "Reports",
             "bulkActions": "Bulk Actions",
             "bulk": {
-                "uploadAndSubmit": "Upload & Submit to Taqeem",
+                "uploadAndSubmit": "Submit to Taqeem",
                 "delete": "Delete",
                 "sendToApprover": "Send to Approver",
                 "approve": "Approve"

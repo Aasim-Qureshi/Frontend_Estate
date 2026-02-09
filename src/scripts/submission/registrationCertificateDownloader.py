@@ -803,7 +803,9 @@ async def download_registration_certificates(cmd):
         tabs = int(tabs_raw)
     except Exception:
         tabs = 1
-    tabs = max(1, min(tabs, 5))
+    tabs = max(1, tabs)
+    if reports:
+        tabs = min(tabs, len(reports))
 
     working_browser = None
     spawned_browser = None

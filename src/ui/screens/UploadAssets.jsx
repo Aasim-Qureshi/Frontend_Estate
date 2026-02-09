@@ -1315,7 +1315,7 @@ const UploadAssets = ({ onViewChange }) => {
 
       {/* Reports Table Section */}
       <div className="mt-4">
-        <ReportsTable />
+        <ReportsTable onViewChange={onViewChange} showTemporary={false} />
       </div>
     </div>
   );

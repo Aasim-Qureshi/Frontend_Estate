@@ -47,7 +47,7 @@ export default function GetCompanies({ onViewChange }) {
     const [navigationComplete, setNavigationComplete, _resetNavigationComplete] = usePersistentState("get-companies:navigationComplete", false, { storage: 'session' });
     const { taqeemStatus, setCompanyStatus } = useNavStatus();
     const { isAuthenticated } = useSession();
-    const { syncCompanies, loadSavedCompanies } = useValueNav();
+    const { syncCompanies, loadSavedCompanies, setPreferredCompany } = useValueNav();
 
     useEffect(() => {
         if (navigationComplete && selectedCompany) {
@@ -144,6 +144,13 @@ export default function GetCompanies({ onViewChange }) {
                     const nextView = returnView;
                     resetReturnView();
                     setTimeout(() => onViewChange(nextView), 400);
+                }
+                if (setPreferredCompany) {
+                    await setPreferredCompany(chosen, {
+                        applySelection: true,
+                        skipNavigation: true,
+                        quiet: true,
+                    });
                 }
             } else {
                 setError(data.error || 'Failed to navigate to company');
