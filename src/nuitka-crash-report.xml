@@ -1,66 +1,147 @@
 <?xml version='1.0' encoding='utf8'?>
-<nuitka-compilation-report nuitka_version="2.8.10" nuitka_commercial_version="not installed" mode="standalone" completion="exception">
+<nuitka-compilation-report nuitka_version="4.0" nuitka_commercial_version="not installed" mode="standalone" completion="exception">
   <exception exception_type="UnicodeDecodeError" exception_value="'utf-8' codec can't decode byte 0xb1 in position 49928: invalid start byte">
 Traceback (most recent call last):
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/MainControl.py", line 1214, in main
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\MainControl.py", line 1344, in main
     _main()
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/MainControl.py", line 1033, in _main
+    ~~~~~^^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\MainControl.py", line 1168, in _main
     main_module = _createMainModule()
-                  ^^^^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/MainControl.py", line 229, in _createMainModule
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\MainControl.py", line 299, in _createMainModule
     scanIncludedPackage(package_name)
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 592, in scanIncludedPackage
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 706, in scanIncludedPackage
     scanPluginPath(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 445, in scanPluginPath
+    ~~~~~~~~~~~~~~^
+        plugin_filename=package_directory,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        module_package=package_name.getPackageName(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 543, in scanPluginPath
     scanPluginSinglePath(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 424, in scanPluginSinglePath
+    ~~~~~~~~~~~~~~~~~~~~^
+        plugin_filename,
+        ^^^^^^^^^^^^^^^^
+        module_package=module_package,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        package_only=False,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 517, in scanPluginSinglePath
     _addIncludedModule(module=module, package_only=package_only)
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 344, in _addIncludedModule
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 434, in _addIncludedModule
     scanPluginSinglePath(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 424, in scanPluginSinglePath
+    ~~~~~~~~~~~~~~~~~~~~^
+        sub_path,
+        ^^^^^^^^^
+        module_package=module.getFullName(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        package_only=False,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 517, in scanPluginSinglePath
     _addIncludedModule(module=module, package_only=package_only)
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 354, in _addIncludedModule
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 444, in _addIncludedModule
     scanPluginSinglePath(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 405, in scanPluginSinglePath
+    ~~~~~~~~~~~~~~~~~~~~^
+        sub_path,
+        ^^^^^^^^^
+        module_package=module.getFullName(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        package_only=False,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 498, in scanPluginSinglePath
     decision, decision_reason = decideRecursion(
-                                ^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/importing/Recursion.py", line 143, in decideRecursion
-    Plugins.onModuleUsageLookAhead(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/plugins/Plugins.py", line 1140, in onModuleUsageLookAhead
+                                ~~~~~~~~~~~~~~~^
+        using_module_name=None,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    ...&lt;3 lines&gt;...
+        extra_recursion=True,
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\importing\Recursion.py", line 217, in decideRecursion
+    onModuleUsageLookAhead(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        module_name=module_name,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+        module_filename=module_filename,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        module_kind=module_kind,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\plugins\Hooks.py", line 208, in onModuleUsageLookAhead
+    return Plugins.onModuleUsageLookAhead(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        module_name=module_name,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+        module_filename=module_filename,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        module_kind=module_kind,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\plugins\Plugins.py", line 1194, in onModuleUsageLookAhead
     plugin.onModuleUsageLookAhead(
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/plugins/standard/ImplicitImports.py", line 784, in onModuleUsageLookAhead
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        module_name=module_name,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...&lt;2 lines&gt;...
+        get_module_source=getModuleSourceCode,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\plugins\standard\ImplicitImports.py", line 804, in onModuleUsageLookAhead
     if get_module_source() is None:
-       ^^^^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/plugins/Plugins.py", line 1129, in getModuleSourceCode
+       ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\plugins\Plugins.py", line 1183, in getModuleSourceCode
     return readSourceCodeFromFilename(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/tree/SourceHandling.py", line 213, in readSourceCodeFromFilename
+        module_name=module_name,
+        source_filename=source_filename,
+        pre_load=True,
+    )
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\tree\SourceHandling.py", line 222, in readSourceCodeFromFilename
     return readSourceCodeFromFilenameWithInformation(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/tree/SourceHandling.py", line 178, in readSourceCodeFromFilenameWithInformation
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        module_name=module_name,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+        source_filename=source_filename,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pre_load=pre_load,
+        ^^^^^^^^^^^^^^^^^^
+    )[0]
+    ^
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\tree\SourceHandling.py", line 187, in readSourceCodeFromFilenameWithInformation
     source_code = _readSourceCodeFromFilename3(source_filename)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/altimate/Coding/0/electron-python-app/.venv/lib/python3.12/site-packages/nuitka/tree/SourceHandling.py", line 71, in _readSourceCodeFromFilename3
+  File "C:\Users\TheGenius\Desktop\value tech\Future_Electron\.venv\Lib\site-packages\nuitka\tree\SourceHandling.py", line 80, in _readSourceCodeFromFilename3
     return source_file.read()
-           ^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.12/codecs.py", line 322, in decode
+           ~~~~~~~~~~~~~~~~^^
+  File "C:\Users\TheGenius\AppData\Local\Programs\Python\Python313\Lib\codecs.py", line 325, in decode
     (result, consumed) = self._buffer_decode(data, self.errors, final)
-                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
 UnicodeDecodeError: 'utf-8' codec can't decode byte 0xb1 in position 49928: invalid start byte
 </exception>
   <performance>
-    <memory_usage name="after_launch" value="51490816" />
+    <memory_usage name="after_launch" value="35553280" />
   </performance>
-  <data_file name="nodriver/cdp/README.md" source="${sys.prefix}/lib/python3.12/site-packages/nodriver/cdp/README.md" size="172" reason="package 'nodriver' package data" tags="user,package_data,copy" />
+  <data_file name="nodriver\cdp\README.md" source="${sys.prefix}\Lib\site-packages\nodriver\cdp\README.md" size="172" reason="package 'nodriver' package data" tags="user,package_data,copy" />
   <data_composer blob_size="None" />
   <command_line>
     <option value="--standalone" />
     <option value="--follow-imports" />
     <option value="--include-package=nodriver" />
-    <option value="--include-package=nodriver.cdp" />
     <option value="--include-package-data=nodriver" />
     <option value="--include-package=scripts" />
-    <option value="--output-dir=../build/nuitka_build" />
+    <option value="--output-dir=..\build\nuitka_build" />
     <option value="--output-filename=excec_worker" />
     <option value="--assume-yes-for-downloads" />
     <option value="scripts/core/build_launcher.py" />
@@ -87,15 +168,16 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xb1 in position 49928: inva
     <plugin name="transformers" user_enabled="no" />
   </plugins>
   <distributions />
-  <python python_exe="${sys.prefix}/bin/python" python_flavor="Debian Python" python_version="3.12.3" os_name="Linux" os_release="Linuxmint-Ubuntu-22" arch_name="x86_64" filesystem_encoding="utf-8">
+  <python python_exe="${sys.prefix}\Scripts\python.exe" python_flavor="CPython Official" python_version="3.13.5" os_name="Windows" os_release="10" arch_name="x86_64" filesystem_encoding="utf-8" gil="yes">
     <search_path>
       <path value="${cwd}" />
-      <path value="${cwd}/scripts/core" />
-      <path value="${sys.real_prefix}/lib/python3.12" />
-      <path value="${sys.real_prefix}/lib/python3.12/lib-dynload" />
-      <path value="${sys.prefix}/lib/python3.12/site-packages" />
-      <path value="${sys.prefix}/lib/python3.12/site-packages/setuptools/_vendor" />
+      <path value="${cwd}\scripts\core" />
+      <path value="${sys.real_prefix}\DLLs" />
+      <path value="${sys.real_prefix}\Lib" />
+      <path value="${sys.real_prefix}" />
+      <path value="${sys.prefix}" />
+      <path value="${sys.prefix}\Lib\site-packages" />
     </search_path>
   </python>
-  <output run_filename="~/Coding/0/electron-python-app/build/nuitka_build/build_launcher.dist/excec_worker" />
+  <output run_filename="~\Desktop\value tech\Future_Electron\build\nuitka_build\build_launcher.dist\excec_worker.exe" />
 </nuitka-compilation-report>

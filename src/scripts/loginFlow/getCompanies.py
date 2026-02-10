@@ -125,7 +125,7 @@ async def fetch_company_valuers(page, office_id, sector_id="4"):
         valuer_name = repair_mojibake((item or {}).get("valuerName") or "")
         if not valuer_id:
             continue
-        if valuer_name and valuer_name.strip() in ("تحديد", "Select", "Choose"):
+        if valuer_name and valuer_name.strip() in ("ØªØ­Ø¯ÙØ¯", "Select", "Choose"):
             continue
         cleaned.append({
             "valuerId": valuer_id,
@@ -223,13 +223,13 @@ async def get_companies():
                 if not href or not text:
                     continue
 
-                # Check for the "O¦U,OOñUSOñUS" (My Reports) marker
+                # Check for the "OÂ¦U,OOÃ±USOÃ±US" (My Reports) marker
                 if "membership/reports/sector/4" in href:
                     reports_link_found = True
                     print("[INFO] Found reports link marker", file=sys.stderr)
                     continue
 
-                # Check for the "OU+OU.OU. UŸO'OñUSUŸ U,U.U+O'OœOc" (Join as Partner) marker
+                # Check for the "OU+OU.OU. UÅ¸O'OÃ±USUÅ¸ U,U.U+O'OÅOc" (Join as Partner) marker
                 if "organization/joinPartner/sector/4" in href:
                     join_partner_found = True
                     print("[INFO] Found join partner link marker", file=sys.stderr)

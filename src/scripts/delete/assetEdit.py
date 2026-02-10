@@ -154,13 +154,13 @@ async def _wait_select_has_options(page, select_css: str, min_count: int = 2, ti
     return False
 
 async def _verify_select2_non_placeholder(page, container_css: str) -> bool:
-    """Check visible Select2 container is not 'Select'/'تحديد' or empty."""
+    """Check visible Select2 container is not 'Select'/'ØªØ­Ø¯ÙØ¯' or empty."""
     ok = await page.evaluate(f"""
     (() => {{
       const el = document.querySelector({json.dumps(container_css)});
       if (!el) return false;
       const txt = (el.getAttribute('title') || el.textContent || '').trim();
-      return !!txt && !['Select','تحديد','-- اختر --',''].includes(txt);
+      return !!txt && !['Select','ØªØ­Ø¯ÙØ¯','-- Ø§Ø®ØªØ± --',''].includes(txt);
     }})()
     """)
     log(f"[loc:verify] {container_css} -> {ok}", "INFO")
@@ -217,7 +217,7 @@ async def _wait_post_save(page, macro_id: str, timeout=12):
             return await page.evaluate("""
               () => !!(
                 document.querySelector('.alert-success, .text-success') ||
-                Array.from(document.querySelectorAll('*')).some(n => /تم|حفظ|Saved|success/i.test(n.textContent||""))
+                Array.from(document.querySelectorAll('*')).some(n => /ØªÙ|Ø­ÙØ¸|Saved|success/i.test(n.textContent||""))
               )
             """)
         except Exception:
@@ -286,7 +286,7 @@ async def _get_value(page, select_css: str) -> str | None:
 async def set_location_select2s(page, values: dict) -> None:
     """
     Country=1 (Saudi Arabia), Region=1 (Riyadh Province), City resolved by label
-    ('Riyadh'/'الرياض') or first valid city under the selected region.
+    ('Riyadh'/'Ø§ÙØ±ÙØ§Ø¶') or first valid city under the selected region.
     Keeps Select2 UI in sync and re-asserts region after city set.
     """
     # 1) Country = 1
@@ -305,14 +305,14 @@ async def set_location_select2s(page, values: dict) -> None:
     if not v_region:
         await _sync_select2_container_text(page, "#region")
 
-    # 3) City — resolve a value that belongs to Region=1
+    # 3) City â resolve a value that belongs to Region=1
     city_label_candidates = []
     # take provided labels first if present
     if values.get("city_label"):
         city_label_candidates.append(values["city_label"])
     city_label_candidates += values.get("city_label_alts", [])
     # sensible defaults for Riyadh
-    city_label_candidates += ["Riyadh", "الرياض"]
+    city_label_candidates += ["Riyadh", "Ø§ÙØ±ÙØ§Ø¶"]
 
     city_val = await _find_option_value_by_labels(page, "#city", city_label_candidates)
     if not city_val:

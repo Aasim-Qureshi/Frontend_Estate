@@ -24,7 +24,7 @@ from scripts.core.utils import (
 
 # Status detection markers (similar to ElRajhi checker)
 SENT_BUTTON_MARKER = 'id="reject"'
-CONFIRMED_BUTTON_TEXT = "شهادة"  # Certificate button text
+CONFIRMED_BUTTON_TEXT = "Ø´ÙØ§Ø¯Ø©"  # Certificate button text
 
 
 def is_asset_complete(asset):
@@ -309,7 +309,7 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                                 macro_id = int(macro_id_text.strip())
                                 local_processed.add(macro_id)
 
-                                submit_state = 0 if "غير مكتملة" in status_text else 1
+                                submit_state = 0 if "ØºÙØ± ÙÙØªÙÙØ©" in status_text else 1
 
                                 # Update database via HTTP client
                                 success = await update_macro_submit_state(
@@ -718,7 +718,7 @@ async def half_check_incomplete_macros(browser, report_id, browsers_num=3):
                                     continue
 
                                 local_processed.add(macro_id)
-                                submit_state = 0 if "غير مكتملة" in status_text else 1
+                                submit_state = 0 if "ØºÙØ± ÙÙØªÙÙØ©" in status_text else 1
 
                                 # Update via HTTP client
                                 success = await update_macro_submit_state(

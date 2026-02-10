@@ -22,8 +22,8 @@
     "cleanup": "bash build-scripts/build_cleanup.sh"
   },
   "build": {
-    "productName": "AutomationApp",
-    "appId": "com.example.automationapp",
+    "productName": "Value Tech",
+    "appId": "com.example.valuetech",
     "files": [
       "dist/**/*",
       "src/**/*",

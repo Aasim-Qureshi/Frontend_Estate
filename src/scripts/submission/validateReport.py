@@ -45,7 +45,7 @@ async def _resolve_company_office_id(report_id: str) -> str | None:
 
 async def wait_for_report_info_html(page, timeout_seconds=10):
     """
-    Repeatedly fetch page HTML until we see key report info text (e.g. 'حالة التقرير').
+    Repeatedly fetch page HTML until we see key report info text (e.g. 'Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±').
     This avoids DOM/iframe issues and handles late-loaded content.
     """
     steps = int(timeout_seconds / 0.5)
@@ -57,7 +57,7 @@ async def wait_for_report_info_html(page, timeout_seconds=10):
             pass
 
         if last_html and (
-            "حالة التقرير" in last_html or "معلومات التقرير" in last_html
+            "Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±" in last_html or "ÙØ¹ÙÙÙØ§Øª Ø§ÙØªÙØ±ÙØ±" in last_html
         ):
             return last_html
 
@@ -133,7 +133,7 @@ def extract_report_info_from_html(html: str) -> dict:
     status_label = None
     status_value = None
     for k, v in info.items():
-        if "حالة التقرير" in k:
+        if "Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±" in k:
             status_label = k
             status_value = v
             break
@@ -371,16 +371,16 @@ async def validate_report(cmd):
             json.dumps(
                 {
                     "event": "html_contains_report_info",
-                    "hasStatusText": ("حالة التقرير" in (html or "")),
-                    "hasAccordionText": ("معلومات التقرير" in (html or "")),
+                    "hasStatusText": ("Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±" in (html or "")),
+                    "hasAccordionText": ("ÙØ¹ÙÙÙØ§Øª Ø§ÙØªÙØ±ÙØ±" in (html or "")),
                     "htmlLength": len(html or ""),
                 }
             ),
             file=sys.stderr,
         )
 
-        error_text_1 = "ليس لديك صلاحية للتواجد هنا !"
-        error_text_2 = "هذه الصفحة غير موجودة!"
+        error_text_1 = "ÙÙØ³ ÙØ¯ÙÙ ØµÙØ§Ø­ÙØ© ÙÙØªÙØ§Ø¬Ø¯ ÙÙØ§ !"
+        error_text_2 = "ÙØ°Ù Ø§ÙØµÙØ­Ø© ØºÙØ± ÙÙØ¬ÙØ¯Ø©!"
 
         if error_text_1 in html or error_text_2 in html:
             await _update_report_check_status(
@@ -418,7 +418,7 @@ async def validate_report(cmd):
             file=sys.stderr,
         )
 
-        # Report exists – check macros table
+        # Report exists â check macros table
         macros_table = await wait_for_table_rows(page)
         print(
             json.dumps(
@@ -471,7 +471,7 @@ async def validate_report(cmd):
             return {
                 "status": "MACROS_EXIST",
                 "message": (
-                    "Report has macros – "
+                    "Report has macros â "
                     f"last page #{int(last_page_num) if last_page_num else 'unknown'}, "
                     f"ids on last page: {len(last_page_ids) if isinstance(last_page_ids, list) else 'unknown'}, "
                     f"exact assets: {assets_exact if assets_exact is not None else 'unknown'}"
@@ -488,7 +488,7 @@ async def validate_report(cmd):
                 "lastPageMicroIds": last_page_ids,
             }
 
-        # No macros table → report is valid and empty
+        # No macros table â report is valid and empty
         print(json.dumps({"event": "report_empty_macros"}), file=sys.stderr)
 
         await _update_report_check_status(
@@ -537,8 +537,8 @@ async def validate_report(cmd):
 
 
 async def check_report_existence(page, report_id=None):
-    ERROR_TEXT_NOT_ALLOWED = "ليس لديك صلاحية للتواجد هنا !"
-    ERROR_TEXT_NOT_FOUND = "هذه الصفحة غير موجودة!"
+    ERROR_TEXT_NOT_ALLOWED = "ÙÙØ³ ÙØ¯ÙÙ ØµÙØ§Ø­ÙØ© ÙÙØªÙØ§Ø¬Ø¯ ÙÙØ§ !"
+    ERROR_TEXT_NOT_FOUND = "ÙØ°Ù Ø§ÙØµÙØ­Ø© ØºÙØ± ÙÙØ¬ÙØ¯Ø©!"
 
     if report_id:
         url = f"https://qima.taqeem.sa/report/{report_id}"
@@ -588,7 +588,7 @@ async def validate_for_retry(browser, report_id: str, asset_data: list[dict]):
         expected_count = len(asset_data)
 
         # ----------------------------
-        # STEP 1 — reconcile asset count
+        # STEP 1 â reconcile asset count
         # ----------------------------
         current_count = await get_macro_count(browser, report_id)
         print(json.dumps(current_count))
@@ -611,7 +611,7 @@ async def validate_for_retry(browser, report_id: str, asset_data: list[dict]):
             }
 
         # ----------------------------
-        # STEP 2 — ID verification (DB-first)
+        # STEP 2 â ID verification (DB-first)
         # ----------------------------
         needs_regrab = created > 0 or any(
             not isinstance(a.get("id"), str) or not a["id"] for a in asset_data
@@ -665,7 +665,7 @@ async def validate_report_simple(browser, report_id: str):
         html = await wait_for_report_info_html(page, timeout_seconds=10)
 
         # --- Hard failure texts ---
-        if "ليس لديك صلاحية للتواجد هنا !" in html or "هذه الصفحة غير موجودة!" in html:
+        if "ÙÙØ³ ÙØ¯ÙÙ ØµÙØ§Ø­ÙØ© ÙÙØªÙØ§Ø¬Ø¯ ÙÙØ§ !" in html or "ÙØ°Ù Ø§ÙØµÙØ­Ø© ØºÙØ± ÙÙØ¬ÙØ¯Ø©!" in html:
             return {
                 "status": "NOT_FOUND",
                 "exists": False,

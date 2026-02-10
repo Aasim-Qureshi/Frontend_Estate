@@ -22,6 +22,64 @@ function Fail([string]$msg) {
   Exit 1
 }
 
+# Function: Convert Arbitrary Encodings → UTF-8 (IMPROVED)
+function Convert-FilesToUTF8($path) {
+    Write-Host "[BUILD-WIN] Converting ALL Python files to UTF-8 (recursive, forced)..."
+
+    $files = Get-ChildItem -Path $path -Recurse -Include *.py -File
+    $convertedCount = 0
+    
+    foreach ($file in $files) {
+        try {
+            # Read raw bytes
+            $raw = [System.IO.File]::ReadAllBytes($file.FullName)
+            
+            # Skip empty files
+            if ($raw.Length -eq 0) { continue }
+            
+            # Try to decode with multiple encodings
+            $text = $null
+            $encodings = @("utf-8", "windows-1252", "latin1", "windows-1256", "iso-8859-1", "cp437")
+            
+            foreach ($encName in $encodings) {
+                try {
+                    $enc = [System.Text.Encoding]::GetEncoding($encName)
+                    $testText = $enc.GetString($raw)
+                    
+                    # Verify it's valid text (contains mostly printable characters)
+                    if ($testText -match '[^\x00-\x7F\x80-\xFF]' -eq $false) {
+                        $text = $testText
+                        if ($encName -ne "utf-8") {
+                            Write-Host "  • Converting ($encName): $($file.FullName)"
+                            $convertedCount++
+                        }
+                        break
+                    }
+                }
+                catch { 
+                    continue
+                }
+            }
+
+            # Fallback: treat as latin1 (never fails)
+            if ($text -eq $null) {
+                $text = [System.Text.Encoding]::GetEncoding("latin1").GetString($raw)
+                Write-Host "  • Forcing latin1: $($file.FullName)"
+                $convertedCount++
+            }
+
+            # Always rewrite as UTF-8 (even if already UTF-8, to ensure BOM-less UTF-8)
+            $utf8NoBOM = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($file.FullName, $text, $utf8NoBOM)
+        }
+        catch {
+            Write-Host "  !! ERROR processing $($file.FullName): $_"
+        }
+    }
+
+    Write-Host "[BUILD-WIN] Converted $convertedCount files. Encoding conversion complete."
+}
+
 # 1) FRONTEND BUILD
 Write-Host "[BUILD-WIN] Running frontend build..."
 if (-not (Test-Path "$ProjectRoot\package.json")) {
@@ -46,35 +104,32 @@ Write-Host "[BUILD-WIN] Using Python: $PythonExe"
 # 3) INSTALL NUITKA + HELPERS
 Write-Host "[BUILD-WIN] Installing Nuitka + dependencies..."
 & $PythonExe -m pip install --upgrade pip
-& $PythonExe -m pip install nuitka ordered-set zstandard
+& $PythonExe -m pip install nuitka ordered-set zstandard nodriver
 
-# 3.5) FIX NODRIVER ENCODING
-Write-Host "[BUILD-WIN] Checking nodriver encoding..."
+# 3.5) FIND NODRIVER PATH
+Write-Host "[BUILD-WIN] Locating nodriver package..."
 
-$nodriverPath = & $PythonExe - <<'PY'
+$pythonCode = @"
 import nodriver, os
 print(os.path.dirname(nodriver.__file__))
-PY
+"@
 
-$nodriverPath = $nodriverPath.Trim()
-$networkFile = Join-Path $nodriverPath "cdp\network.py"
+$nodriverPath = ($pythonCode | & $PythonExe -).Trim()
 
-if (Test-Path $networkFile) {
-    Write-Host "[BUILD-WIN] Found network.py at $networkFile"
-
-    try {
-        Get-Content $networkFile -Encoding UTF8 -ErrorAction Stop | Out-Null
-        Write-Host "[BUILD-WIN] network.py already UTF-8."
-    }
-    catch {
-        Write-Host "[BUILD-WIN] Converting network.py to UTF-8..."
-        $content = Get-Content $networkFile -Raw
-        $content | Set-Content -Encoding UTF8 $networkFile
-        Write-Host "[BUILD-WIN] Conversion complete."
-    }
+if (-not (Test-Path $nodriverPath)) {
+    Fail "nodriver package not found in venv. Install failed."
 }
-else {
-    Write-Host "[BUILD-WIN] network.py not found, skipping encoding fix."
+
+Write-Host "[BUILD-WIN] nodriver located at: $nodriverPath"
+
+# 3.6) CONVERT ENTIRE NODRIVER PACKAGE TO UTF-8
+Convert-FilesToUTF8 $nodriverPath
+
+# 3.7) ALSO CONVERT PROJECT SCRIPTS TO UTF-8
+$scriptsPath = Join-Path $ProjectRoot "src\scripts"
+if (Test-Path $scriptsPath) {
+    Write-Host "[BUILD-WIN] Converting project scripts to UTF-8..."
+    Convert-FilesToUTF8 $scriptsPath
 }
 
 # 4) CLEAN OLD ARTIFACTS
