@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavStatus } from '../context/NavStatusContext';
 import usePersistentState from "../hooks/usePersistentState";
 import { useSession } from '../context/SessionContext';
+import { emitTaqeemConflict, syncTaqeemSnapshot } from '../../shared/helper/taqeemSync';
 
 const TaqeemAuth = ({ onViewChange }) => {
     const [formData, setFormData, resetFormData] = usePersistentState('taqeem-auth:form', {
@@ -17,7 +18,14 @@ const TaqeemAuth = ({ onViewChange }) => {
     const [secondaryLoading, setSecondaryLoading] = useState(false);
     const [secondaryBatchId, setSecondaryBatchId] = useState('');
     const { taqeemStatus, setTaqeemStatus } = useNavStatus();
-    const { token, login } = useSession();
+    const { token, login, logout, isGuest } = useSession();
+
+    const redirectToPhoneLogin = async () => {
+        if (isGuest) {
+            logout();
+        }
+        await onViewChange?.("login");
+    };
 
     useEffect(() => {
         if (taqeemStatus?.state !== 'success') {
@@ -80,18 +88,17 @@ const TaqeemAuth = ({ onViewChange }) => {
                     });
 
                     setTaqeemStatus("info", "Awaiting OTP to finish Taqeem sign-in");
-                    return;
+                    return { status: "OTP_REQUIRED" };
                 }
 
                 if (result.status === "SUCCESS") {
                     setMessage({
-                        text: "Authentication complete — starting automation...",
+                        text: "Authentication complete - starting automation...",
                         type: "success",
                     });
 
                     setTaqeemStatus("success", "Taqeem login: On");
-                    goToCompanies();
-                    return;
+                    return { status: "SUCCESS" };
                 }
 
                 throw new Error(result.error || "Login failed");
@@ -108,12 +115,12 @@ const TaqeemAuth = ({ onViewChange }) => {
 
             if (result.status === "SUCCESS") {
                 setMessage({
-                    text: "Authentication complete — automation running...",
+                    text: "Authentication complete - automation running...",
                     type: "success",
                 });
 
                     setTaqeemStatus("success", "Taqeem login: On");
-                    goToCompanies();
+                    return { status: "SUCCESS" };
                 } else {
                     throw new Error(result.error || "OTP verification failed");
             }
@@ -127,7 +134,7 @@ const TaqeemAuth = ({ onViewChange }) => {
 
             const bootstrapResponse = await window.electronAPI.apiRequest(
                 "POST",
-                "/api/users/bootstrap",
+                "/api/users/new-bootstrap",
                 {
                     username: formData.email,
                     password: formData.password,
@@ -137,27 +144,59 @@ const TaqeemAuth = ({ onViewChange }) => {
 
             console.log("Bootstrap response:", bootstrapResponse);
 
-            // --- BOOTSTRAP_GRANTED
-            if (bootstrapResponse.status === "BOOTSTRAP_GRANTED") {
+                        if (bootstrapResponse.status === "TAQEEM_ALREADY_USED") {
+                emitTaqeemConflict(bootstrapResponse);
+                setMessage({
+                    text: bootstrapResponse.message || "This Taqeem user is already linked. Please login to Value Tech.",
+                    type: "error",
+                });
+                setTaqeemStatus("error", "Taqeem user is already linked");
+                await redirectToPhoneLogin();
+                return;
+            }
+
+            const acceptedStatuses = ["BOOTSTRAP_GRANTED", "LOGIN_SUCCESS", "NORMAL_ACCOUNT"];
+            if (acceptedStatuses.includes(bootstrapResponse.status)) {
                 setMessage({
                     text: "Backend authentication successful. Proceeding to Taqeem login...",
                     type: "info",
                 });
 
-                login({ id: bootstrapResponse.userId, guest: true }, bootstrapResponse.token);
+                const activeToken = bootstrapResponse.token || token || null;
+                if (activeToken) {
+                    const loginPayload = bootstrapResponse.user || {
+                        id: bootstrapResponse.userId,
+                        _id: bootstrapResponse.userId,
+                        guest: bootstrapResponse.guest !== false,
+                        taqeemUser: formData.email,
+                    };
+                    login(loginPayload, activeToken);
+                }
 
-                await runTaqeemLoginFlow();
-                return;
-            }
+                const loginResult = await runTaqeemLoginFlow();
+                if (loginResult?.status === "SUCCESS") {
+                    const syncResult = await syncTaqeemSnapshot({
+                        token: activeToken,
+                        taqeemUser: formData.email,
+                    });
 
-            // --- NORMAL_ACCOUNT
-            if (bootstrapResponse.status === "NORMAL_ACCOUNT") {
-                setMessage({
-                    text: "Normal account — proceeding to Taqeem login...",
-                    type: "info",
-                });
+                    if (syncResult?.status === "TAQEEM_ALREADY_USED") {
+                        emitTaqeemConflict(syncResult);
+                        setMessage({
+                            text: syncResult.message || "This Taqeem user is already linked. Please login to Value Tech.",
+                            type: "error",
+                        });
+                        setTaqeemStatus("error", "Taqeem user is already linked");
+                        await redirectToPhoneLogin();
+                        return;
+                    }
 
-                await runTaqeemLoginFlow();
+                    if (syncResult?.user && activeToken) {
+                        login(syncResult.user, activeToken);
+                    }
+
+                    goToCompanies();
+                }
                 return;
             }
 
@@ -172,19 +211,29 @@ const TaqeemAuth = ({ onViewChange }) => {
             const backendStatus = error.response?.data?.status;
             const httpStatus = error.status || error.response?.status;
 
-            // Invalid credentials
-            if (error.response?.data?.message === "Invalid credentials") {
+            if (backendStatus === "TAQEEM_ALREADY_USED") {
+                emitTaqeemConflict(error.response?.data || {});
                 setMessage({
-                    text: "❌ Invalid username or password",
+                    text: error.response?.data?.message || "This Taqeem user is already linked. Please login to Value Tech.",
+                    type: "error",
+                });
+                setTaqeemStatus("error", "Taqeem user is already linked");
+                await redirectToPhoneLogin();
+            }
+
+            // Invalid credentials
+            else if (error.response?.data?.message === "Invalid credentials") {
+                setMessage({
+                    text: "Invalid username or password",
                     type: "error",
                 });
 
                 setTaqeemStatus("error", "Invalid credentials");
             }
 
-            // LOGIN_REQUIRED (likely 403) — continue to Taqeem login anyway
+            // LOGIN_REQUIRED (likely 403)
             else if (
-                error.message.includes("403")
+                String(error?.message || "").includes("403")
             ) {
                 setMessage({
                     text: "System login required first",
@@ -196,13 +245,13 @@ const TaqeemAuth = ({ onViewChange }) => {
                     "Backend requires login first"
                 );
 
-                await onViewChange?.("registration")
+                await redirectToPhoneLogin();
             }
 
             // Generic fallback
             else {
                 setMessage({
-                    text: "❌ Error: " + (error.message || "Authentication failed"),
+                    text: "Error: " + (error.message || "Authentication failed"),
                     type: "error",
                 });
 
@@ -240,7 +289,7 @@ const TaqeemAuth = ({ onViewChange }) => {
                     setTaqeemStatus('info', 'Awaiting OTP to finish Taqeem sign-in');
                 } else if (result.status === 'SUCCESS') {
                     setMessage({
-                        text: result.message || '✅ Login successful! Starting automation...',
+                        text: result.message || 'Login successful! Starting automation...',
                         type: 'success'
                     });
                     setTaqeemStatus('success', 'Taqeem login: On');
@@ -253,7 +302,7 @@ const TaqeemAuth = ({ onViewChange }) => {
             }
         } catch (error) {
             setMessage({
-                text: '❌ Error: ' + error.message,
+                text: 'Error: ' + error.message,
                 type: 'error'
             });
             setTaqeemStatus('error', error.message || 'Taqeem login failed');
@@ -298,7 +347,7 @@ const TaqeemAuth = ({ onViewChange }) => {
             });
         } catch (error) {
             setSecondaryStatus({
-                text: '❌ Unable to open a new login tab: ' + error.message,
+                text: 'Unable to open a new login tab: ' + error.message,
                 type: 'error'
             });
         } finally {
@@ -385,7 +434,7 @@ const TaqeemAuth = ({ onViewChange }) => {
                     {/* Email Field */}
                     <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                            📧 Email Address
+                            Email Address
                         </label>
                         <input
                             type="text"
@@ -403,7 +452,7 @@ const TaqeemAuth = ({ onViewChange }) => {
                     {/* Password Field */}
                     <div>
                         <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                            🔒 Password
+                            Password
                         </label>
                         <input
                             type="password"
@@ -430,7 +479,7 @@ const TaqeemAuth = ({ onViewChange }) => {
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                         <label htmlFor="method" className="ml-2 block text-sm text-gray-700">
-                            📱 Use SMS for two-factor authentication
+                            Use SMS for two-factor authentication
                         </label>
                     </div>
 
@@ -438,7 +487,7 @@ const TaqeemAuth = ({ onViewChange }) => {
                     {showOtp && (
                         <div>
                             <label htmlFor="otp" className="block text-sm font-medium text-gray-700 mb-2">
-                                {formData.method === 'SMS' ? '📱' : '🔑'} One-Time Password
+                                One-Time Password
                             </label>
                             <input
                                 type="text"
@@ -539,3 +588,4 @@ const TaqeemAuth = ({ onViewChange }) => {
 };
 
 export default TaqeemAuth;
+

@@ -46,6 +46,12 @@ class AuthCommands {
         });
     }
 
+    async getProfile() {
+        return this._sendCommand({
+            action: 'get-profile'
+        });
+    }
+
     async navigateToCompany(company) {
         return this._sendCommand({
             action: 'navigate-to-company',

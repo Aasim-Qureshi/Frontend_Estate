@@ -30,6 +30,7 @@ function registerIpcHandlers() {
         ipcMain.removeHandler('read-template-file');
         ipcMain.removeHandler('get-report-deletions');
         ipcMain.removeHandler('get-checked-reports');
+        ipcMain.removeHandler('get-profile');
     } catch (err) {
         // Ignore errors if handlers don't exist
     }
@@ -57,6 +58,7 @@ function registerIpcHandlers() {
         safeHandle('submit-otp', authHandlers.handleSubmitOtp, 'authHandlers.handleSubmitOtp');
         safeHandle('check-status', authHandlers.handleCheckStatus, 'authHandlers.handleCheckStatus');
         safeHandle('get-companies', authHandlers.handleGetCompanies, 'authHandlers.handleGetCompanies');
+        safeHandle('get-profile', authHandlers.handleGetProfile, 'authHandlers.handleGetProfile');
         safeHandle('navigate-to-company', authHandlers.handleNavigateToCompany, 'authHandlers.handleNavigateToCompany');
         safeHandle('register', authHandlers.handleRegister, 'authHandlers.handleRegister');
         safeHandle('auth-set-refresh-token', authHandlers.handleSetRefreshToken, 'authHandlers.handleSetRefreshToken');
@@ -190,6 +192,7 @@ function unregisterIpcHandlers() {
     ipcMain.removeAllListeners('submit-otp');
     ipcMain.removeAllListeners('check-status');
     ipcMain.removeAllListeners('get-companies');
+    ipcMain.removeAllListeners('get-profile');
     ipcMain.removeAllListeners('navigate-to-company');
     ipcMain.removeAllListeners('register');
     ipcMain.removeAllListeners('open-taqeem-login');

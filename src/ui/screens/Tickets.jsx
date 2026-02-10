@@ -64,7 +64,7 @@ const buildPreview = (payload = {}) => {
 const Tickets = ({ onViewChange }) => {
     const { user, token, isAuthenticated } = useSession();
     const { t } = useTranslation();
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const isSupport = SUPPORT_PHONES.includes(user?.phone);
 
     const [tickets, setTickets] = useState([]);
@@ -102,7 +102,7 @@ const Tickets = ({ onViewChange }) => {
 
     const assignedPhone = selectedTicket?.assignedTo?.phone || '';
     const isAssignedToMe = selectedTicket && resolveId(selectedTicket.assignedTo) === resolveId(user?._id);
-    const canTakeTicket = isSupport && selectedTicket && (!selectedTicket.assignedTo || assignedPhone === '011111');
+    const canTakeTicket = isSupport && selectedTicket && (!selectedTicket.assignedTo || assignedPhone === '000');
     const canUpdateStatus = isAdmin || (isSupport && isAssignedToMe);
     const canChat = isAdmin || !isSupport || isAssignedToMe;
 

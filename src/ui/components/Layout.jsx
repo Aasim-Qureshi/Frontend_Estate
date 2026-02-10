@@ -30,6 +30,7 @@ import NotificationBell from './NotificationBell';
 import { useTranslation } from 'react-i18next';
 import usePersistentState from '../hooks/usePersistentState';
 import { ensureTaqeemAuthorized } from '../../shared/helper/taqeemAuthWrap';
+import { TAQEEM_CONFLICT_EVENT } from '../../shared/helper/taqeemSync';
 const { viewTitles, valueSystemGroups, findTabInfo, valueSystemCards, isValueSystemView } = navigation;
 
 const findCardForGroup = (groupId) =>
@@ -125,6 +126,18 @@ const getInitials = (label = '') => {
     return initials.join('') || 'VT';
 };
 
+const getCompanySelectionKey = (company) => {
+    if (!company) return '';
+    return String(
+        company.officeId ||
+        company.office_id ||
+        company.url ||
+        company.id ||
+        company.name ||
+        ''
+    );
+};
+
 const HeroArt = ({ label, theme, Icon }) => {
     const initials = getInitials(label);
     const SafeIcon = Icon || AppWindow;
@@ -197,7 +210,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         return Number.isFinite(numeric) ? numberFormatter.format(numeric) : value;
     };
 
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const blocked = isAuthenticated && (isFeatureBlocked(currentView) || updateBlocked());
     const blockMessage = blockReason(currentView);
     const mode = systemState?.mode || 'active';
@@ -206,24 +219,15 @@ const Layout = ({ children, currentView, onViewChange }) => {
     const [hideUpdateNotice, setHideUpdateNotice] = useState(false);
     const [forceCompanyModal, setForceCompanyModal] = useState(false);
     const [backendVersion, setBackendVersion] = useState(null);
-    const [companyModalSelection, setCompanyModalSelection] = useState(selectedCompany?.url || '');
+    const [companyModalSelection, setCompanyModalSelection] = useState(getCompanySelectionKey(selectedCompany));
     const [companyModalBusy, setCompanyModalBusy] = useState(false);
+    const [taqeemConflict, setTaqeemConflict] = useState(null);
     const [taqeemEverLoggedIn, setTaqeemEverLoggedIn] = usePersistentState('taqeem:ever-logged-in', false, { storage: 'session' });
     const [showTaqeemReconnect, setShowTaqeemReconnect] = useState(false);
     const [reconnectState, setReconnectState] = useState('idle');
     const [reconnectError, setReconnectError] = useState('');
     const reconnectCloseTimerRef = useRef(null);
     const prevTaqeemStateRef = useRef(taqeemStatus?.state);
-    const uploadViewsRequiringCompany = useMemo(
-        () => new Set([
-            'submit-reports-quickly',
-            'upload-assets',
-            'multi-excel-upload',
-            'duplicate-report',
-            'upload-report-elrajhi'
-        ]),
-        []
-    );
 
     useEffect(() => {
         // Reset notice dismissal whenever a new update arrives
@@ -231,8 +235,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
     }, [latestUpdate]);
 
     useEffect(() => {
-        if (selectedCompany?.url) {
-            setCompanyModalSelection(selectedCompany.url);
+        if (selectedCompany) {
+            setCompanyModalSelection(getCompanySelectionKey(selectedCompany));
         }
     }, [selectedCompany]);
 
@@ -290,17 +294,45 @@ const Layout = ({ children, currentView, onViewChange }) => {
     }, []);
 
     useEffect(() => {
-        const needsCompany = uploadViewsRequiringCompany.has(currentView);
+        if (typeof window === 'undefined' || !window?.addEventListener) return undefined;
+
+        const onTaqeemConflict = (event) => {
+            const detail = event?.detail || {};
+            setTaqeemStatus('error', detail?.message || 'Taqeem user is already linked');
+            setTaqeemConflict({
+                message: detail?.message || 'This Taqeem user is already linked to another Value Tech account.',
+                status: detail?.status || 'TAQEEM_ALREADY_USED',
+                existingUserId: detail?.existingUserId || null
+            });
+            setShowTaqeemReconnect(false);
+            setReconnectState('idle');
+            setReconnectError('');
+            setActiveGroup(null);
+            setActiveTab(null);
+            resetNavigation();
+            if (isGuest) {
+                logout();
+            }
+            onViewChange?.('login');
+        };
+
+        window.addEventListener(TAQEEM_CONFLICT_EVENT, onTaqeemConflict);
+        return () => {
+            window.removeEventListener(TAQEEM_CONFLICT_EVENT, onTaqeemConflict);
+        };
+    }, [isGuest, logout, onViewChange, resetNavigation, setActiveGroup, setActiveTab, setTaqeemStatus]);
+
+    useEffect(() => {
         const taqeemOn = taqeemStatus?.state === 'success';
         const hasCompanies = companies && companies.length > 0;
-        const shouldPrompt = needsCompany && hasCompanies && !selectedCompany;
+        const shouldPrompt = taqeemOn && hasCompanies && !selectedCompany;
         if (shouldPrompt) {
-            setCompanyStatus('info', 'Select a company to complete uploading');
+            setCompanyStatus('info', 'Select a company to continue');
             setForceCompanyModal(true);
             return;
         }
         setForceCompanyModal(false);
-    }, [companies, currentView, isGuest, selectedCompany, setCompanyStatus, taqeemStatus?.state, uploadViewsRequiringCompany]);
+    }, [companies, selectedCompany, setCompanyStatus, taqeemStatus?.state]);
 
     useEffect(() => {
         if (forceCompanyModal && !selectedCompany) {
@@ -457,19 +489,27 @@ const Layout = ({ children, currentView, onViewChange }) => {
             await setSelectedCompany(null, { skipNavigation: true });
             return;
         }
-        const company = companies?.find((c) => c.url === value);
+        const company = companies?.find((c) => getCompanySelectionKey(c) === value);
         if (company) {
-            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
+            await setSelectedCompany(company, {
+                setAsDefault: true,
+                onlyIfUnset: false,
+                persistDefault: true
+            });
         }
     };
 
     const handleCompanyModalSubmit = async () => {
         if (!companyModalSelection) return;
-        const company = companies?.find((c) => c.url === companyModalSelection);
+        const company = companies?.find((c) => getCompanySelectionKey(c) === companyModalSelection);
         if (!company) return;
         setCompanyModalBusy(true);
         try {
-            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
+            await setSelectedCompany(company, {
+                setAsDefault: true,
+                onlyIfUnset: false,
+                persistDefault: true
+            });
             setForceCompanyModal(false);
         } finally {
             setCompanyModalBusy(false);
@@ -531,7 +571,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         }
     };
 
-    const showCompanyModal = forceCompanyModal && uploadViewsRequiringCompany.has(currentView);
+    const showCompanyModal = forceCompanyModal && !taqeemConflict;
 
     const updateNotice = shouldShowUpdateNotice ? (
         <div className="relative mb-2 overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-2.5 text-[10px] text-slate-200 shadow-[0_10px_24px_rgba(2,6,23,0.45)]">
@@ -616,6 +656,22 @@ const Layout = ({ children, currentView, onViewChange }) => {
         setActiveTab(null);
         resetNavigation();
         if (onViewChange) onViewChange(view);
+    };
+
+    const handleConflictGoToLogin = () => {
+        setTaqeemConflict(null);
+        setShowTaqeemReconnect(false);
+        setReconnectState('idle');
+        setReconnectError('');
+        setActiveGroup(null);
+        setActiveTab(null);
+        resetNavigation();
+        if (isGuest) {
+            logout();
+        }
+        if (onViewChange) {
+            onViewChange('login');
+        }
     };
 
     const userBadge = isAuthenticated && !isGuest ? (
@@ -786,7 +842,11 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 chooseCard('uploading-reports');
                 chooseDomain('equipments');
                 if (item.value) {
-            setSelectedCompany(item.value, { setAsDefault: true, onlyIfUnset: true });
+                    setSelectedCompany(item.value, {
+                        setAsDefault: true,
+                        onlyIfUnset: false,
+                        persistDefault: true
+                    });
                 }
                 onViewChange('apps');
                 break;
@@ -898,6 +958,37 @@ const Layout = ({ children, currentView, onViewChange }) => {
 
     return (
         <div className="flex h-screen bg-transparent overflow-x-hidden max-w-full">
+            {taqeemConflict && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white shadow-2xl p-5 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold text-slate-900">
+                                    Taqeem account already linked
+                                </h3>
+                                <p className="text-[11px] text-slate-600">
+                                    {taqeemConflict.message}
+                                </p>
+                                {taqeemConflict.existingUserId && (
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                        User ID: {taqeemConflict.existingUserId}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleConflictGoToLogin}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow bg-rose-600 hover:bg-rose-700"
+                        >
+                            Login with Phone
+                        </button>
+                    </div>
+                </div>
+            )}
             {showTaqeemReconnect && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4">
                     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-5 space-y-4">
@@ -951,7 +1042,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             <div className="flex-1">
                                 <h3 className="text-sm font-semibold text-slate-900">Select a company to continue</h3>
                                 <p className="text-[11px] text-slate-600">
-                                    Taqeem login is active. Choose one of your companies to continue uploading reports.
+                                    Choose your default company for this Taqeem account. You can change it later from settings.
                                 </p>
                             </div>
                         </div>
@@ -964,7 +1055,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             >
                                 <option value="">{t('sidebar.company.selectToContinue', { defaultValue: 'Select a company' })}</option>
                                 {(companies || []).map((company) => (
-                                    <option key={company.url || company.name} value={company.url}>
+                                    <option key={getCompanySelectionKey(company)} value={getCompanySelectionKey(company)}>
                                         {company.name || t('sidebar.company.fallback')}
                                         {company.officeId ? ` (Office ${company.officeId})` : ''}
                                     </option>
@@ -1059,7 +1150,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             >
                                 <span className="font-semibold">Company:</span>
                                 <select
-                                    value={selectedCompany?.url || ''}
+                                    value={getCompanySelectionKey(selectedCompany)}
                                     onChange={(e) => handleCompanyChange(e.target.value)}
                                     className="bg-transparent text-[10px] font-semibold focus:outline-none border-none px-1 py-0.5 rounded"
                                     style={{ color: selectedCompany ? '#22c55e' : '#ef4444' }} // lighter green when selected, lighter red otherwise
@@ -1072,8 +1163,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                     </option>
                                     {(companies || []).map((company) => (
                                         <option
-                                            key={company.url || company.name}
-                                            value={company.url}
+                                            key={getCompanySelectionKey(company)}
+                                            value={getCompanySelectionKey(company)}
                                             style={{ color: '#22c55e', fontWeight: 600 }}
                                         >
                                             {company.name || t('sidebar.company.fallback')}

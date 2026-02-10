@@ -34,6 +34,24 @@ import InsufficientPointsModal from "../components/InsufficientPointsModal";
 const MULTI_UPLOAD_PAGE_NAME = "Multi-Excel Upload";
 const MULTI_UPLOAD_PAGE_SOURCE = "multi-batch";
 
+const isTaqeemAuthSuccess = (authStatus) => {
+    if (authStatus === true) return true;
+    if (authStatus?.success === true) return true;
+    const status = String(authStatus?.status || "").toUpperCase();
+    return (
+        status === "SUCCESS" ||
+        status === "CHECK" ||
+        status === "AUTHORIZED" ||
+        status === "SYNCED" ||
+        status === "LOGIN_SUCCESS" ||
+        status === "NORMAL_ACCOUNT" ||
+        status === "BOOTSTRAP_GRANTED"
+    );
+};
+
+const getTaqeemAuthErrorMessage = (authStatus, fallback) =>
+    authStatus?.error || authStatus?.message || fallback;
+
 const InputField = ({
     label,
     required = false,
@@ -700,7 +718,7 @@ const isReportInfoIssue = (issue) => {
 };
 
 const MultiExcelUpload = ({ onViewChange }) => {
-    const { token, isGuest, user } = useSession();
+    const { token, isGuest, user, login } = useSession();
     const { systemState } = useSystemControl();
     const { executeWithAuth } = useAuthAction();
     const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
@@ -1467,17 +1485,26 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     return;
                 }
 
-                const ok = await ensureTaqeemAuthorized(
+                const authStatus = await ensureTaqeemAuthorized(
                     token,
                     onViewChange,
                     isTaqeemLoggedIn,
                     0,
-                    null,
+                    login,
                     setTaqeemStatus,
                     authOptions
                 );
-                if (!ok) {
-                    setError("Taqeem login required. Finish login and choose a company to continue.");
+                if (authStatus?.status === "INSUFFICIENT_POINTS") {
+                    setShowInsufficientPointsModal(true);
+                    return;
+                }
+                if (authStatus?.status === "LOGIN_REQUIRED" || !isTaqeemAuthSuccess(authStatus)) {
+                    setError(
+                        getTaqeemAuthErrorMessage(
+                            authStatus,
+                            "Taqeem login required. Finish login and choose a company to continue."
+                        )
+                    );
                     setPendingBatch({
                         batchId,
                         tabsNum: resolvedTabs,
@@ -1618,6 +1645,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
             setPendingBatch,
             setReturnView,
             token,
+            login,
         ]
     );
 

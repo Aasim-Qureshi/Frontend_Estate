@@ -6,13 +6,26 @@ import { useSession } from '../context/SessionContext';
 import { useNavStatus } from '../context/NavStatusContext';
 import navigation from '../constants/navigation';
 import { useTranslation } from 'react-i18next';
+import { syncTaqeemSnapshot } from '../../shared/helper/taqeemSync';
 
 const { valueSystemGroups } = navigation;
+
+const getCompanyIdentity = (company) => {
+    if (!company) return '';
+    return String(
+        company.officeId ||
+        company.office_id ||
+        company.url ||
+        company.id ||
+        company.name ||
+        ''
+    );
+};
 
 const Sidebar = ({ currentView, onViewChange }) => {
     const { t } = useTranslation();
     const { isFeatureBlocked, isAdmin } = useSystemControl();
-    const { user, isAuthenticated, isGuest } = useSession();
+    const { user, isAuthenticated, token, login, logout, isGuest } = useSession();
     const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
     const {
         selectedCard,
@@ -24,7 +37,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
         activeGroup,
         setActiveGroup,
         setActiveTab,
-        resetAll,
         resetNavigation,
         chooseCard,
         chooseDomain,
@@ -101,6 +113,27 @@ const Sidebar = ({ currentView, onViewChange }) => {
         }
     };
 
+    const ensureGuestSession = async () => {
+        if (token) return token;
+        if (!window?.electronAPI?.apiRequest) return null;
+
+        try {
+            const tokenObj = await window.electronAPI.getToken?.();
+            const bearer = tokenObj?.refreshToken || tokenObj?.token;
+            const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
+            const result = await window.electronAPI.apiRequest('POST', '/api/users/guest', {}, headers);
+            if (result?.token && result?.userId) {
+                const guestUser = result?.user || { id: result.userId, _id: result.userId, guest: true };
+                login?.(guestUser, result.token);
+                return result.token;
+            }
+        } catch (err) {
+            console.warn('Failed to ensure guest session for Taqeem sync:', err?.message || err);
+        }
+
+        return null;
+    };
+
     const handleTaqeemLogin = async () => {
         const waitForManualLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
             const start = Date.now();
@@ -136,10 +169,45 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
             setTaqeemStatus('info', t('sidebar.company.waitingForLogin', { defaultValue: 'Waiting for you to finish login...' }));
             await waitForManualLogin();
+
+            const activeToken = await ensureGuestSession();
+            setCompanyStatus('info', t('sidebar.company.fetching', { defaultValue: 'Fetching companies from Taqeem...' }));
+
+            let snapshot = null;
+            if (activeToken) {
+                try {
+                    snapshot = await syncTaqeemSnapshot({ token: activeToken });
+                } catch (err) {
+                    snapshot = null;
+                }
+            }
+
+            if (snapshot?.status === 'TAQEEM_ALREADY_USED') {
+                const message = snapshot?.message || 'This Taqeem user is already linked. Please login with your phone.';
+                setTaqeemStatus('error', message);
+                setCompanyStatus('error', message);
+                if (isGuest) {
+                    logout();
+                }
+                onViewChange?.('login');
+                return;
+            }
+
+            if (snapshot?.user && activeToken) {
+                login?.(snapshot.user, activeToken);
+            }
+
             setTaqeemStatus('success', t('sidebar.company.loginSuccess', { defaultValue: 'Taqeem login: On' }));
 
+            const snapshotCompanies = Array.isArray(snapshot?.companies) ? snapshot.companies : [];
+            if (snapshotCompanies.length > 0) {
+                const prepared = snapshotCompanies.map((c) => ({ ...c, type: c.type || 'equipment' }));
+                await replaceCompanies(prepared, { quiet: true, skipNavigation: true, autoSelect: true });
+                setCompanyStatus('info', t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to view main links.' }));
+                return;
+            }
+
             if (window?.electronAPI?.getCompanies) {
-                setCompanyStatus('info', t('sidebar.company.fetching', { defaultValue: 'Fetching companies from Taqeem...' }));
                 const data = await window.electronAPI.getCompanies();
                 const fetched = Array.isArray(data?.data) ? data.data : Array.isArray(data?.companies) ? data.companies : [];
                 if (fetched.length > 0) {
@@ -154,14 +222,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
                         console.warn('Failed to sync companies after Taqeem login', err);
                     }
                     await replaceCompanies(synced, { quiet: true, skipNavigation: true, autoSelect: true });
-                    const defaultCompany = synced?.[0] || null;
-                    if (defaultCompany) {
-                        setCompanyStatus('success', t('sidebar.company.companySelected', {
-                            defaultValue: `Company: ${defaultCompany.name || t('sidebar.company.fallback')}`
-                        }));
-                    } else {
-                        setCompanyStatus('success', t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to view main links.' }));
-                    }
+                    setCompanyStatus('info', t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to view main links.' }));
                 } else {
                     setCompanyStatus('error', t('sidebar.company.empty', { defaultValue: 'No companies found.' }));
                 }
@@ -234,7 +295,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
     const renderCompanyList = () => {
         if (selectedDomain !== 'equipments') return null;
         const showPlaceholder = !selectedCompany && !loadingCompanies && !companyError && (!companies || companies.length === 0);
-        const visibleCompanies = selectedCompany ? [selectedCompany] : companies;
+        const visibleCompanies = companies;
         const hasCompanies = visibleCompanies && visibleCompanies.length > 0;
         const showLoginPrompt = !isAuthenticated || taqeemStatus?.state !== 'success';
         return (
@@ -283,27 +344,28 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 {hasCompanies && (
                     <ul className="space-y-1">
                         {visibleCompanies.map((company, index) => {
-                            const isActive = selectedCompany?.name === company.name;
-                            const isDisabled = selectedCompany && !isActive;
+                            const isActive = getCompanyIdentity(selectedCompany) === getCompanyIdentity(company);
                             return (
                                 <li
-                                    key={company.name || company.id}
+                                    key={`${getCompanyIdentity(company) || company.name || 'company'}-${index}`}
                                     className="sidebar-animate"
                                     style={{ animationDelay: `${200 + index * 35}ms` }}
                                 >
                                     <button
                                         onClick={async () => {
-                                            if (isDisabled) return;
-                                            await setSelectedCompany(company, { setAsDefault: true, onlyIfUnset: true });
+                                            await setSelectedCompany(company, {
+                                                setAsDefault: true,
+                                                onlyIfUnset: false,
+                                                persistDefault: true
+                                            });
                                             setActiveGroup(null);
                                             delayViewChange('apps');
                                         }}
-                                        disabled={isDisabled}
                                         className={`group relative w-full text-left px-2.5 py-1.5 rounded-md flex flex-col gap-0.5 ${
                                             isActive
                                                 ? 'bg-cyan-600/25 text-white shadow-[0_8px_20px_rgba(14,116,144,0.2)]'
                                                 : 'bg-slate-900/50 text-slate-100 hover:bg-slate-800/80'
-                                        } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        }`}
                                     >
                                         <span
                                             className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${

@@ -23,7 +23,7 @@ const formatShortDay = (value) => {
 
 const Statics = () => {
     const { user, token } = useSession();
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');

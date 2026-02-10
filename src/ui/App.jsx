@@ -66,6 +66,17 @@ const AppContent = () => {
     }, [resetNavigation, setActiveTab]);
 
     const handleViewChange = (nextView) => {
+        if (nextView === 'registration') {
+            setPendingProtectedView(null);
+            if (syncNavForView) {
+                syncNavForView(nextView);
+            }
+            setActiveTab(null);
+            resetNavigation();
+            setCurrentView('registration');
+            return;
+        }
+
         const protectedViews = ['get-companies'];
         if (!isAuthenticated && protectedViews.includes(nextView)) {
             setPendingProtectedView(nextView);
@@ -90,7 +101,7 @@ const AppContent = () => {
             return;
         }
         if (!selectedCompany || hasRedirectedAfterLogin.current) return;
-        const canRedirect = currentView === 'login' || currentView === 'registration' || currentView === 'apps';
+        const canRedirect = currentView === 'login' || currentView === 'apps';
         if (!canRedirect) return;
         setActiveTab(null);
         setCurrentView('apps');

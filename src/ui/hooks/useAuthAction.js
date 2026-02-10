@@ -7,6 +7,21 @@ import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 import { useSystemControl } from "../context/SystemControlContext";
 import { deductPoints } from "../utils/points";
 
+const isTaqeemAuthSuccess = (authStatus) => {
+  if (authStatus === true) return true;
+  if (authStatus?.success === true) return true;
+  const status = String(authStatus?.status || "").toUpperCase();
+  return (
+    status === "SUCCESS" ||
+    status === "CHECK" ||
+    status === "AUTHORIZED" ||
+    status === "SYNCED" ||
+    status === "LOGIN_SUCCESS" ||
+    status === "NORMAL_ACCOUNT" ||
+    status === "BOOTSTRAP_GRANTED"
+  );
+};
+
 export const useAuthAction = () => {
   const { token, login, isGuest } = useSession();
   const { taqeemStatus, setTaqeemStatus } = useNavStatus();
@@ -92,6 +107,24 @@ export const useAuthAction = () => {
         if (authStatus?.status === "LOGIN_REQUIRED") {
           console.log("[useAuthAction] login required");
           onAuthFailure("LOGIN_REQUIRED");
+          return null;
+        }
+
+        if (!isTaqeemAuthSuccess(authStatus)) {
+          const failureReason =
+            authStatus?.status ||
+            authStatus?.reason ||
+            authStatus?.error ||
+            "TAQEEM_AUTH_REQUIRED";
+          const failureMessage =
+            authStatus?.message || authStatus?.error || "Taqeem authorization failed";
+          console.log("[useAuthAction] auth failed", {
+            failureReason,
+            failureMessage,
+            authStatus,
+          });
+          setAuthError(failureMessage);
+          onAuthFailure(failureReason);
           return null;
         }
 

@@ -67,7 +67,7 @@ export const SystemControlProvider = ({ children }) => {
     const [error, setError] = useState(null);
     const [autoActivating, setAutoActivating] = useState(false);
 
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const isAuthenticated = !!user;
 
     const fetchSystemState = useCallback(async () => {

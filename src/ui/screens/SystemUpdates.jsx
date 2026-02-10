@@ -31,7 +31,7 @@ const SystemUpdates = () => {
         markDownloaded,
         applyUpdate
     } = useSystemControl();
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const guestAccessEnabled = systemState?.guestAccessEnabled !== false;
     const guestAccessLimit = Number(systemState?.guestAccessLimit);
     const guestAccessCap = Number.isFinite(guestAccessLimit) && guestAccessLimit > 0 ? guestAccessLimit : 1;

@@ -29,7 +29,7 @@ const formatMoney = (value) => {
 
 const Packages = () => {
     const { user, token } = useSession();
-    const isAdmin = user?.phone === '011111';
+    const isAdmin = user?.phone === '000';
     const [packages, setPackages] = useState([]);
     const [formData, setFormData] = useState({ name: '', points: '', price: '' });
     const [editingPackage, setEditingPackage] = useState(null);

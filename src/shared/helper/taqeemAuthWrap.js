@@ -1,8 +1,9 @@
+const { emitTaqeemConflict, syncTaqeemSnapshot } = require("./taqeemSync");
+
 async function runPublicLogin(isAuth) {
     try {
         const loginFlow = await window.electronAPI.publicLogin(isAuth);
 
-        // normalize failures so caller doesn't have to know implementation details
         if (!loginFlow || loginFlow.status === "FAILED") {
             return { status: "FAILED", error: loginFlow?.error || "Unknown login failure" };
         }
@@ -14,6 +15,161 @@ async function runPublicLogin(isAuth) {
     }
 }
 
+function buildLoginPayloadFromResponse(response = {}) {
+    if (response?.user && typeof response.user === "object") {
+        return response.user;
+    }
+
+    const userId = response?.userId || response?.id || null;
+    return {
+        _id: userId,
+        id: userId,
+        guest: response?.guest !== false,
+        taqeemUser: response?.taqeemUser || null,
+    };
+}
+
+function extractTaqeemUsername(profileData = {}) {
+    const username =
+        profileData?.taqeemUser ||
+        profileData?.user_id ||
+        profileData?.username ||
+        profileData?.fields?.username ||
+        "";
+    return String(username || "").trim();
+}
+
+async function verifyCurrentTaqeemOwnership({
+    token,
+    login,
+    setTaqeemStatus,
+    redirectToSystemLogin,
+}) {
+    if (!token || !window?.electronAPI?.apiRequest || !window?.electronAPI?.getTaqeemProfile) {
+        return null;
+    }
+
+    let taqeemUser = "";
+    try {
+        const profileRes = await window.electronAPI.getTaqeemProfile();
+        if (profileRes?.status === "SUCCESS") {
+            taqeemUser = extractTaqeemUsername(profileRes?.data || {});
+        }
+    } catch (err) {
+        taqeemUser = "";
+    }
+
+    if (!taqeemUser) {
+        return null;
+    }
+
+    try {
+        const bootstrapResponse = await window.electronAPI.apiRequest(
+            "POST",
+            "/api/users/new-bootstrap",
+            { username: taqeemUser },
+            { Authorization: `Bearer ${token}` },
+        );
+
+        if (bootstrapResponse?.status === "TAQEEM_ALREADY_USED") {
+            emitTaqeemConflict(bootstrapResponse);
+            setTaqeemStatus?.("error", bootstrapResponse?.message || "Taqeem account is already linked.");
+            redirectToSystemLogin(true);
+            return bootstrapResponse;
+        }
+
+        if (bootstrapResponse?.token && typeof login === "function") {
+            const loginPayload = buildLoginPayloadFromResponse(bootstrapResponse);
+            login(loginPayload, bootstrapResponse.token);
+        }
+
+        return bootstrapResponse;
+    } catch (error) {
+        const payload = error?.response?.data;
+        if (payload?.status === "TAQEEM_ALREADY_USED") {
+            emitTaqeemConflict(payload);
+            setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
+            redirectToSystemLogin(true);
+            return payload;
+        }
+        return null;
+    }
+}
+
+async function bootstrapAndSync({
+    currentToken,
+    login,
+    setTaqeemStatus,
+    redirectToSystemLogin,
+}) {
+    const handleConflict = (payload = {}) => {
+        emitTaqeemConflict(payload);
+        setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
+        redirectToSystemLogin(true);
+        return payload;
+    };
+
+    const loginFlow = await runPublicLogin(false);
+    if (loginFlow?.status !== "CHECK") {
+        return loginFlow;
+    }
+
+    const bootstrapHeaders = currentToken
+        ? { Authorization: `Bearer ${currentToken}` }
+        : {};
+
+    let bootstrapResponse = null;
+    try {
+        bootstrapResponse = await window.electronAPI.apiRequest(
+            "POST",
+            "/api/users/new-bootstrap",
+            { username: loginFlow.user_id },
+            bootstrapHeaders,
+        );
+    } catch (error) {
+        const payload = error?.response?.data;
+        if (payload?.status === "TAQEEM_ALREADY_USED") {
+            return handleConflict(payload);
+        }
+        throw error;
+    }
+
+    if (bootstrapResponse?.status === "TAQEEM_ALREADY_USED") {
+        return handleConflict(bootstrapResponse);
+    }
+
+    const resolvedToken = bootstrapResponse?.token || currentToken || null;
+
+    if (resolvedToken && typeof login === "function") {
+        const loginPayload = buildLoginPayloadFromResponse(bootstrapResponse);
+        login(loginPayload, resolvedToken);
+    }
+
+    const syncResult = await syncTaqeemSnapshot({
+        token: resolvedToken,
+        taqeemUser: loginFlow.user_id,
+    });
+
+    if (syncResult?.status === "TAQEEM_ALREADY_USED") {
+        return handleConflict(syncResult);
+    }
+
+    if (syncResult?.status === "SYNCED" && resolvedToken && typeof login === "function") {
+        const syncUser = syncResult?.user || buildLoginPayloadFromResponse(bootstrapResponse);
+        login(syncUser, resolvedToken);
+    }
+
+    setTaqeemStatus?.("success", "Taqeem login: On");
+
+    return {
+        status: "AUTHORIZED",
+        token: resolvedToken,
+        userId: bootstrapResponse?.userId || syncResult?.userId || null,
+        taqeemUser: loginFlow.user_id,
+        bootstrap: bootstrapResponse,
+        sync: syncResult,
+    };
+}
 
 async function ensureTaqeemAuthorized(
     token,
@@ -27,26 +183,28 @@ async function ensureTaqeemAuthorized(
     const {
         allowLoginRedirect = true,
         isGuest = false,
-        guestAccessEnabled
+        guestAccessEnabled,
     } = options || {};
-    const suppressSystemRedirect = isGuest && guestAccessEnabled !== undefined;
-    const canRedirect = allowLoginRedirect && typeof onViewChange === 'function' && !suppressSystemRedirect;
 
-    const redirectToSystemLogin = () => {
-        if (canRedirect) {
-            onViewChange('login');
+    const suppressSystemRedirect = isGuest && guestAccessEnabled !== undefined;
+    const canRedirect = allowLoginRedirect && typeof onViewChange === "function";
+
+    const redirectToSystemLogin = (force = false) => {
+        if (canRedirect && (force || !suppressSystemRedirect)) {
+            onViewChange("login");
         }
     };
 
     const redirectToRegistration = () => {
-        if (canRedirect) {
-            onViewChange('registration');
+        if (canRedirect && !suppressSystemRedirect) {
+            onViewChange("registration");
         }
     };
+
     try {
-        // Check browser status first to see if we're actually logged in
         let browserStatus = null;
         let browserStatusFailed = false;
+
         if (window?.electronAPI?.checkStatus) {
             try {
                 browserStatus = await window.electronAPI.checkStatus();
@@ -56,98 +214,141 @@ async function ensureTaqeemAuthorized(
         }
 
         const browserStatusCode = String(browserStatus?.status || "").toUpperCase();
-        if (browserStatus?.browserOpen && browserStatusCode.includes("SUCCESS")) {
+        const browserConfirmedLoggedIn = Boolean(
+            browserStatus?.browserOpen && browserStatusCode.includes("SUCCESS")
+        );
+        const browserExplicitlyNotLoggedIn = Boolean(
+            browserStatus?.browserOpen && browserStatusCode.includes("NOT_LOGGED_IN")
+        );
+
+        if (browserConfirmedLoggedIn) {
+            if (!token) {
+                const result = await bootstrapAndSync({
+                    currentToken: null,
+                    login,
+                    setTaqeemStatus,
+                    redirectToSystemLogin,
+                });
+
+                if (result?.status === "TAQEEM_ALREADY_USED") {
+                    return result;
+                }
+
+                if (result?.status === "FAILED") {
+                    setTaqeemStatus?.("info", "Taqeem login: Off");
+                }
+
+                return result;
+            }
+
+            const ownership = await verifyCurrentTaqeemOwnership({
+                token,
+                login,
+                setTaqeemStatus,
+                redirectToSystemLogin,
+            });
+            if (ownership?.status === "TAQEEM_ALREADY_USED") {
+                return ownership;
+            }
+
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
-        if (browserStatus?.browserOpen && browserStatusCode.includes("NOT_LOGGED_IN")) {
+
+        if (browserExplicitlyNotLoggedIn) {
             setTaqeemStatus?.("info", "Taqeem login: Off");
         }
 
-        // Only trust UI state if we cannot confirm via browser status.
         if ((browserStatusFailed || !browserStatus) && isTaqeemLoggedIn) {
+            const ownership = await verifyCurrentTaqeemOwnership({
+                token,
+                login,
+                setTaqeemStatus,
+                redirectToSystemLogin,
+            });
+            if (ownership?.status === "TAQEEM_ALREADY_USED") {
+                return ownership;
+            }
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
 
         if (!token) {
-            const loginFlow = await runPublicLogin(false);
-            console.log("Login flow:", loginFlow);
+            const result = await bootstrapAndSync({
+                currentToken: null,
+                login,
+                setTaqeemStatus,
+                redirectToSystemLogin,
+            });
 
-            if (loginFlow.status === "CHECK") {
-                setTaqeemStatus?.("success", "Taqeem login: On");
-                const res = await window.electronAPI.apiRequest(
-                    "POST",
-                    "/api/users/new-bootstrap",
-                    { username: loginFlow.user_id },
-                    { Authorization: `Bearer ${token}` }
-                );
-
-                console.log("res:", res);
-
-                if (res?.status === "BOOTSTRAP_GRANTED") {
-                    setTaqeemStatus?.("success", "Taqeem login: On");
-                    login({ id: res.userId, guest: true }, res.token);
-                    return { success: true, token: res.token };
-                }
-
-                if (res?.status === "LOGIN_SUCCESS") {
-                    setTaqeemStatus?.("success", "Taqeem login: On");
-                    login({ id: res.userId, guest: true }, res.token);
-                    return { success: true, token: res.token };
-                }
-
-                if (res?.status === "LOGIN_REQUIRED") {
-                    setTaqeemStatus?.("info", "Taqeem login: Off");
-                    redirectToSystemLogin();
-                    return res;
-                }
+            if (result?.status === "TAQEEM_ALREADY_USED") {
+                return result;
             }
 
-            return loginFlow;
+            if (result?.status === "FAILED") {
+                setTaqeemStatus?.("info", "Taqeem login: Off");
+            }
+
+            return result;
         }
 
-        // Token exists — validate authorization
-        const res = await window.electronAPI.apiRequest(
+        const authStatus = await window.electronAPI.apiRequest(
             "POST",
             "/api/users/authorize",
             { assetCount },
-            { Authorization: `Bearer ${token}` }
+            { Authorization: `Bearer ${token}` },
         );
 
-        if (res?.status === "AUTHORIZED" && !isTaqeemLoggedIn) {
-            const loginFlow = await runPublicLogin(true);
-            if (loginFlow.status === "SUCCESS") {
-                setTaqeemStatus?.("success", "Taqeem login: On");
-                return true;
-            } else if (setTaqeemStatus) {
-                setTaqeemStatus("info", "Taqeem login: Off");
+        if (authStatus?.status === "INSUFFICIENT_POINTS") {
+            return authStatus;
+        }
+
+        if (authStatus?.status === "LOGIN_REQUIRED") {
+            setTaqeemStatus?.("info", "Taqeem login: Off");
+            redirectToSystemLogin();
+            return authStatus;
+        }
+
+        const needsFreshTaqeemLogin =
+            authStatus?.status === "AUTHORIZED" &&
+            (browserExplicitlyNotLoggedIn || (!browserConfirmedLoggedIn && !isTaqeemLoggedIn));
+
+        if (needsFreshTaqeemLogin) {
+            const result = await bootstrapAndSync({
+                currentToken: token,
+                login,
+                setTaqeemStatus,
+                redirectToSystemLogin,
+            });
+
+            if (result?.status === "TAQEEM_ALREADY_USED") {
+                return result;
             }
-            return loginFlow;
+
+            if (result?.status === "FAILED") {
+                setTaqeemStatus?.("info", "Taqeem login: Off");
+            }
+
+            return result;
         }
 
-        if (res?.status === "INSUFFICIENT_POINTS") {
-            return res;
-        }
-
-        if (res?.status === "AUTHORIZED") {
+        if (authStatus?.status === "AUTHORIZED") {
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
 
-        if (res?.status === "LOGIN_REQUIRED" || res?.data?.status === "LOGIN_REQUIRED") {
-            setTaqeemStatus?.("info", "Taqeem login: Off");
-            redirectToSystemLogin();
-            return res;
-        }
-
         onViewChange?.("taqeem-login");
         return false;
-
     } catch (err) {
-        console.log("PROPS: ", Object.getOwnPropertyNames(err));
+        const conflictData = err?.response?.data;
+        if (conflictData?.status === "TAQEEM_ALREADY_USED") {
+            emitTaqeemConflict(conflictData);
+            setTaqeemStatus?.("error", conflictData?.message || "Taqeem account is already linked.");
+            redirectToSystemLogin(true);
+            return conflictData;
+        }
 
-        if (err.message.includes("403")) {
+        if (String(err?.message || "").includes("403")) {
             setTaqeemStatus?.("info", "Taqeem login: Off");
             redirectToRegistration();
             return false;

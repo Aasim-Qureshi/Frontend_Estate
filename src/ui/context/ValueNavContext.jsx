@@ -47,7 +47,33 @@ const getCompanyKey = (company) => {
     return company.url || company.id || company.name || '';
 };
 
+const getCompanyOfficeId = (company) => {
+    if (!company) return '';
+    const officeId = company.officeId || company.office_id || '';
+    return String(officeId || '').trim();
+};
+
+const getUserDefaultCompanyOfficeId = (user) => {
+    const direct = user?.defaultCompanyOfficeId;
+    if (direct !== undefined && direct !== null && String(direct).trim()) {
+        return String(direct).trim();
+    }
+    const nested = user?.taqeem?.defaultCompanyOfficeId;
+    if (nested !== undefined && nested !== null && String(nested).trim()) {
+        return String(nested).trim();
+    }
+    return '';
+};
+
 const resolvePreferredCompanyStorageKey = (user, isGuest) => {
+    const taqeemIdentifier =
+        user?.taqeemUser ||
+        user?.taqeem?.username ||
+        null;
+    if (taqeemIdentifier) {
+        return `nav:preferred-company-url:taqeem:${String(taqeemIdentifier).trim()}`;
+    }
+
     const identifier =
         user?.phone ||
         user?.id ||
@@ -87,13 +113,24 @@ export const ValueNavProvider = ({ children }) => {
     const [companyError, setCompanyError] = useState('');
     const [activeGroup, setActiveGroup] = useState(null);
     const [activeTab, setActiveTab] = useState(null);
+    const [defaultCompanyOfficeId, setDefaultCompanyOfficeId] = useState(
+        getUserDefaultCompanyOfficeId(user)
+    );
     const [companySyncDone, setCompanySyncDone] = useState(false);
     const [autoLoadedCompanies, setAutoLoadedCompanies] = useState(false);
-    const [initialDefaultApplied, setInitialDefaultApplied] = useState(false);
 
     useEffect(() => {
         companiesRef.current = companies;
     }, [companies]);
+
+    useEffect(() => {
+        setDefaultCompanyOfficeId(getUserDefaultCompanyOfficeId(user));
+    }, [
+        user?._id,
+        user?.id,
+        user?.defaultCompanyOfficeId,
+        user?.taqeem?.defaultCompanyOfficeId
+    ]);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !window.localStorage) return;
@@ -163,6 +200,22 @@ export const ValueNavProvider = ({ children }) => {
         return [];
     }, []);
 
+    const extractCompaniesMeta = useCallback((payload) => {
+        if (!payload || typeof payload !== 'object') return null;
+        if (payload.meta && typeof payload.meta === 'object') return payload.meta;
+        if (payload.data?.meta && typeof payload.data.meta === 'object') return payload.data.meta;
+        return null;
+    }, []);
+
+    const applyCompaniesMeta = useCallback((meta) => {
+        if (!meta || typeof meta !== 'object') return;
+        if (Object.prototype.hasOwnProperty.call(meta, 'defaultCompanyOfficeId')) {
+            const raw = meta.defaultCompanyOfficeId;
+            const normalized = raw === undefined || raw === null ? '' : String(raw).trim();
+            setDefaultCompanyOfficeId(normalized);
+        }
+    }, []);
+
     const resetNavigation = useCallback(() => {
         setSelectedCard(null);
         setSelectedDomain(null);
@@ -176,7 +229,7 @@ export const ValueNavProvider = ({ children }) => {
         setCompanies([]);
         setCompanyError('');
         setAutoLoadedCompanies(false);
-        setInitialDefaultApplied(false);
+        setDefaultCompanyOfficeId('');
     }, [resetNavigation, setSelectedCompanyState]);
 
     const chooseCard = useCallback((cardId) => {
@@ -211,6 +264,7 @@ export const ValueNavProvider = ({ children }) => {
         setCompanyError('');
         try {
             const res = await window.electronAPI.apiRequest('GET', `/api/companes/me?type=${type}`, {}, authHeaders);
+            applyCompaniesMeta(extractCompaniesMeta(res));
             const list = normalizeCompanyList(res).map(normalizeCompany);
             const current = companiesRef.current || [];
             if (list.length > 0 || current.length > 0) {
@@ -224,7 +278,7 @@ export const ValueNavProvider = ({ children }) => {
         } finally {
             setLoadingCompanies(false);
         }
-    }, [authHeaders, normalizeCompanyList, t, token, user]);
+    }, [applyCompaniesMeta, authHeaders, extractCompaniesMeta, normalizeCompanyList, t, token, user]);
 
     const syncCompanies = useCallback(async (items = [], defaultType = 'equipment') => {
         if (!window?.electronAPI?.apiRequest) {
@@ -242,6 +296,7 @@ export const ValueNavProvider = ({ children }) => {
         };
 
         const res = await window.electronAPI.apiRequest('POST', '/api/companes/sync', payload, authHeaders);
+        applyCompaniesMeta(extractCompaniesMeta(res));
         const list = normalizeCompanyList(res);
         // refresh from backend to reflect normalization and any merging
         const fresh = await loadSavedCompanies(defaultType);
@@ -249,7 +304,7 @@ export const ValueNavProvider = ({ children }) => {
             setCompanies(list);
         }
         return list;
-    }, [authHeaders, loadSavedCompanies, normalizeCompanyList, t, user]);
+    }, [applyCompaniesMeta, authHeaders, extractCompaniesMeta, loadSavedCompanies, normalizeCompanyList, t, user]);
 
     useEffect(() => {
         if (user) {
@@ -308,8 +363,36 @@ export const ValueNavProvider = ({ children }) => {
         }
     }, [taqeemStatus?.state]);
 
+    const persistDefaultCompany = useCallback(async (officeId) => {
+        const normalizedOffice = String(officeId || '').trim();
+        if (!normalizedOffice) return null;
+        if (!token || !window?.electronAPI?.apiRequest) return normalizedOffice;
+
+        try {
+            const response = await window.electronAPI.apiRequest(
+                'POST',
+                '/api/users/taqeem/default-company',
+                { officeId: normalizedOffice },
+                authHeaders
+            );
+            const resolved = String(response?.officeId || normalizedOffice).trim();
+            setDefaultCompanyOfficeId(resolved);
+            return resolved;
+        } catch (err) {
+            const msg = err?.response?.data?.message || err?.message || t('navigation.loadCompaniesFailed');
+            setCompanyStatus('error', msg);
+            return null;
+        }
+    }, [authHeaders, setCompanyStatus, t, token]);
+
     const setSelectedCompany = useCallback(async (company, options = {}) => {
-        const { skipNavigation = true, quiet = false, setAsDefault = false, onlyIfUnset = true } = options;
+        const {
+            skipNavigation = true,
+            quiet = false,
+            setAsDefault = false,
+            onlyIfUnset = false,
+            persistDefault = setAsDefault
+        } = options;
         if (!company) {
             setSelectedCompanyState(null);
             if (!quiet) {
@@ -318,11 +401,17 @@ export const ValueNavProvider = ({ children }) => {
             return null;
         }
         const normalized = normalizeCompany(company);
+        const preferredKey = getCompanyKey(normalized);
+        const selectedOfficeId = getCompanyOfficeId(normalized);
+
         setSelectedCompanyState(normalized);
         if (setAsDefault) {
             const hasPreferred = Boolean(preferredCompanyKey);
             if (!hasPreferred || !onlyIfUnset) {
-                setPreferredCompanyKey(getCompanyKey(normalized));
+                setPreferredCompanyKey(preferredKey);
+            }
+            if (persistDefault && selectedOfficeId) {
+                await persistDefaultCompany(selectedOfficeId);
             }
         }
         if (!window?.electronAPI?.navigateToCompany) {
@@ -350,17 +439,45 @@ export const ValueNavProvider = ({ children }) => {
             if (!quiet) setCompanyStatus('error', err?.message || t('navigation.loadCompaniesFailed'));
         }
         return normalized;
-    }, [preferredCompanyKey, setCompanyStatus, setPreferredCompanyKey, setSelectedCompanyState, t]);
+    }, [persistDefaultCompany, preferredCompanyKey, setCompanyStatus, setPreferredCompanyKey, setSelectedCompanyState, t]);
 
     const setPreferredCompany = useCallback(async (company, options = {}) => {
-        const { applySelection = true, skipNavigation = true, quiet = false } = options;
+        const {
+            applySelection = true,
+            skipNavigation = true,
+            quiet = false,
+            persistDefault = true
+        } = options;
         const normalized = company ? normalizeCompany(company) : null;
         setPreferredCompanyKey(getCompanyKey(normalized));
+        if (!normalized) {
+            if (applySelection) {
+                await setSelectedCompany(null, { skipNavigation, quiet });
+            }
+            return null;
+        }
+
+        if (!applySelection) {
+            if (persistDefault) {
+                const officeId = getCompanyOfficeId(normalized);
+                if (officeId) {
+                    await persistDefaultCompany(officeId);
+                }
+            }
+            return normalized;
+        }
+
         if (applySelection) {
-            await setSelectedCompany(normalized, { skipNavigation, quiet });
+            await setSelectedCompany(normalized, {
+                skipNavigation,
+                quiet,
+                setAsDefault: true,
+                onlyIfUnset: false,
+                persistDefault
+            });
         }
         return normalized;
-    }, [setPreferredCompanyKey, setSelectedCompany]);
+    }, [persistDefaultCompany, setPreferredCompanyKey, setSelectedCompany]);
 
     const replaceCompanies = useCallback(async (list = [], options = {}) => {
         const normalized = Array.isArray(list) ? list.map(normalizeCompany) : [];
@@ -368,18 +485,20 @@ export const ValueNavProvider = ({ children }) => {
         setCompanyError('');
         const autoSelect = options.autoSelect !== false;
         if (autoSelect && normalized.length > 0) {
-            const candidate =
-                preferredCompany ||
-                normalized.find((c) => preferredCompanyMatches(c)) ||
-                normalized[0];
-            await setPreferredCompany(candidate, {
-                applySelection: true,
-                skipNavigation: options.skipNavigation !== false,
-                quiet: options.quiet || false
-            });
+            const serverDefault = defaultCompanyOfficeId
+                ? normalized.find((company) => getCompanyOfficeId(company) === defaultCompanyOfficeId)
+                : null;
+            const preferred = normalized.find((company) => preferredCompanyMatches(company)) || null;
+            const candidate = serverDefault || preferred;
+            if (candidate) {
+                await setSelectedCompany(candidate, {
+                    skipNavigation: options.skipNavigation !== false,
+                    quiet: options.quiet || false
+                });
+            }
         }
         return normalized;
-    }, [preferredCompany, preferredCompanyMatches, setPreferredCompany]);
+    }, [defaultCompanyOfficeId, preferredCompanyMatches, setSelectedCompany]);
 
     useEffect(() => {
         const shouldAutoFetch = taqeemStatus?.state === 'success' && user && !loadingCompanies && !autoLoadedCompanies;
@@ -451,33 +570,23 @@ export const ValueNavProvider = ({ children }) => {
             : companies && companies.length > 0
                 ? companies
                 : await ensureCompaniesLoaded(type);
-        const candidate = preferredCompany || availableCompanies?.[0];
+        const normalizedOfficeId = String(defaultCompanyOfficeId || '').trim();
+        const defaultCompany = normalizedOfficeId
+            ? availableCompanies.find((company) => getCompanyOfficeId(company) === normalizedOfficeId)
+            : null;
+        const preferredCompanyCandidate =
+            availableCompanies.find((company) => preferredCompanyMatches(company)) || null;
+        const candidate = defaultCompany || preferredCompanyCandidate;
         if (!candidate) return null;
-        return setPreferredCompany(candidate, { applySelection: true, skipNavigation, quiet });
-    }, [companies, ensureCompaniesLoaded, preferredCompany, setPreferredCompany]);
+        return setSelectedCompany(candidate, { skipNavigation, quiet });
+    }, [companies, defaultCompanyOfficeId, ensureCompaniesLoaded, preferredCompanyMatches, setSelectedCompany]);
 
     useEffect(() => {
-        if (selectedDomain !== 'equipments') return;
+        if (!user) return;
         if (!companies || companies.length === 0) return;
         if (selectedCompany) return;
-        autoSelectDefaultCompany({ skipNavigation: true }).catch(() => {});
-    }, [autoSelectDefaultCompany, companies, selectedCompany, selectedDomain]);
-
-    useEffect(() => {
-        if (!user) {
-            setInitialDefaultApplied(false);
-            return;
-        }
-        if (initialDefaultApplied) return;
-        if (!companies || companies.length === 0) return;
-        if (selectedCompany) {
-            setInitialDefaultApplied(true);
-            return;
-        }
-        autoSelectDefaultCompany({ skipNavigation: true, quiet: true }).finally(() => {
-            setInitialDefaultApplied(true);
-        });
-    }, [autoSelectDefaultCompany, companies, initialDefaultApplied, selectedCompany, user]);
+        autoSelectDefaultCompany({ skipNavigation: true, quiet: true }).catch(() => {});
+    }, [autoSelectDefaultCompany, companies, selectedCompany, user]);
 
     const syncNavForView = useCallback((viewId) => {
         const info = findTabInfo(viewId);
@@ -547,6 +656,7 @@ export const ValueNavProvider = ({ children }) => {
                 selectedCompany,
                 preferredCompany,
                 preferredCompanyKey,
+                defaultCompanyOfficeId,
                 companies,
                 loadingCompanies,
                 companyError,

@@ -197,6 +197,27 @@ const authHandlers = {
         }
     },
 
+    async handleGetProfile(event) {
+        try {
+            console.log('[MAIN] Received get profile request');
+            const result = await pythonAPI.auth.getProfile();
+            if (!result) return { status: 'ERROR', error: 'Failed to get profile' };
+
+            return {
+                status: result.status,
+                data: result.data || null,
+                error: result.error || null
+            };
+
+        } catch (error) {
+            console.error('[MAIN] Get profile error:', error);
+            return {
+                status: 'ERROR',
+                error: error.message
+            };
+        }
+    },
+
     async handleNavigateToCompany(event, company) {
         try {
             console.log('[MAIN] Received navigate to company request:', company);

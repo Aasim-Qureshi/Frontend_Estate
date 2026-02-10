@@ -86,7 +86,15 @@ const isTaqeemAuthSuccess = (authStatus) => {
     if (authStatus === true) return true;
     if (authStatus?.success === true) return true;
     const status = String(authStatus?.status || "").toUpperCase();
-    return status === "SUCCESS" || status === "CHECK";
+    return (
+        status === "SUCCESS" ||
+        status === "CHECK" ||
+        status === "AUTHORIZED" ||
+        status === "SYNCED" ||
+        status === "LOGIN_SUCCESS" ||
+        status === "NORMAL_ACCOUNT" ||
+        status === "BOOTSTRAP_GRANTED"
+    );
 };
 
 const getTaqeemAuthErrorMessage = (authStatus, fallback) =>
@@ -133,6 +141,19 @@ const NORMALIZED_ASSET_USAGE_TEXT_TO_ID = Object.entries(ASSET_USAGE_TEXT_TO_ID)
 
 const VALID_ASSET_USAGE_IDS = new Set(Object.values(ASSET_USAGE_TEXT_TO_ID));
 const VALID_ASSET_USAGE_LABELS = Object.keys(ASSET_USAGE_TEXT_TO_ID);
+
+const normalizeOfficeId = (value) => {
+    const normalized = String(value ?? "").trim();
+    return normalized || null;
+};
+
+const getReportCompanyOfficeId = (report) =>
+    normalizeOfficeId(
+        report?.company_office_id ??
+            report?.companyOfficeId ??
+            report?.officeId ??
+            report?.office_id
+    );
 
 const resolveAssetUsageId = (rawValue) => {
     if (!hasValue(rawValue)) return null;
@@ -1137,7 +1158,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 page: currentPage.toString(),
                 limit: itemsPerPage.toString(),
             });
-            if (selectedCompanyOfficeId && !isGuestUser) {
+            if (selectedCompanyOfficeId) {
                 params.append("companyOfficeId", selectedCompanyOfficeId);
             }
 
@@ -1151,8 +1172,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     Authorization: `Bearer ${activeToken}`
                 }
             );
-
-            console.log("result", result);
 
             if (!result?.success) {
                 throw new Error(
@@ -1347,6 +1366,44 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             return promise;
         },
         [selectedCompany]
+    );
+
+    const waitForTaqeemCompanies = useCallback(
+        async (options = {}) => {
+            const { timeoutMs = 120000, pollMs = 2500 } = options;
+            if (!window?.electronAPI?.getCompanies) return [];
+
+            const start = Date.now();
+            let lastError = null;
+
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const data = await window.electronAPI.getCompanies();
+                    const fetched = Array.isArray(data?.data)
+                        ? data.data
+                        : Array.isArray(data?.companies)
+                            ? data.companies
+                            : [];
+
+                    if (fetched.length > 0) {
+                        return fetched.map((company) => ({
+                            ...company,
+                            type: company?.type || "equipment"
+                        }));
+                    }
+                } catch (err) {
+                    lastError = err;
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, pollMs));
+            }
+
+            if (lastError) {
+                console.warn("Timed out waiting for Taqeem companies:", lastError);
+            }
+            return [];
+        },
+        []
     );
 
     // Set up real-time progress listener via IPC
@@ -2157,10 +2214,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         let list = companies;
         try {
             if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
-                const data = await window.electronAPI.getCompanies();
-                const fetched = Array.isArray(data?.data) ? data.data : Array.isArray(data?.companies) ? data.companies : [];
+                setCompanyStatus?.(
+                    "info",
+                    translate(
+                        "messages.success.waitingCompanies",
+                        "Waiting for Taqeem login to finish and load companies..."
+                    )
+                );
+                const fetched = await waitForTaqeemCompanies();
                 if (fetched.length > 0 && replaceCompanies) {
-                    list = await replaceCompanies(fetched.map((c) => ({ ...c, type: c.type || "equipment" })), {
+                    list = await replaceCompanies(fetched, {
                         autoSelect: false,
                         skipNavigation: true,
                         quiet: true
@@ -2203,7 +2266,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         setCompanyStatus,
         setSelectedCompany,
         setSuccess,
-        waitForCompanySelection
+        waitForCompanySelection,
+        waitForTaqeemCompanies
     ]);
 
     const submitToTaqeem = useCallback(
@@ -2247,7 +2311,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         onViewChange,
                         isTaqeemLoggedIn,
                         assetCount,
-                        null,
+                        login,
                         setTaqeemStatus,
                         authOptions
                     );
@@ -2402,6 +2466,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             authOptions,
             ensureCompanySelected,
             isTaqeemLoggedIn,
+            login,
             loadReports,
             onViewChange,
             reports,
@@ -2588,7 +2653,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 onViewChange,
                 taqeemStatus?.state === "success",
                 0,
-                null,
+                login,
                 setTaqeemStatus,
                 authOptions
             );
@@ -2900,7 +2965,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     onViewChange,
                     taqeemStatus?.state === "success",
                     0,
-                    null,
+                    login,
                     setTaqeemStatus,
                     authOptions
                 );
@@ -3062,6 +3127,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
     const filteredReports = useMemo(() => {
         let filtered = reports;
+        const selectedOfficeId = normalizeOfficeId(selectedCompanyOfficeId);
+
+        if (selectedOfficeId) {
+            filtered = filtered.filter(
+                (report) => getReportCompanyOfficeId(report) === selectedOfficeId
+            );
+        }
 
         // Apply status filter
         if (reportSelectFilter !== "all") {
@@ -3093,19 +3165,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         }
 
         return filtered;
-    }, [reports, reportSelectFilter, searchTerm]);
+    }, [reports, reportSelectFilter, searchTerm, selectedCompanyOfficeId]);
 
     // Use backend pagination info
     const totalPages = reportsPagination.totalPages || 1;
-
-    // Use filteredReports for display, but respect backend pagination
-    const visibleReports = useMemo(() => {
-        // Always slice from filteredReports (not reports)
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-
-        return filteredReports.slice(startIndex, endIndex);
-    }, [filteredReports, currentPage, itemsPerPage]);
 
     useEffect(() => {
         if (currentPage > 0) {
@@ -3650,7 +3713,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     <div className="text-xs text-slate-600 py-2 text-center">
                         {translate(
                             "reports.noMatch",
-                            "No reports match the selected status."
+                            "No reports match the selected filters."
                         )}
                     </div>
                 )}
@@ -3687,7 +3750,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {console.log("visble", visibleReports.length, "filtered", filteredReports.length, "fethced", reports.length)}
                                         {filteredReports.map((report, idx) => {
                                             const recordId = getReportRecordId(report);
                                             const statusKey = getReportStatus(report);

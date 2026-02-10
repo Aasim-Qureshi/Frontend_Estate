@@ -24,6 +24,7 @@ from scripts.delete.reportDelete import (
 )
 from scripts.loginFlow.companyNavigate import navigate_to_company
 from scripts.loginFlow.getCompanies import get_companies
+from scripts.loginFlow.getProfile import get_profile
 from scripts.loginFlow.login import startLogin, submitOtp
 from scripts.loginFlow.newLogin import public_login_flow
 from scripts.loginFlow.register import register_user
@@ -885,6 +886,12 @@ async def handle_command(cmd):
 
     elif action == "get-companies":
         result = await get_companies()
+        result["commandId"] = cmd.get("commandId")
+
+        print(json.dumps(result), flush=True)
+
+    elif action == "get-profile":
+        result = await get_profile()
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)
