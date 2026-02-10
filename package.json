@@ -18,7 +18,8 @@
     "prepare-build": "npm run build-react && npm run build-py-worker",
     "dist-linux": "npm run prepare-build && electron-builder --linux --x64",
     "build-win": "powershell -ExecutionPolicy Bypass -File build-scripts\\build_win_release.ps1",
-    "dist-win": "npm run build-win"
+    "dist-win": "npm run build-win",
+    "cleanup": "bash build-scripts/build_cleanup.sh"
   },
   "build": {
     "productName": "AutomationApp",

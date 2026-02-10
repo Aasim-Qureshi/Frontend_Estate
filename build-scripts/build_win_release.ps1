@@ -4,12 +4,15 @@ $ErrorActionPreference = "Stop"
 # ---------- Config ----------
 $ProjectRoot = (Get-Location).Path
 $VenvPath = Join-Path $ProjectRoot ".venv"
-$PySourceScript = Join-Path $ProjectRoot "src\scripts\worker.py"
-$PyInstallerName = "excec_worker"
-$PyDistDir = Join-Path $ProjectRoot "dist"
-$PyInstallerOutputDir = Join-Path $ProjectRoot "dist\$PyInstallerName"
-$StagingDir = Join-Path $ProjectRoot "build\win_python_exe"
-$ElectronBuilderArgs = @("--win","--x64")  # change if you need ia32/arm64
+$PythonExe = Join-Path $VenvPath "Scripts\python.exe"
+
+$NuitkaOut = Join-Path $ProjectRoot "build\nuitka_build"
+$FinalStage = Join-Path $ProjectRoot "build\win_python_exe"
+
+$EntryFile = "scripts/core/build_launcher.py"
+$OutputName = "excec_worker"
+
+$ElectronBuilderArgs = @("--win","--x64")
 # ----------------------------
 
 Write-Host "[BUILD-WIN] Project root: $ProjectRoot"
@@ -19,115 +22,105 @@ function Fail([string]$msg) {
   Exit 1
 }
 
-# 1) frontend build
-Write-Host "[BUILD-WIN] Running frontend build (npm run build)..."
+# 1) FRONTEND BUILD
+Write-Host "[BUILD-WIN] Running frontend build..."
 if (-not (Test-Path "$ProjectRoot\package.json")) {
   Fail "package.json not found in project root."
 }
 
-$buildResult = npm run build
-if ($LASTEXITCODE -ne 0) {
-  Fail "Frontend build failed. Fix errors and re-run."
-}
+npm run build
+if ($LASTEXITCODE -ne 0) { Fail "Frontend build failed." }
 
-# ensure dist/index.html exists
-if (-not (Test-Path (Join-Path $PyDistDir "index.html"))) {
-  Write-Warning "Warning: dist\index.html not found. Confirm your frontend build emitted to top-level 'dist'."
-  # continue — electron-builder may still pack whatever exists, but likely you'll want index.html
-}
-
-# 2) Prepare or use Windows venv
-if (Test-Path $VenvPath) {
-  Write-Host "[BUILD-WIN] Using existing venv at $VenvPath"
-} else {
-  Write-Host "[BUILD-WIN] Creating Windows venv at $VenvPath"
+# 2) ENSURE VENV
+if (!(Test-Path $VenvPath)) {
+  Write-Host "[BUILD-WIN] Creating virtual environment..."
   python -m venv $VenvPath
 }
 
-# Activate venv
-$activateScript = Join-Path $VenvPath "Scripts\Activate.ps1"
-if (Test-Path $activateScript) {
-  Write-Host "[BUILD-WIN] Activating venv..."
-  & $activateScript
-} else {
-  # Try classic activate in same shell for cmd/g Bash: try the script path for Git Bash compatibility
-  $activateBat = Join-Path $VenvPath "Scripts\activate.bat"
-  if (Test-Path $activateBat) {
-    Write-Host "[BUILD-WIN] Found activate.bat; invoking python directly from venv."
-    $pythonCmd = Join-Path $VenvPath "Scripts\python.exe"
-  } else {
-    Fail "Cannot locate venv activation script. Ensure you have a Windows venv at .venv or create one."
-  }
+if (!(Test-Path $PythonExe)) {
+  Fail "Python executable not found in venv at $PythonExe"
 }
 
-# Determine python executable to use (prefer venv one)
-$pythonExe = Join-Path $VenvPath "Scripts\python.exe"
-if (-not (Test-Path $pythonExe)) {
-  Write-Host "[BUILD-WIN] venv python not found; falling back to system 'python' on PATH"
-  $pythonExe = "python"
+Write-Host "[BUILD-WIN] Using Python: $PythonExe"
+
+# 3) INSTALL NUITKA + HELPERS
+Write-Host "[BUILD-WIN] Installing Nuitka + dependencies..."
+& $PythonExe -m pip install --upgrade pip
+& $PythonExe -m pip install nuitka ordered-set zstandard
+
+# 3.5) FIX NODRIVER ENCODING
+Write-Host "[BUILD-WIN] Checking nodriver encoding..."
+
+$nodriverPath = & $PythonExe - <<'PY'
+import nodriver, os
+print(os.path.dirname(nodriver.__file__))
+PY
+
+$nodriverPath = $nodriverPath.Trim()
+$networkFile = Join-Path $nodriverPath "cdp\network.py"
+
+if (Test-Path $networkFile) {
+    Write-Host "[BUILD-WIN] Found network.py at $networkFile"
+
+    try {
+        Get-Content $networkFile -Encoding UTF8 -ErrorAction Stop | Out-Null
+        Write-Host "[BUILD-WIN] network.py already UTF-8."
+    }
+    catch {
+        Write-Host "[BUILD-WIN] Converting network.py to UTF-8..."
+        $content = Get-Content $networkFile -Raw
+        $content | Set-Content -Encoding UTF8 $networkFile
+        Write-Host "[BUILD-WIN] Conversion complete."
+    }
+}
+else {
+    Write-Host "[BUILD-WIN] network.py not found, skipping encoding fix."
 }
 
-Write-Host "[BUILD-WIN] Using python: $pythonExe"
+# 4) CLEAN OLD ARTIFACTS
+Write-Host "[BUILD-WIN] Cleaning old build artifacts..."
+Remove-Item -Recurse -Force $NuitkaOut -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $FinalStage -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $FinalStage | Out-Null
 
-# 3) Install/upgrade pip, install requirements and pyinstaller
-Write-Host "[BUILD-WIN] Ensuring pip and pyinstaller are installed..."
-& $pythonExe -m pip install --upgrade pip
-& $pythonExe -m pip install -r req.txt
-& $pythonExe -m pip install pyinstaller
+# 5) RUN NUITKA
+Write-Host "[BUILD-WIN] Running Nuitka standalone build..."
+Push-Location src
 
-# 4) Run PyInstaller (onedir) - isolate output using dist path
-Write-Host "[BUILD-WIN] Cleaning previous PyInstaller outputs..."
-Remove-Item -Recurse -Force "$ProjectRoot\build\pyinstaller_win_build" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $StagingDir -ErrorAction SilentlyContinue
+& $PythonExe -m nuitka `
+  --standalone `
+  --follow-imports `
+  --include-package=nodriver `
+  --include-package-data=nodriver `
+  --include-package=scripts `
+  --output-dir="..\build\nuitka_build" `
+  --output-filename="$OutputName" `
+  --assume-yes-for-downloads `
+  $EntryFile
 
-$pyDistPath = Join-Path $ProjectRoot "build\pyinstaller_win_build\dist"
-$pyWorkPath = Join-Path $ProjectRoot "build\pyinstaller_win_build\build"
-$pySpecPath = Join-Path $ProjectRoot "build\pyinstaller_win_build\spec"
-
-New-Item -ItemType Directory -Path $pyDistPath -Force | Out-Null
-New-Item -ItemType Directory -Path $pyWorkPath -Force | Out-Null
-New-Item -ItemType Directory -Path $pySpecPath -Force | Out-Null
-
-Write-Host "[BUILD-WIN] Running PyInstaller (onedir)..."
-& $pythonExe -m PyInstaller --onedir --noconfirm `
-  --name $PyInstallerName `
-  --distpath $pyDistPath `
-  --workpath $pyWorkPath `
-  --specpath $pySpecPath `
-  $PySourceScript
-
-if (-not (Test-Path (Join-Path $pyDistPath $PyInstallerName))) {
-  Fail "PyInstaller did not produce expected output at $($pyDistPath)\$PyInstallerName"
+if ($LASTEXITCODE -ne 0) {
+  Pop-Location
+  Fail "Nuitka build failed."
 }
 
-# 5) Stage PyInstaller output into build\win_python_exe
-Write-Host "[BUILD-WIN] Staging PyInstaller output to $StagingDir"
-New-Item -ItemType Directory -Path $StagingDir -Force | Out-Null
-$sourcePath = Join-Path $pyDistPath $PyInstallerName
-Copy-Item -Path "$sourcePath\*" -Destination $StagingDir -Recurse -Force
+Pop-Location
 
-# 6) Ensure worker exe exists
-$expectedExe = Join-Path $StagingDir "$PyInstallerName.exe"
-if (-not (Test-Path $expectedExe)) {
-  # maybe it's in nested layout; try to find any exe
-  $foundExe = Get-ChildItem -Path $StagingDir -Filter *.exe -Recurse | Select-Object -First 1
-  if ($null -eq $foundExe) {
-    Fail "No .exe found in staged folder: $StagingDir"
-  } else {
-    Write-Host "[BUILD-WIN] Found exe: $($foundExe.FullName)"
-  }
-} else {
-  Write-Host "[BUILD-WIN] Worker exe staged: $expectedExe"
+# 6) COPY DIST TO ELECTRON RESOURCE FOLDER
+$DistFolder = Join-Path $NuitkaOut "build_launcher.dist"
+
+if (!(Test-Path $DistFolder)) {
+  Fail "Nuitka output not found at $DistFolder"
 }
 
-# 7) Run electron-builder to create Windows installer/artifact
-Write-Host "[BUILD-WIN] Running electron-builder to create Windows artifact..."
-# Use npx so that local electron-builder is used if present
-$npx = "npx"
-& $npx electron-builder @($ElectronBuilderArgs)
+Write-Host "[BUILD-WIN] Copying Nuitka output to $FinalStage..."
+Copy-Item "$DistFolder\*" $FinalStage -Recurse -Force
+
+# 7) RUN ELECTRON BUILDER
+Write-Host "[BUILD-WIN] Running electron-builder..."
+npx electron-builder @ElectronBuilderArgs
 
 if ($LASTEXITCODE -ne 0) {
   Fail "electron-builder failed."
 }
 
-Write-Host "[BUILD-WIN] Build completed. Check the dist/ or release/ folder for artifacts."
+Write-Host "[SUCCESS] Windows build complete. Check the /release folder."

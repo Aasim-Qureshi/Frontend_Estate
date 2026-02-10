@@ -736,7 +736,9 @@ async def handle_command(cmd):
                 deletion_data["total_assets"] = deletion_data.get("totalAssets", 0)
                 deletion_data["updated_at"] = datetime.utcnow()
                 if deletion_data.get("companyOfficeId"):
-                    deletion_data["company_office_id"] = str(deletion_data.get("companyOfficeId"))
+                    deletion_data["company_office_id"] = str(
+                        deletion_data.get("companyOfficeId")
+                    )
 
                 if deletion_data.get("error"):
                     deletion_data["error"] = deletion_data.get("error")
