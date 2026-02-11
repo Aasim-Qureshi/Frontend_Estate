@@ -298,11 +298,25 @@ const Layout = ({ children, currentView, onViewChange }) => {
 
         const onTaqeemConflict = (event) => {
             const detail = event?.detail || {};
-            setTaqeemStatus('error', detail?.message || 'Taqeem user is already linked');
+            const taqeemUser = String(
+                detail?.taqeemUser ||
+                detail?.username ||
+                ''
+            ).trim();
+            const conflictMessage = taqeemUser
+                ? `This Taqeem username (${taqeemUser}) is already used before. Please login to the system.`
+                : (detail?.message || 'This Taqeem user is already linked to another Value Tech account. Please login to the system.');
+            const conflictReason = String(detail?.reason || '').toUpperCase();
+            if (conflictReason === 'SYSTEM_LOGIN_REQUIRED') {
+                setTaqeemStatus('success', 'Taqeem login: On');
+            } else {
+                setTaqeemStatus('error', detail?.message || 'Taqeem user is already linked');
+            }
             setTaqeemConflict({
-                message: detail?.message || 'This Taqeem user is already linked to another Value Tech account.',
+                message: conflictMessage,
                 status: detail?.status || 'TAQEEM_ALREADY_USED',
-                existingUserId: detail?.existingUserId || null
+                existingUserId: detail?.existingUserId || null,
+                taqeemUser: taqeemUser || null
             });
             setShowTaqeemReconnect(false);
             setReconnectState('idle');
@@ -310,17 +324,13 @@ const Layout = ({ children, currentView, onViewChange }) => {
             setActiveGroup(null);
             setActiveTab(null);
             resetNavigation();
-            if (isGuest) {
-                logout();
-            }
-            onViewChange?.('login');
         };
 
         window.addEventListener(TAQEEM_CONFLICT_EVENT, onTaqeemConflict);
         return () => {
             window.removeEventListener(TAQEEM_CONFLICT_EVENT, onTaqeemConflict);
         };
-    }, [isGuest, logout, onViewChange, resetNavigation, setActiveGroup, setActiveTab, setTaqeemStatus]);
+    }, [onViewChange, resetNavigation, setActiveGroup, setActiveTab, setTaqeemStatus]);
 
     useEffect(() => {
         const taqeemOn = taqeemStatus?.state === 'success';
@@ -538,7 +548,12 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 {
                     isGuest: guestSession,
                     guestAccessEnabled: systemState?.guestAccessEnabled ?? true,
-                    allowLoginRedirect: false
+                    allowLoginRedirect: false,
+                    cachedUser: user || null,
+                    selectedCompanyOfficeId:
+                        selectedCompany?.officeId ||
+                        selectedCompany?.office_id ||
+                        null
                 }
             );
 
@@ -659,6 +674,39 @@ const Layout = ({ children, currentView, onViewChange }) => {
     };
 
     const handleConflictGoToLogin = () => {
+        if (typeof window !== 'undefined' && window?.sessionStorage && currentView) {
+            if (currentView !== 'login' && currentView !== 'registration') {
+                try {
+                    window.sessionStorage.setItem('taqeem:returnView', JSON.stringify(currentView));
+                } catch (err) {
+                    // ignore storage failures
+                }
+            }
+        }
+        if (typeof window !== 'undefined' && window?.sessionStorage && isGuest) {
+            try {
+                const guestUserId = user?._id || user?.id || user?.userId || null;
+                const guestTaqeemUser =
+                    user?.taqeemUser ||
+                    user?.taqeem?.username ||
+                    taqeemConflict?.taqeemUser ||
+                    null;
+                if (guestUserId) {
+                    window.sessionStorage.setItem(
+                        'taqeem:guestUserIdForLink',
+                        JSON.stringify(String(guestUserId))
+                    );
+                }
+                if (guestTaqeemUser) {
+                    window.sessionStorage.setItem(
+                        'taqeem:guestUserForLink',
+                        JSON.stringify(String(guestTaqeemUser))
+                    );
+                }
+            } catch (err) {
+                // ignore storage failures
+            }
+        }
         setTaqeemConflict(null);
         setShowTaqeemReconnect(false);
         setReconnectState('idle');
@@ -967,11 +1015,16 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             </div>
                             <div className="flex-1">
                                 <h3 className="text-sm font-semibold text-slate-900">
-                                    Taqeem account already linked
+                                    Taqeem username already used
                                 </h3>
                                 <p className="text-[11px] text-slate-600">
                                     {taqeemConflict.message}
                                 </p>
+                                {taqeemConflict.taqeemUser && (
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                        Taqeem Username: {taqeemConflict.taqeemUser}
+                                    </p>
+                                )}
                                 {taqeemConflict.existingUserId && (
                                     <p className="mt-1 text-[10px] text-slate-500">
                                         User ID: {taqeemConflict.existingUserId}
@@ -984,7 +1037,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             onClick={handleConflictGoToLogin}
                             className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow bg-rose-600 hover:bg-rose-700"
                         >
-                            Login with Phone
+                            Go to Value Tech Login
                         </button>
                     </div>
                 </div>

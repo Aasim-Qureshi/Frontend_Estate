@@ -695,8 +695,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const guestAccessEnabled = systemState?.guestAccessEnabled ?? true;
     const guestSession = isGuest || !token;
     const authOptions = useMemo(
-        () => ({ isGuest: guestSession, guestAccessEnabled }),
-        [guestSession, guestAccessEnabled]
+        () => ({
+            isGuest: guestSession,
+            guestAccessEnabled,
+            cachedUser: user || null,
+            selectedCompanyOfficeId: selectedCompanyOfficeId || null,
+        }),
+        [guestSession, guestAccessEnabled, selectedCompanyOfficeId, user]
     );
     const [excelFiles, setExcelFiles] = useState([]);
     const [pdfFiles, setPdfFiles] = useState([]);
@@ -725,6 +730,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const [showInsufficientPointsModal, setShowInsufficientPointsModal] = useState(false);
     const [insufficientPointsMeta, setInsufficientPointsMeta] = useState(null);
     const [reports, setReports, resetReports] = usePersistentState("submitReportsQuickly:reports", [], { storage: "session" });
+    const [pendingSubmit, setPendingSubmit, resetPendingSubmit] = usePersistentState(
+        "submitReportsQuickly:pendingSubmit",
+        null,
+        { storage: "session" }
+    );
+    const [, setReturnView, resetReturnView] = usePersistentState(
+        "taqeem:returnView",
+        null,
+        { storage: "session" }
+    );
     const [reportsLoading, setReportsLoading] = useState(false);
     const [unassignedReports, setUnassignedReports] = useState([]);
     const [unassignedLoading, setUnassignedLoading] = useState(false);
@@ -834,6 +849,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         try {
             setStoreAndSubmitLoading(true);
             resetMessages();
+            resetPendingSubmit();
+            resetReturnView();
 
             if (excelFiles.length === 0) {
                 throw new Error(
@@ -868,50 +885,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 );
             }
 
-            const totalAssetsToCharge = validationItems.reduce((sum, item) => {
-                const market = Number(item?.counts?.marketAssets) || 0;
-                const cost = Number(item?.counts?.costAssets) || 0;
-                return sum + market + cost;
-            }, 0);
-            const requiredPoints = totalAssetsToCharge || excelFiles.length || 0;
-
-            const authStatus = await ensureTaqeemAuthorized(
-                token,
-                onViewChange,
-                isTaqeemLoggedIn,
-                requiredPoints,
-                login,
-                setTaqeemStatus,
-                authOptions
-            );
-
-            if (authStatus?.status === "INSUFFICIENT_POINTS") {
-                openInsufficientPointsModal({
-                    requiredPoints: authStatus.required ?? requiredPoints,
-                    availablePoints: authStatus.available,
-                    assetCount: requiredPoints,
-                    customMessage:
-                        authStatus.message ||
-                        authStatus.reason ||
-                        "You don't have enough points to submit your files."
-                });
-                return;
-            }
-
-            if (authStatus?.status === "LOGIN_REQUIRED") {
-                throw new Error("Please log in to continue. You'll need to re-select your files after logging in.");
-            }
-
-            if (!isTaqeemAuthSuccess(authStatus)) {
-                throw new Error(
-                    getTaqeemAuthErrorMessage(
-                        authStatus,
-                        "Please login to Taqeem first to submit reports."
-                    )
-                );
-            }
-
-            const activeToken = authStatus?.token || token;
+            const activeToken = await ensureGuestSession();
 
             setSuccess(
                 translate(
@@ -946,9 +920,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     { count: insertedCount }
                 )
             );
+            setExcelFiles([]);
+            setPdfFiles([]);
+            setWantsPdfUpload(false);
 
             // Refresh reports to get the newly uploaded ones
-            const refreshedReports = await loadReports();
+            const refreshedReports = await loadReports(activeToken);
             const uploadedReports = Array.isArray(data.reports) ? data.reports : [];
             const candidateReports = uploadedReports.length ? uploadedReports : refreshedReports;
 
@@ -964,79 +941,45 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 throw new Error("Could not find the newly uploaded reports.");
             }
 
-            setSubmitting(true);
-            const successfulReports = [];
-
-            // Submit each report to Taqeem
-            for (const report of recentReports) {
-                const recordId = getReportRecordId(report);
-                if (!recordId) continue;
-                try {
-                    const tabsNum = Math.max(1, Number(recommendedTabs) || 3);
-                    await submitToTaqeem(recordId, tabsNum);
-                    successfulReports.push(report);
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                } catch (err) {
-                    console.error(`Failed to submit report ${recordId}:`, err);
-                    // Continue with next report even if one fails
-                }
+            const reportIds = recentReports.map((report) => getReportRecordId(report)).filter(Boolean);
+            if (!reportIds.length) {
+                throw new Error("Could not resolve uploaded report IDs for submission.");
             }
 
-            if (!successfulReports.length) {
+            const tabsNum = Math.max(1, Number(recommendedTabs) || 3);
+            const queuePayload = {
+                source: QUICK_PAGE_SOURCE,
+                reportIds,
+                tabsNum,
+                currentIndex: 0,
+                resumeOnLoad: false,
+                updatedAt: Date.now(),
+            };
+            setPendingSubmit(queuePayload);
+
+            const queueResult = await runPendingSubmitQueue(queuePayload);
+            if (queueResult?.paused) {
+                setSuccess(
+                    translate(
+                        "messages.success.reportsStoredResumeAfterLogin",
+                        "Reports were stored successfully. Login to Value Tech with your phone and submission will continue automatically."
+                    )
+                );
+                return;
+            }
+
+            const successCount = Number(queueResult?.completedCount) || 0;
+            if (successCount <= 0) {
                 throw new Error("All report submissions failed. Please try again.");
-            }
-
-            const assetCount = successfulReports.reduce(
-                (sum, report) =>
-                    sum + (Array.isArray(report?.asset_data) ? report.asset_data.length : 0),
-                0
-            );
-            const allReportIds = Array.from(
-                new Set(
-                    successfulReports
-                        .map((report) => report?.report_id || getReportRecordId(report))
-                        .filter(Boolean)
-                )
-            );
-            const primaryReportId = allReportIds[0];
-            const batchId = successfulReports.find((report) => report?.batch_id)?.batch_id;
-            const primaryRecordId =
-                getReportRecordId(
-                    successfulReports.find((report) => getReportRecordId(report))
-                ) || null;
-            const deductionPageName = QUICK_PAGE_NAME;
-            const deductionPageSource = QUICK_PAGE_SOURCE;
-
-            if (assetCount > 0 && activeToken) {
-                try {
-                    await deductPoints(activeToken, assetCount, {
-                        reportIds: allReportIds,
-                        reportId: primaryReportId,
-                        recordId: primaryRecordId,
-                        source: "submit-reports-quickly",
-                        pageName: deductionPageName,
-                        pageSource: deductionPageSource,
-                        assetCount,
-                        batchId,
-                    });
-                } catch (deductErr) {
-                    console.error(
-                        "[SubmitReportsQuickly] Failed to deduct points for submissions:",
-                        deductErr
-                    );
-                }
             }
 
             setSuccess(
                 translate(
                     "messages.success.successfulUploads",
                     "{{count}} report(s) uploaded and submitted to Taqeem successfully.",
-                    { count: successfulReports.length }
+                    { count: successCount }
                 )
             );
-            setExcelFiles([]);
-            setPdfFiles([]);
-            setWantsPdfUpload(false);
 
         } catch (err) {
             console.error("Store and Submit failed", err);
@@ -1075,7 +1018,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             }
         } finally {
             setStoreAndSubmitLoading(false);
-            setSubmitting(false);
         }
     };
 
@@ -2213,6 +2155,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
         let list = companies;
         try {
+            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+                list = await ensureCompaniesLoaded("equipment");
+            }
             if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
                 setCompanyStatus?.(
                     "info",
@@ -2229,9 +2174,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         quiet: true
                     });
                 }
-            }
-            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
-                list = await ensureCompaniesLoaded("equipment");
             }
         } catch (err) {
             console.warn("Failed to fetch companies for submission", err);
@@ -2281,7 +2223,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
             if (!recordId) {
                 setError(translate("messages.error.missingReportId", "Missing report record id."));
-                return;
+                return { success: false, reason: "INVALID_INPUT", error: "Missing report record id." };
             }
 
             // Use global recommendedTabs if tabsNum not provided, otherwise use the provided value
@@ -2326,7 +2268,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             authStatus.reason ||
                             "You don't have enough points to submit this report."
                     });
-                    return;
+                    return { success: false, reason: "INSUFFICIENT_POINTS", authStatus };
                 }
                 if (authStatus?.status === "LOGIN_REQUIRED") {
                     const message = translate(
@@ -2338,7 +2280,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         [recordId]: { percentage: 0, status: "error", message }
                     }));
                     setError(message);
-                    return;
+                    return { success: false, reason: "AUTH_REQUIRED", authStatus, error: message };
                 }
                 if (!isTaqeemAuthSuccess(authStatus)) {
                     const message = getTaqeemAuthErrorMessage(
@@ -2353,7 +2295,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         [recordId]: { percentage: 0, status: "error", message }
                     }));
                     setError(message);
-                    return;
+                    return { success: false, reason: "AUTH_REQUIRED", authStatus, error: message };
                 }
 
                 if (!skipCompanySelect) {
@@ -2451,13 +2393,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     }
                     await loadReports();
                     await loadUnassignedReports();
-                    return;
+                    return { success: true, reportId: createdReportId || recordId, recordId };
                 }
 
                 const errMsg = result?.error || "Upload to Taqeem failed. Make sure you selected a company.";
                 setError(errMsg);
+                return { success: false, reason: "SUBMIT_FAILED", error: errMsg };
             } catch (err) {
-                setError(err?.message || translate("messages.error.submitTaqeem", "Failed to submit report to Taqeem."));
+                const errorMessage =
+                    err?.message ||
+                    translate("messages.error.submitTaqeem", "Failed to submit report to Taqeem.");
+                setError(errorMessage);
+                return { success: false, reason: "ERROR", error: errorMessage };
             } finally {
                 setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
             }
@@ -2479,6 +2426,113 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             taqeemStatus?.state
         ]
     );
+
+    const runPendingSubmitQueue = useCallback(
+        async (queuePayload, options = {}) => {
+            const { resume = false } = options;
+            const reportIds = Array.isArray(queuePayload?.reportIds)
+                ? queuePayload.reportIds.map((id) => String(id || "").trim()).filter(Boolean)
+                : [];
+
+            if (!reportIds.length) {
+                resetPendingSubmit();
+                resetReturnView();
+                return { success: false, completedCount: 0, total: 0 };
+            }
+
+            const resolvedTabs = Math.max(
+                1,
+                Number(queuePayload?.tabsNum) || Math.max(1, Number(recommendedTabs) || 3)
+            );
+            const startIndex = Math.max(0, Number(queuePayload?.currentIndex) || 0);
+            const basePayload = {
+                source: queuePayload?.source || QUICK_PAGE_SOURCE,
+                reportIds,
+                tabsNum: resolvedTabs,
+            };
+
+            let completedCount = 0;
+            let paused = false;
+
+            setSubmitting(true);
+            try {
+                for (let index = startIndex; index < reportIds.length; index += 1) {
+                    const recordId = reportIds[index];
+                    const result = await submitToTaqeem(recordId, resolvedTabs, {
+                        withLoading: false,
+                        resume: resume || index > startIndex,
+                    });
+
+                    if (result?.success) {
+                        completedCount += 1;
+                        setPendingSubmit({
+                            ...basePayload,
+                            currentIndex: index + 1,
+                            resumeOnLoad: false,
+                            updatedAt: Date.now(),
+                        });
+                        await new Promise((resolve) => setTimeout(resolve, 1000));
+                        continue;
+                    }
+
+                    const reason = String(result?.reason || "").toUpperCase();
+                    if (reason === "AUTH_REQUIRED") {
+                        setPendingSubmit({
+                            ...basePayload,
+                            currentIndex: index,
+                            resumeOnLoad: true,
+                            updatedAt: Date.now(),
+                        });
+                        setReturnView(QUICK_PAGE_SOURCE);
+                        paused = true;
+                        break;
+                    }
+                }
+
+                if (!paused) {
+                    resetPendingSubmit();
+                    resetReturnView();
+                }
+
+                return {
+                    success: !paused,
+                    paused,
+                    completedCount,
+                    total: reportIds.length,
+                };
+            } finally {
+                setSubmitting(false);
+            }
+        },
+        [
+            recommendedTabs,
+            resetPendingSubmit,
+            resetReturnView,
+            setPendingSubmit,
+            setReturnView,
+            submitToTaqeem,
+        ]
+    );
+
+    useEffect(() => {
+        if (storeAndSubmitLoading || submitting) return;
+        if (!pendingSubmit?.resumeOnLoad) return;
+        if (!token) return;
+        if (taqeemStatus?.state !== "success") return;
+
+        setPendingSubmit((prev) =>
+            prev ? { ...prev, resumeOnLoad: false, updatedAt: Date.now() } : prev
+        );
+        runPendingSubmitQueue(pendingSubmit, { resume: true });
+    }, [
+        pendingSubmit,
+        runPendingSubmitQueue,
+        setPendingSubmit,
+        storeAndSubmitLoading,
+        submitting,
+        taqeemStatus?.state,
+        token,
+    ]);
 
     const userId = useMemo(
         () => user?._id || user?.id || user?.userId || user?.user?._id || null,

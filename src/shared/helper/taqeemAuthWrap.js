@@ -1,5 +1,9 @@
 const { emitTaqeemConflict, syncTaqeemSnapshot } = require("./taqeemSync");
 
+const CACHED_SNAPSHOT_SYNC_INTERVAL_MS = 3 * 60 * 1000;
+let lastCachedSnapshotSyncSignature = "";
+let lastCachedSnapshotSyncAt = 0;
+
 async function runPublicLogin(isAuth) {
     try {
         const loginFlow = await window.electronAPI.publicLogin(isAuth);
@@ -39,24 +43,122 @@ function extractTaqeemUsername(profileData = {}) {
     return String(username || "").trim();
 }
 
+function extractTaqeemUsernameFromUser(userData = null) {
+    if (!userData || typeof userData !== "object") return "";
+    const username =
+        userData?.taqeemUser ||
+        userData?.taqeem?.username ||
+        userData?.username ||
+        userData?.taqeem?.profile?.taqeemUser ||
+        userData?.taqeem?.profile?.user_id ||
+        userData?.taqeem?.profile?.username ||
+        "";
+    return String(username || "").trim();
+}
+
+function resolveCachedUser(cachedUser = null) {
+    if (cachedUser && typeof cachedUser === "object") return cachedUser;
+    try {
+        const raw = window?.localStorage?.getItem("user");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+function getCachedSnapshot(cachedUser = null) {
+    const userData = resolveCachedUser(cachedUser);
+    const profile =
+        userData?.taqeem?.profile ||
+        userData?.profile ||
+        null;
+    const companies = Array.isArray(userData?.taqeem?.companies)
+        ? userData.taqeem.companies
+        : Array.isArray(userData?.companies)
+            ? userData.companies
+            : [];
+    const taqeemUser = extractTaqeemUsernameFromUser(userData) || extractTaqeemUsername(profile);
+    return {
+        user: userData,
+        profile,
+        companies,
+        taqeemUser,
+    };
+}
+
+async function maybeSyncCachedSnapshot({
+    token,
+    cachedUser,
+    selectedCompanyOfficeId = null,
+}) {
+    if (!token) return null;
+
+    const snapshot = getCachedSnapshot(cachedUser);
+    if (!snapshot.taqeemUser) return null;
+    if (!snapshot.profile && (!Array.isArray(snapshot.companies) || snapshot.companies.length === 0)) {
+        return null;
+    }
+
+    const signature = [
+        snapshot.taqeemUser,
+        String(selectedCompanyOfficeId || ""),
+        String(Array.isArray(snapshot.companies) ? snapshot.companies.length : 0),
+        snapshot.profile ? "1" : "0",
+    ].join("|");
+
+    const now = Date.now();
+    if (
+        signature === lastCachedSnapshotSyncSignature &&
+        now - lastCachedSnapshotSyncAt < CACHED_SNAPSHOT_SYNC_INTERVAL_MS
+    ) {
+        return { status: "SKIPPED", reason: "cached_snapshot_recent" };
+    }
+
+    const syncResult = await syncTaqeemSnapshot({
+        token,
+        taqeemUser: snapshot.taqeemUser,
+        selectedCompanyOfficeId,
+        profileData: snapshot.profile,
+        companies: snapshot.companies,
+        cachedUser: snapshot.user,
+        skipProfileFetch: true,
+        skipCompaniesFetch: true,
+    });
+
+    if (syncResult?.status === "SYNCED") {
+        lastCachedSnapshotSyncSignature = signature;
+        lastCachedSnapshotSyncAt = now;
+    }
+
+    return syncResult;
+}
+
 async function verifyCurrentTaqeemOwnership({
     token,
     login,
     setTaqeemStatus,
     redirectToSystemLogin,
+    cachedUser = null,
 }) {
-    if (!token || !window?.electronAPI?.apiRequest || !window?.electronAPI?.getTaqeemProfile) {
+    if (!token || !window?.electronAPI?.apiRequest) {
         return null;
     }
 
-    let taqeemUser = "";
-    try {
-        const profileRes = await window.electronAPI.getTaqeemProfile();
-        if (profileRes?.status === "SUCCESS") {
-            taqeemUser = extractTaqeemUsername(profileRes?.data || {});
+    const cachedSnapshot = getCachedSnapshot(cachedUser);
+    let taqeemUser = cachedSnapshot.taqeemUser || "";
+
+    // Fallback only when cache is missing. This avoids re-scraping profile on every action.
+    if (!taqeemUser && window?.electronAPI?.getTaqeemProfile) {
+        try {
+            const profileRes = await window.electronAPI.getTaqeemProfile();
+            if (profileRes?.status === "SUCCESS") {
+                taqeemUser = extractTaqeemUsername(profileRes?.data || {});
+            }
+        } catch (err) {
+            taqeemUser = "";
         }
-    } catch (err) {
-        taqeemUser = "";
     }
 
     if (!taqeemUser) {
@@ -72,9 +174,16 @@ async function verifyCurrentTaqeemOwnership({
         );
 
         if (bootstrapResponse?.status === "TAQEEM_ALREADY_USED") {
-            emitTaqeemConflict(bootstrapResponse);
-            setTaqeemStatus?.("error", bootstrapResponse?.message || "Taqeem account is already linked.");
-            redirectToSystemLogin(true);
+            emitTaqeemConflict({
+                ...bootstrapResponse,
+                taqeemUser,
+            });
+            const conflictReason = String(bootstrapResponse?.reason || "").toUpperCase();
+            if (conflictReason === "SYSTEM_LOGIN_REQUIRED") {
+                setTaqeemStatus?.("success", "Taqeem login: On");
+            } else {
+                setTaqeemStatus?.("error", bootstrapResponse?.message || "Taqeem account is already linked.");
+            }
             return bootstrapResponse;
         }
 
@@ -87,9 +196,16 @@ async function verifyCurrentTaqeemOwnership({
     } catch (error) {
         const payload = error?.response?.data;
         if (payload?.status === "TAQEEM_ALREADY_USED") {
-            emitTaqeemConflict(payload);
-            setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
-            redirectToSystemLogin(true);
+            emitTaqeemConflict({
+                ...payload,
+                taqeemUser,
+            });
+            const conflictReason = String(payload?.reason || "").toUpperCase();
+            if (conflictReason === "SYSTEM_LOGIN_REQUIRED") {
+                setTaqeemStatus?.("success", "Taqeem login: On");
+            } else {
+                setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
+            }
             return payload;
         }
         return null;
@@ -101,18 +217,54 @@ async function bootstrapAndSync({
     login,
     setTaqeemStatus,
     redirectToSystemLogin,
+    cachedUser = null,
+    selectedCompanyOfficeId = null,
 }) {
-    const handleConflict = (payload = {}) => {
-        emitTaqeemConflict(payload);
-        setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
-        redirectToSystemLogin(true);
-        return payload;
-    };
+    const cachedSnapshot = getCachedSnapshot(cachedUser);
+    const fallbackTaqeemUser = String(cachedSnapshot?.taqeemUser || "").trim();
 
     const loginFlow = await runPublicLogin(false);
     if (loginFlow?.status !== "CHECK") {
         return loginFlow;
     }
+
+    // Manual login in browser was completed successfully.
+    // Keep the toggle ON even if we still need a system account login.
+    setTaqeemStatus?.("success", "Taqeem login: On");
+
+    const resolvedTaqeemUser = String(
+        loginFlow?.user_id || fallbackTaqeemUser || ""
+    ).trim();
+    if (!resolvedTaqeemUser) {
+        const conflictPayload = {
+            status: "TAQEEM_ALREADY_USED",
+            reason: "SYSTEM_LOGIN_REQUIRED",
+            message:
+                "This Taqeem username is already used before. Please login to the system with your phone number.",
+            taqeemUser: fallbackTaqeemUser || null,
+        };
+        emitTaqeemConflict(conflictPayload);
+        setTaqeemStatus?.("success", "Taqeem login: On");
+        return conflictPayload;
+    }
+
+    const handleConflict = (payload = {}) => {
+        const conflictReason = String(payload?.reason || "").toUpperCase();
+        emitTaqeemConflict({
+            ...payload,
+            taqeemUser:
+                payload?.taqeemUser ||
+                payload?.username ||
+                resolvedTaqeemUser ||
+                null,
+        });
+        if (conflictReason === "SYSTEM_LOGIN_REQUIRED") {
+            setTaqeemStatus?.("success", "Taqeem login: On");
+        } else {
+            setTaqeemStatus?.("error", payload?.message || "Taqeem account is already linked.");
+        }
+        return payload;
+    };
 
     const bootstrapHeaders = currentToken
         ? { Authorization: `Bearer ${currentToken}` }
@@ -123,7 +275,7 @@ async function bootstrapAndSync({
         bootstrapResponse = await window.electronAPI.apiRequest(
             "POST",
             "/api/users/new-bootstrap",
-            { username: loginFlow.user_id },
+            { username: resolvedTaqeemUser },
             bootstrapHeaders,
         );
     } catch (error) {
@@ -147,7 +299,13 @@ async function bootstrapAndSync({
 
     const syncResult = await syncTaqeemSnapshot({
         token: resolvedToken,
-        taqeemUser: loginFlow.user_id,
+        taqeemUser: resolvedTaqeemUser,
+        selectedCompanyOfficeId,
+        profileData: cachedSnapshot.profile,
+        companies: cachedSnapshot.companies,
+        cachedUser: cachedSnapshot.user,
+        skipProfileFetch: Boolean(cachedSnapshot.profile),
+        skipCompaniesFetch: Array.isArray(cachedSnapshot.companies) && cachedSnapshot.companies.length > 0,
     });
 
     if (syncResult?.status === "TAQEEM_ALREADY_USED") {
@@ -165,7 +323,7 @@ async function bootstrapAndSync({
         status: "AUTHORIZED",
         token: resolvedToken,
         userId: bootstrapResponse?.userId || syncResult?.userId || null,
-        taqeemUser: loginFlow.user_id,
+        taqeemUser: resolvedTaqeemUser,
         bootstrap: bootstrapResponse,
         sync: syncResult,
     };
@@ -184,8 +342,11 @@ async function ensureTaqeemAuthorized(
         allowLoginRedirect = true,
         isGuest = false,
         guestAccessEnabled,
+        cachedUser = null,
+        selectedCompanyOfficeId = null,
     } = options || {};
 
+    const userSnapshot = resolveCachedUser(cachedUser);
     const suppressSystemRedirect = isGuest && guestAccessEnabled !== undefined;
     const canRedirect = allowLoginRedirect && typeof onViewChange === "function";
 
@@ -228,6 +389,8 @@ async function ensureTaqeemAuthorized(
                     login,
                     setTaqeemStatus,
                     redirectToSystemLogin,
+                    cachedUser: userSnapshot,
+                    selectedCompanyOfficeId,
                 });
 
                 if (result?.status === "TAQEEM_ALREADY_USED") {
@@ -246,9 +409,19 @@ async function ensureTaqeemAuthorized(
                 login,
                 setTaqeemStatus,
                 redirectToSystemLogin,
+                cachedUser: userSnapshot,
             });
             if (ownership?.status === "TAQEEM_ALREADY_USED") {
                 return ownership;
+            }
+
+            const cachedSync = await maybeSyncCachedSnapshot({
+                token,
+                cachedUser: userSnapshot,
+                selectedCompanyOfficeId,
+            });
+            if (cachedSync?.status === "TAQEEM_ALREADY_USED") {
+                return cachedSync;
             }
 
             setTaqeemStatus?.("success", "Taqeem login: On");
@@ -265,6 +438,7 @@ async function ensureTaqeemAuthorized(
                 login,
                 setTaqeemStatus,
                 redirectToSystemLogin,
+                cachedUser: userSnapshot,
             });
             if (ownership?.status === "TAQEEM_ALREADY_USED") {
                 return ownership;
@@ -279,6 +453,8 @@ async function ensureTaqeemAuthorized(
                 login,
                 setTaqeemStatus,
                 redirectToSystemLogin,
+                cachedUser: userSnapshot,
+                selectedCompanyOfficeId,
             });
 
             if (result?.status === "TAQEEM_ALREADY_USED") {
@@ -319,6 +495,8 @@ async function ensureTaqeemAuthorized(
                 login,
                 setTaqeemStatus,
                 redirectToSystemLogin,
+                cachedUser: userSnapshot,
+                selectedCompanyOfficeId,
             });
 
             if (result?.status === "TAQEEM_ALREADY_USED") {
@@ -333,6 +511,14 @@ async function ensureTaqeemAuthorized(
         }
 
         if (authStatus?.status === "AUTHORIZED") {
+            const cachedSync = await maybeSyncCachedSnapshot({
+                token,
+                cachedUser: userSnapshot,
+                selectedCompanyOfficeId,
+            });
+            if (cachedSync?.status === "TAQEEM_ALREADY_USED") {
+                return cachedSync;
+            }
             setTaqeemStatus?.("success", "Taqeem login: On");
             return true;
         }
@@ -342,9 +528,20 @@ async function ensureTaqeemAuthorized(
     } catch (err) {
         const conflictData = err?.response?.data;
         if (conflictData?.status === "TAQEEM_ALREADY_USED") {
-            emitTaqeemConflict(conflictData);
-            setTaqeemStatus?.("error", conflictData?.message || "Taqeem account is already linked.");
-            redirectToSystemLogin(true);
+            emitTaqeemConflict({
+                ...conflictData,
+                taqeemUser:
+                    conflictData?.taqeemUser ||
+                    conflictData?.username ||
+                    extractTaqeemUsernameFromUser(userSnapshot) ||
+                    null,
+            });
+            const conflictReason = String(conflictData?.reason || "").toUpperCase();
+            if (conflictReason === "SYSTEM_LOGIN_REQUIRED") {
+                setTaqeemStatus?.("success", "Taqeem login: On");
+            } else {
+                setTaqeemStatus?.("error", conflictData?.message || "Taqeem account is already linked.");
+            }
             return conflictData;
         }
 

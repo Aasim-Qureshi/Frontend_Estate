@@ -934,6 +934,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
         let list = companies;
         try {
+            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+                list = await ensureCompaniesLoaded("equipment");
+            }
+            if ((!list || list.length === 0) && loadSavedCompanies) {
+                list = await loadSavedCompanies("equipment");
+            }
             if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
                 const data = await window.electronAPI.getCompanies();
                 const fetched = Array.isArray(data?.data)
@@ -947,12 +953,6 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         { autoSelect: false, skipNavigation: true, quiet: true }
                     );
                 }
-            }
-            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
-                list = await ensureCompaniesLoaded("equipment");
-            }
-            if ((!list || list.length === 0) && loadSavedCompanies) {
-                list = await loadSavedCompanies("equipment");
             }
         } catch (err) {
             console.warn("Failed to fetch companies for submission", err);
@@ -1077,8 +1077,13 @@ const MultiExcelUpload = ({ onViewChange }) => {
     const guestAccessEnabled = systemState?.guestAccessEnabled ?? true;
     const guestSession = isGuest || !token;
     const authOptions = useMemo(
-        () => ({ isGuest: guestSession, guestAccessEnabled }),
-        [guestSession, guestAccessEnabled]
+        () => ({
+            isGuest: guestSession,
+            guestAccessEnabled,
+            cachedUser: user || null,
+            selectedCompanyOfficeId: selectedCompanyOfficeId || null,
+        }),
+        [guestSession, guestAccessEnabled, selectedCompanyOfficeId, user]
     );
     const isTaqeemLoggedIn = taqeemStatus?.state === "success";
     const companyFromList = useMemo(
@@ -2514,6 +2519,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
         let list = companies;
         try {
+            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+                list = await ensureCompaniesLoaded("equipment");
+            }
+            if ((!list || list.length === 0) && loadSavedCompanies) {
+                list = await loadSavedCompanies("equipment");
+            }
             if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
                 const data = await window.electronAPI.getCompanies();
                 const fetched = Array.isArray(data?.data)
@@ -2527,12 +2538,6 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         { autoSelect: false, skipNavigation: true, quiet: true }
                     );
                 }
-            }
-            if ((!list || list.length === 0) && ensureCompaniesLoaded) {
-                list = await ensureCompaniesLoaded("equipment");
-            }
-            if ((!list || list.length === 0) && loadSavedCompanies) {
-                list = await loadSavedCompanies("equipment");
             }
         } catch (err) {
             console.warn("Failed to fetch companies for deleting reports", err);

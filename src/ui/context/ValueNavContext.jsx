@@ -501,7 +501,12 @@ export const ValueNavProvider = ({ children }) => {
     }, [defaultCompanyOfficeId, preferredCompanyMatches, setSelectedCompany]);
 
     useEffect(() => {
-        const shouldAutoFetch = taqeemStatus?.state === 'success' && user && !loadingCompanies && !autoLoadedCompanies;
+        const shouldAutoFetch =
+            taqeemStatus?.state === 'success' &&
+            user &&
+            !loadingCompanies &&
+            !autoLoadedCompanies &&
+            (!companies || companies.length === 0);
         if (!shouldAutoFetch) return;
         if (!window?.electronAPI?.getCompanies) return;
         setAutoLoadedCompanies(true);
@@ -535,7 +540,7 @@ export const ValueNavProvider = ({ children }) => {
                 setLoadingCompanies(false);
             }
         })();
-    }, [autoLoadedCompanies, loadingCompanies, replaceCompanies, setCompanyStatus, syncCompanies, taqeemStatus?.state, t, user]);
+    }, [autoLoadedCompanies, companies, loadingCompanies, replaceCompanies, setCompanyStatus, syncCompanies, taqeemStatus?.state, t, user]);
 
     useEffect(() => {
         if (taqeemStatus?.state !== 'success') {

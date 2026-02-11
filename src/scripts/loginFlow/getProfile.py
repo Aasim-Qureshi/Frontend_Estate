@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import re
 
 from scripts.core.browser import navigate
@@ -115,22 +115,22 @@ async def get_profile():
 
         full_name = data.get("fullName") if isinstance(data, dict) else ""
         if not full_name:
-            full_name = _extract_field_by_hint(fields, ["name", "الاسم", "اسم"])
+            full_name = _extract_field_by_hint(fields, ["name", "Ø§ÙØ§Ø³Ù", "Ø§Ø³Ù"])
 
         email = data.get("email") if isinstance(data, dict) else ""
         if not email:
-            email = _extract_field_by_hint(fields, ["email", "البريد"])
+            email = _extract_field_by_hint(fields, ["email", "Ø§ÙØ¨Ø±ÙØ¯"])
 
         phone = data.get("phone") if isinstance(data, dict) else ""
         if not phone:
-            phone = _extract_field_by_hint(fields, ["phone", "mobile", "جوال", "الهاتف"])
+            phone = _extract_field_by_hint(fields, ["phone", "mobile", "Ø¬ÙØ§Ù", "Ø§ÙÙØ§ØªÙ"])
 
         user_id = ""
         if isinstance(data, dict):
             user_id = _clean_text(data.get("user_id") or data.get("taqeemUser"))
         if not user_id:
             user_id = _clean_text(
-                _extract_field_by_hint(fields, ["id", "user", "رقم", "مستخدم", "الهوية"]) or ""
+                _extract_field_by_hint(fields, ["id", "user", "Ø±ÙÙ", "ÙØ³ØªØ®Ø¯Ù", "Ø§ÙÙÙÙØ©"]) or ""
             )
 
         normalized_fields = {}

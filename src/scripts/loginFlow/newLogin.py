@@ -1,6 +1,5 @@
 import asyncio, json
-from scripts.core.browser import get_browser, navigate, switch_to_headless, closeBrowser
-from scripts.core.utils import wait_for_element, wait_for_table_rows
+from scripts.core.browser import get_browser, switch_to_headless, closeBrowser
 
 
 async def wait_until_logged_in(page, timeout=340, poll=2):
@@ -35,17 +34,6 @@ async def wait_until_logged_in(page, timeout=340, poll=2):
     return {"status": "FAILED", "error": "User did not complete login in time"}
 
 
-async def get_user_id(page):
-    await page.get("https://qima.taqeem.sa/valuer/profile")
-    user_id = await wait_for_element(page, ".appBox .d-flex.justify-content-between.border-top.mt-md.flex-wrap .fs-xs:nth-of-type(1) span")
-    user_id = user_id.text.strip()
-    if user_id:
-        print(json.dumps(user_id), flush=True)
-        return user_id
-    else:
-        return None
-    
-
 async def public_login_flow(login_url, is_auth = False):
     # Step 1: show login UI
     try:
@@ -73,12 +61,9 @@ async def public_login_flow(login_url, is_auth = False):
         return switched
 
     if not is_auth:
-        browser = await get_browser()
-        page = browser.main_tab
-        
-        user_id = await get_user_id(page)
-
-        return {"status": "CHECK", "user_id": user_id}
+        # Keep the user on home page after manual login and avoid profile scraping.
+        # Username resolution is handled on the frontend from cached linked account data.
+        return {"status": "CHECK", "user_id": None}
 
 
     return {"status": "SUCCESS"}

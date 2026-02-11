@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Database, 
     Filter, 
@@ -30,6 +30,18 @@ import {
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:3000';
+const PRIVATE_COMMENT_MARKER = ":: \u0631\u062f \u062e\u0627\u0635. \u064a\u0638\u0647\u0631 \u0644\u0644\u0639\u0627\u0631\u0636 \u0641\u0642\u0637 ::";
+
+const normalizeText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+
+const isPrivateComment = (value) => normalizeText(value) === normalizeText(PRIVATE_COMMENT_MARKER);
+
+const extractCommentText = (comment) => comment?.body ?? comment?.text ?? comment?.comment ?? '';
+
+const getVisibleComments = (comments) =>
+    (Array.isArray(comments) ? comments : []).filter(
+        (comment) => !isPrivateComment(extractCommentText(comment))
+    );
 
 const HarajData = () => {
     const [ads, setAds] = useState([]);
@@ -265,19 +277,42 @@ const HarajData = () => {
         setAds([]);
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return 'N/A';
-        try {
-            return new Date(dateString).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch {
-            return dateString;
+    const parseDateValue = (value) => {
+        if (value === null || value === undefined || value === '') return null;
+
+        if (value instanceof Date) {
+            return Number.isNaN(value.getTime()) ? null : value;
         }
+
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+            const ms = numeric > 1e12 ? numeric : numeric * 1000;
+            const numericDate = new Date(ms);
+            return Number.isNaN(numericDate.getTime()) ? null : numericDate;
+        }
+
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    const formatDate = (dateValue) => {
+        const parsedDate = parseDateValue(dateValue);
+        if (!parsedDate) return 'N/A';
+
+        return parsedDate.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const getAdPostedDate = (ad) => {
+        const postDate = ad?.item?.postDate ?? ad?.postDate;
+        const formatted = formatDate(postDate);
+        if (formatted !== 'N/A') return formatted;
+        return ad?.postedRelativeTime || formatDate(ad?.lastScrapedAt) || 'N/A';
     };
 
     const formatPrice = (price, currency) => {
@@ -846,7 +881,7 @@ const HarajData = () => {
                                                 <div className="flex items-center gap-1.5">
                                                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                                                     <span className="text-[11px] text-slate-600">
-                                                        {ad.postedRelativeTime || formatDate(ad.lastScrapedAt) || 'N/A'}
+                                                        {getAdPostedDate(ad)}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1247,7 +1282,7 @@ const HarajData = () => {
                                                 Posted Time
                                             </h3>
                                             <p className="text-[11px] text-slate-700">
-                                                {detailsModal.ad.postedRelativeTime || formatDate(detailsModal.ad.lastScrapedAt) || 'N/A'}
+                                                {getAdPostedDate(detailsModal.ad)}
                                             </p>
                                         </div>
                                     </div>
@@ -1292,7 +1327,7 @@ const HarajData = () => {
 
                                 {/* Comments - Special handling */}
                                 {(() => {
-                                    const comments = detailsModal.ad.comments;
+                                    const comments = getVisibleComments(detailsModal.ad.comments);
                                     const hasComments = Array.isArray(comments) && comments.length > 0;
                                     return (
                                         <div className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-2 hover:shadow-sm transition-shadow">
@@ -1579,4 +1614,5 @@ const HarajData = () => {
 };
 
 export default HarajData;
+
 

@@ -628,7 +628,7 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
         # Update retry start time
         await http_patch(
             f"new-scripts/update-report-timestamp/{record_id_str}",
-            json={"type": "retryStartTime"},
+            json={"type": "retryEditStartTime"},
         )
 
         emit_progress_update(
@@ -672,7 +672,7 @@ async def retry_create_new_report(browser, record_id, tabs_num=3):
         # Update retry end time
         await http_patch(
             f"new-scripts/update-report-timestamp/{record_id_str}",
-            json={"type": "retryEndTime"},
+            json={"type": "retryEditEndTime"},
         )
 
         # Emit completion message

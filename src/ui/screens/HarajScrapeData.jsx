@@ -22,8 +22,23 @@ import {
 
 const DEFAULT_LIMIT = 20;
 const TAGS_LIMIT = 120;
+const PRIVATE_COMMENT_MARKER = ":: \u0631\u062f \u062e\u0627\u0635. \u064a\u0638\u0647\u0631 \u0644\u0644\u0639\u0627\u0631\u0636 \u0641\u0642\u0637 ::";
 
 const safeArr = (value) => (Array.isArray(value) ? value : []);
+
+const normalizeText = (value) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isPrivateComment = (value) =>
+  normalizeText(value) === normalizeText(PRIVATE_COMMENT_MARKER);
+
+const extractCommentText = (comment) =>
+  comment?.body ?? comment?.text ?? comment?.comment ?? "";
+
+const filterVisibleComments = (comments) =>
+  safeArr(comments).filter((comment) => !isPrivateComment(extractCommentText(comment)));
 
 const formatUnixSeconds = (seconds) => {
   if (!seconds && seconds !== 0) return "Not available";
@@ -62,7 +77,9 @@ const getImages = (ad) => {
 };
 
 const getCommentsCount = (ad) =>
-  ad?.visibleCommentsCount ?? ad?.commentsCount ?? safeArr(ad?.comments).length;
+  safeArr(ad?.comments).length > 0
+    ? filterVisibleComments(ad?.comments).length
+    : ad?.visibleCommentsCount ?? ad?.commentsCount ?? 0;
 
 const HarajScrapeData = () => {
   const [ads, setAds] = useState([]);
@@ -210,7 +227,7 @@ const HarajScrapeData = () => {
     setCommentsModal({
       isOpen: true,
       title: ad?.title || "Haraj Comments",
-      comments: safeArr(ad?.comments)
+      comments: filterVisibleComments(ad?.comments)
     });
   };
 
@@ -219,6 +236,7 @@ const HarajScrapeData = () => {
   };
 
   const topTags = tags.slice(0, 18);
+  const visibleModalComments = filterVisibleComments(commentsModal.comments);
 
   return (
     <div className="p-6 space-y-6">
@@ -757,21 +775,25 @@ const HarajScrapeData = () => {
 
               <div className="rounded-xl border border-slate-200 bg-white p-2.5 space-y-2">
                 <div className="text-[8px] uppercase text-slate-400 font-semibold">Comments</div>
-                {safeArr(detailsModal.ad.comments).length === 0 ? (
-                  <div className="text-[9px] text-slate-500">Not available</div>
-                ) : (
-                  <div className="space-y-2">
-                    {safeArr(detailsModal.ad.comments).map((comment, idx) => (
-                      <div key={comment.id || idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="flex items-center justify-between text-[9px] text-slate-600">
-                          <span className="font-semibold text-slate-700">{comment.authorUsername || "Not available"}</span>
-                          <span>{formatUnixSeconds(comment.date)}</span>
+                {(() => {
+                  const visibleDetailsComments = filterVisibleComments(detailsModal.ad.comments);
+                  if (visibleDetailsComments.length === 0) {
+                    return <div className="text-[9px] text-slate-500">Not available</div>;
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {visibleDetailsComments.map((comment, idx) => (
+                        <div key={comment.id || idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="flex items-center justify-between text-[9px] text-slate-600">
+                            <span className="font-semibold text-slate-700">{comment.authorUsername || "Not available"}</span>
+                            <span>{formatUnixSeconds(comment.date)}</span>
+                          </div>
+                          <p className="mt-1 text-[10px] text-slate-700 whitespace-pre-wrap">{comment.body || "Not available"}</p>
                         </div>
-                        <p className="mt-1 text-[10px] text-slate-700 whitespace-pre-wrap">{comment.body || "Not available"}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
             </div>
@@ -817,10 +839,10 @@ const HarajScrapeData = () => {
               </button>
             </div>
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-3">
-              {commentsModal.comments.length === 0 ? (
+              {visibleModalComments.length === 0 ? (
                 <div className="text-[11px] text-slate-500">No comments found.</div>
               ) : (
-                commentsModal.comments.map((comment, idx) => (
+                visibleModalComments.map((comment, idx) => (
                   <div key={comment.id || idx} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[11px] font-semibold text-slate-900">{comment.authorUsername || "Unknown user"}</div>
@@ -848,4 +870,5 @@ const HarajScrapeData = () => {
 };
 
 export default HarajScrapeData;
+
 

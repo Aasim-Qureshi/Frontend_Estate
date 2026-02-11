@@ -145,13 +145,15 @@ const TaqeemAuth = ({ onViewChange }) => {
             console.log("Bootstrap response:", bootstrapResponse);
 
                         if (bootstrapResponse.status === "TAQEEM_ALREADY_USED") {
-                emitTaqeemConflict(bootstrapResponse);
+                emitTaqeemConflict({
+                    ...bootstrapResponse,
+                    taqeemUser: formData.email,
+                });
                 setMessage({
                     text: bootstrapResponse.message || "This Taqeem user is already linked. Please login to Value Tech.",
                     type: "error",
                 });
                 setTaqeemStatus("error", "Taqeem user is already linked");
-                await redirectToPhoneLogin();
                 return;
             }
 
@@ -181,13 +183,15 @@ const TaqeemAuth = ({ onViewChange }) => {
                     });
 
                     if (syncResult?.status === "TAQEEM_ALREADY_USED") {
-                        emitTaqeemConflict(syncResult);
+                        emitTaqeemConflict({
+                            ...syncResult,
+                            taqeemUser: formData.email,
+                        });
                         setMessage({
                             text: syncResult.message || "This Taqeem user is already linked. Please login to Value Tech.",
                             type: "error",
                         });
                         setTaqeemStatus("error", "Taqeem user is already linked");
-                        await redirectToPhoneLogin();
                         return;
                     }
 
@@ -212,13 +216,16 @@ const TaqeemAuth = ({ onViewChange }) => {
             const httpStatus = error.status || error.response?.status;
 
             if (backendStatus === "TAQEEM_ALREADY_USED") {
-                emitTaqeemConflict(error.response?.data || {});
+                emitTaqeemConflict({
+                    ...(error.response?.data || {}),
+                    taqeemUser: formData.email,
+                });
                 setMessage({
                     text: error.response?.data?.message || "This Taqeem user is already linked. Please login to Value Tech.",
                     type: "error",
                 });
                 setTaqeemStatus("error", "Taqeem user is already linked");
-                await redirectToPhoneLogin();
+                return;
             }
 
             // Invalid credentials

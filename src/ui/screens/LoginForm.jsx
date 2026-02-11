@@ -15,7 +15,7 @@ const LoginForm = ({ onViewChange }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState({ text: '', type: '' });
     const [loginType, setLoginType] = useState('phone'); // 'legacy' or 'phone'
-    const { login } = useSession();
+    const { login, user, isGuest } = useSession();
     const { t } = useTranslation();
 
     const handleInputChange = (e) => {
@@ -54,10 +54,52 @@ const LoginForm = ({ onViewChange }) => {
                 throw new Error(t('login.errors.electronApiUnavailable'));
             }
 
-            const result = await window.electronAPI.apiRequest('POST', '/api/users/login', {
+            let guestUserId = isGuest
+                ? user?._id || user?.id || user?.userId || null
+                : null;
+            let guestTaqeemUser = isGuest
+                ? user?.taqeemUser || user?.taqeem?.username || null
+                : null;
+
+            if (!guestUserId) {
+                try {
+                    const rawGuestUserId = window?.sessionStorage?.getItem('taqeem:guestUserIdForLink');
+                    if (rawGuestUserId) {
+                        const parsed = JSON.parse(rawGuestUserId);
+                        if (typeof parsed === 'string' && parsed.trim()) {
+                            guestUserId = parsed.trim();
+                        }
+                    }
+                } catch (err) {
+                    guestUserId = null;
+                }
+            }
+            if (!guestTaqeemUser) {
+                try {
+                    const rawGuestTaqeem = window?.sessionStorage?.getItem('taqeem:guestUserForLink');
+                    if (rawGuestTaqeem) {
+                        const parsed = JSON.parse(rawGuestTaqeem);
+                        if (typeof parsed === 'string' && parsed.trim()) {
+                            guestTaqeemUser = parsed.trim();
+                        }
+                    }
+                } catch (err) {
+                    guestTaqeemUser = null;
+                }
+            }
+
+            const loginPayload = {
                 phone: formData.phone,
                 password: formData.password
-            });
+            };
+            if (guestUserId) {
+                loginPayload.guestUserId = String(guestUserId);
+            }
+            if (guestTaqeemUser) {
+                loginPayload.guestTaqeemUser = String(guestTaqeemUser).trim();
+            }
+
+            const result = await window.electronAPI.apiRequest('POST', '/api/users/login', loginPayload);
 
             await setRefreshCookieIfPresent(result);
 
@@ -69,10 +111,32 @@ const LoginForm = ({ onViewChange }) => {
                 });
                 setTimeout(() => {
                     if (onViewChange) {
-                        console.log("was in login page before");
-                        onViewChange('apps')
+                        let nextView = 'apps';
+                        try {
+                            const rawReturnView = window?.sessionStorage?.getItem('taqeem:returnView');
+                            if (rawReturnView) {
+                                const parsed = JSON.parse(rawReturnView);
+                                if (typeof parsed === 'string' && parsed.trim()) {
+                                    nextView = parsed.trim();
+                                }
+                                window.sessionStorage.removeItem('taqeem:returnView');
+                            }
+                        } catch (err) {
+                            nextView = 'apps';
+                        }
+
+                        if (nextView === 'login' || nextView === 'registration') {
+                            nextView = 'apps';
+                        }
+                        onViewChange(nextView);
                     };
                 }, 500);
+                try {
+                    window?.sessionStorage?.removeItem('taqeem:guestUserIdForLink');
+                    window?.sessionStorage?.removeItem('taqeem:guestUserForLink');
+                } catch (err) {
+                    // ignore storage failures
+                }
             } else {
                 throw new Error(result?.error || result?.message || t('login.errors.loginFailed'));
             }

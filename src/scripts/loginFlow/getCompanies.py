@@ -33,7 +33,7 @@ def _normalize_valuers(items):
             continue
         if lower_name in ("", "select", "choose"):
             continue
-        if valuer_name == "Ã˜ÂªÃ˜Â­Ã˜Â¯Ã™ÂŠÃ˜Â¯":
+        if valuer_name == "ÃËÃÂªÃËÃÂ­ÃËÃÂ¯Ãâ¢ÃÅ ÃËÃÂ¯":
             continue
         if valuer_id in seen:
             continue
@@ -248,135 +248,65 @@ async def _resolve_active_office_id(page):
     return active_office
 
 
-async def _resolve_report_create_url(page, office_id, sector_id):
-    office_id = str(office_id or "").strip()
-    sector_id = str(sector_id or "4").strip() or "4"
-
-    try:
-        hrefs = await page.evaluate(
-            """
-            () => {
-                const out = [];
-                const nodes = Array.from(document.querySelectorAll('a[href], [data-href], [data-url]'));
-                for (const node of nodes) {
-                    const href =
-                        (node.getAttribute && (node.getAttribute('href') || node.getAttribute('data-href') || node.getAttribute('data-url'))) || '';
-                    if (!href) continue;
-                    if (href.includes('/report/create')) out.push(href.trim());
-                }
-                return Array.from(new Set(out));
-            }
-            """
-        )
-    except Exception:
-        hrefs = []
-
-    candidates = []
-    for href in (hrefs or []):
-        parsed = parse_company_url(href)
-        parsed_url = parsed.get("url") or str(href).strip()
-        if not parsed_url:
-            continue
-        href_office = str(parsed.get("office_id") or "").strip()
-        href_sector = str(parsed.get("sector_id") or "").strip()
-        candidates.append(
-            {
-                "url": parsed_url,
-                "office": href_office,
-                "sector": href_sector,
-            }
-        )
-
-    for item in candidates:
-        if item["office"] and office_id and item["office"] == office_id:
-            return item["url"]
-
-    for item in candidates:
-        if item["sector"] == sector_id or not item["sector"]:
-            return item["url"]
-
-    return build_report_create_url(sector_id, office_id)
-
-
-async def fetch_company_valuers(page, office_id, sector_id="4", preferred_report_url=None):
+async def fetch_company_valuers(page, office_id, sector_id="4"):
     if not office_id:
         return []
 
     office_id = str(office_id or "").strip()
     sector_id = str(sector_id or "4").strip() or "4"
+    target_url = build_report_create_url(sector_id, office_id)
 
-    candidate_urls = []
-    if preferred_report_url:
-        candidate_urls.append(str(preferred_report_url).strip())
-    candidate_urls.extend(
-        [
-            build_report_create_url(sector_id, office_id),
-            f"https://qima.taqeem.sa/report/create/{sector_id}?office={office_id}",
-            f"https://qima.taqeem.sa/report/create/{sector_id}/{office_id}?office={office_id}",
-        ]
-    )
+    try:
+        await page.get(target_url)
+    except Exception as nav_error:
+        print(
+            f"[WARN] Failed opening report-create URL {target_url}: {nav_error}",
+            file=sys.stderr,
+        )
+        return []
 
-    unique_urls = []
-    seen = set()
-    for url in candidate_urls:
-        if not url:
-            continue
-        parsed = parse_company_url(url)
-        normalized_url = parsed.get("url") or str(url).strip()
-        if not normalized_url or normalized_url in seen:
-            continue
-        seen.add(normalized_url)
-        unique_urls.append(normalized_url)
+    await asyncio.sleep(1.6)
 
-    for target_url in unique_urls:
+    # Ensure this page is for the expected office before scraping.
+    is_expected_office = False
+    for _ in range(25):
         try:
-            await page.get(target_url)
-        except Exception as nav_error:
-            print(
-                f"[WARN] Failed opening report-create URL {target_url}: {nav_error}",
-                file=sys.stderr,
-            )
-            continue
-
-        await asyncio.sleep(1.6)
-
-        try:
-            current_office = await _resolve_active_office_id(page)
             current_url = await page.evaluate("window.location.href")
-            if current_office and str(current_office) != office_id:
-                print(
-                    f"[WARN] Office mismatch after navigation. expected={office_id} got={current_office} url={current_url}",
-                    file=sys.stderr,
-                )
-                continue
+            parsed_current = parse_company_url(current_url or "")
+            url_office = str(parsed_current.get("office_id") or "").strip()
+            dom_office = await _resolve_active_office_id(page)
+            dom_office = str(dom_office or "").strip()
+
+            # URL and DOM can differ temporarily while page is still initializing.
+            if (url_office and url_office == office_id) or (dom_office and dom_office == office_id):
+                is_expected_office = True
+                break
         except Exception:
             pass
+        await asyncio.sleep(0.35)
 
+    if not is_expected_office:
         try:
-            await wait_for_element(
-                page,
-                ".addNewValuer select.valuer_id, .addNewValuer select[data-type='id'], select.valuer_id, select[data-type='id']",
-                timeout=25,
-            )
+            current_url = await page.evaluate("window.location.href")
         except Exception:
-            pass
+            current_url = target_url
+        print(
+            f"[WARN] Office mismatch after navigation. expected={office_id} url={current_url}",
+            file=sys.stderr,
+        )
+        return []
 
-        valuers = await _wait_for_valuers(page, timeout_seconds=35)
-        if valuers:
-            # Final guard: ensure office context still points to requested office.
-            final_office = await _resolve_active_office_id(page)
-            if final_office and str(final_office) != office_id:
-                print(
-                    f"[WARN] Ignoring valuers due to office drift. expected={office_id} got={final_office} url={target_url}",
-                    file=sys.stderr,
-                )
-                continue
-            print(
-                f"[INFO] Loaded {len(valuers)} valuers for office {office_id} via {target_url}",
-                file=sys.stderr,
-            )
-            return valuers
+    try:
+        await wait_for_element(
+            page,
+            ".addNewValuer select.valuer_id, .addNewValuer select[data-type='id'], select.valuer_id, select[data-type='id']",
+            timeout=25,
+        )
+    except Exception:
+        pass
 
+    valuers = await _wait_for_valuers(page, timeout_seconds=35)
+    if not valuers:
         # Some report pages need adding a valuer row before the select becomes visible.
         try:
             await page.evaluate(
@@ -392,21 +322,23 @@ async def fetch_company_valuers(page, office_id, sector_id="4", preferred_report
             await asyncio.sleep(1.2)
         except Exception:
             pass
-
         valuers = await _wait_for_valuers(page, timeout_seconds=12)
-        if valuers:
-            final_office = await _resolve_active_office_id(page)
-            if final_office and str(final_office) != office_id:
-                print(
-                    f"[WARN] Ignoring valuers after duplicate click due to office drift. expected={office_id} got={final_office} url={target_url}",
-                    file=sys.stderr,
-                )
-                continue
+
+    if valuers:
+        # Final guard: do not accept data if office context drifted.
+        final_office = await _resolve_active_office_id(page)
+        final_office = str(final_office or "").strip()
+        if final_office and final_office != office_id:
             print(
-                f"[INFO] Loaded {len(valuers)} valuers for office {office_id} via {target_url} (after duplicate click)",
+                f"[WARN] Ignoring valuers due to office drift. expected={office_id} got={final_office} url={target_url}",
                 file=sys.stderr,
             )
-            return valuers
+            return []
+        print(
+            f"[INFO] Loaded {len(valuers)} valuers for office {office_id} via {target_url}",
+            file=sys.stderr,
+        )
+        return valuers
 
     try:
         current_url = await page.evaluate("window.location.href")
@@ -422,9 +354,10 @@ async def fetch_company_valuers(page, office_id, sector_id="4", preferred_report
 
 async def get_companies():
     try:
-        home_url = "https://qima.taqeem.sa/"
+        start_url = "https://qima.taqeem.sa/"
+        final_home_url = "https://qima.taqeem.sa/valuer/home"
 
-        page = await navigate(home_url)
+        page = await navigate(start_url)
         await asyncio.sleep(3)
 
         companies = []
@@ -539,65 +472,18 @@ async def get_companies():
 
         print(f"[INFO] Total companies found: {len(companies)}", file=sys.stderr)
 
+        valuers_by_office = {}
         for company in companies:
-            raw_company_url = company.get("url") or ""
-            parsed_company = parse_company_url(raw_company_url)
-            company_url = parsed_company.get("url") or raw_company_url or home_url
-
-            try:
-                await page.get(company_url)
-                await asyncio.sleep(1.2)
-            except Exception as nav_error:
-                print(
-                    f"[WARN] Failed to open company URL {company_url}: {nav_error}",
-                    file=sys.stderr,
-                )
-
-            expected_office_id = str(
+            office_id = str(
                 company.get("officeId")
                 or company.get("office_id")
-                or parsed_company.get("office_id")
                 or ""
             ).strip()
-            expected_sector_id = str(
+            sector_id = str(
                 company.get("sectorId")
                 or company.get("sector_id")
-                or parsed_company.get("sector_id")
                 or "4"
             ).strip() or "4"
-
-            office_id = expected_office_id
-            sector_id = expected_sector_id
-
-            try:
-                for _ in range(20):
-                    current_url = await page.evaluate("window.location.href")
-                    parsed_current = parse_company_url(current_url or "")
-                    current_office = str(parsed_current.get("office_id") or "").strip()
-                    current_sector = str(parsed_current.get("sector_id") or "").strip()
-
-                    if current_office and not office_id:
-                        office_id = current_office
-                    if current_sector and not sector_id:
-                        sector_id = current_sector
-
-                    if expected_office_id and current_office and current_office != expected_office_id:
-                        print(
-                            f"[WARN] Company URL context mismatch for {company.get('name')}: expected office={expected_office_id}, current office={current_office}, url={current_url}",
-                            file=sys.stderr,
-                        )
-
-                    if office_id:
-                        company["url"] = parsed_current.get("url") or company_url
-                        break
-                    await asyncio.sleep(0.35)
-            except Exception:
-                pass
-
-            if office_id:
-                company["officeId"] = office_id
-            if sector_id:
-                company["sectorId"] = sector_id
 
             if not office_id:
                 company["valuers"] = []
@@ -607,16 +493,18 @@ async def get_companies():
                 )
                 continue
 
-            report_create_url = await _resolve_report_create_url(page, office_id, sector_id)
-            company["valuers"] = await fetch_company_valuers(
-                page,
-                office_id=office_id,
-                sector_id=sector_id,
-                preferred_report_url=report_create_url,
-            )
+            # Avoid duplicated scrape operations for the same office id.
+            if office_id in valuers_by_office:
+                company["valuers"] = valuers_by_office[office_id]
+                continue
+
+            company["officeId"] = office_id
+            company["sectorId"] = sector_id
+            company["valuers"] = await fetch_company_valuers(page, office_id=office_id, sector_id=sector_id)
+            valuers_by_office[office_id] = company["valuers"]
 
         try:
-            await page.get(home_url)
+            await page.get(final_home_url)
             await asyncio.sleep(0.8)
         except Exception:
             pass

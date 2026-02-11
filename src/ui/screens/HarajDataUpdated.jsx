@@ -19,11 +19,33 @@ import {
 } from "lucide-react";
 
 const COMMENTS_PAGE_LIMIT = 50;
+const PRIVATE_COMMENT_MARKER = ":: \u0631\u062f \u062e\u0627\u0635. \u064a\u0638\u0647\u0631 \u0644\u0644\u0639\u0627\u0631\u0636 \u0641\u0642\u0637 ::";
 
 const joinPath = (segments = []) =>
   segments.map((s) => String(s || "").trim()).filter(Boolean).join("/");
 
 const safeArr = (v) => (Array.isArray(v) ? v : []);
+
+const normalizeText = (value) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isPrivateComment = (value) =>
+  normalizeText(value) === normalizeText(PRIVATE_COMMENT_MARKER);
+
+const extractCommentText = (comment) =>
+  comment?.text ?? comment?.body ?? comment?.comment ?? "";
+
+const filterVisibleComments = (comments) =>
+  safeArr(comments).filter((comment) => !isPrivateComment(extractCommentText(comment)));
+
+const getVisibleCommentsCount = (ad) => {
+  const comments = safeArr(ad?.comments);
+  if (comments.length > 0) return filterVisibleComments(comments).length;
+  const count = ad?.visibleCommentsCount ?? ad?.commentsCount ?? 0;
+  return Number.isFinite(Number(count)) ? Number(count) : 0;
+};
 
 const HarajDataUpdated = () => {
   const [ads, setAds] = useState([]);
@@ -181,7 +203,7 @@ const HarajDataUpdated = () => {
       );
       setCommentsModal((prev) => ({
         ...prev,
-        comments: response?.items || [],
+        comments: filterVisibleComments(response?.items || []),
         page: response?.page || page,
         pages: response?.pages || 1,
         total: response?.total || 0,
@@ -740,7 +762,7 @@ const HarajDataUpdated = () => {
 
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-700">{ad.commentsCount ?? 0}</span>
+                          <span className="text-[11px] text-slate-700">{getVisibleCommentsCount(ad)}</span>
                           <button
                             type="button"
                             onClick={() => openCommentsModal(ad)}
@@ -983,3 +1005,4 @@ const HarajDataUpdated = () => {
 };
 
 export default HarajDataUpdated;
+

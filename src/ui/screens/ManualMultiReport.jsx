@@ -304,6 +304,9 @@ const ManualMultiReport = ({ onViewChange }) => {
 
       let list = companies;
       try {
+        if ((!list || list.length === 0) && ensureCompaniesLoaded) {
+          list = await ensureCompaniesLoaded("equipment");
+        }
         if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
           const data = await window.electronAPI.getCompanies();
           const fetched = Array.isArray(data?.data)
@@ -317,9 +320,6 @@ const ManualMultiReport = ({ onViewChange }) => {
               { autoSelect: false, skipNavigation: true, quiet: true }
             );
           }
-        }
-        if ((!list || list.length === 0) && ensureCompaniesLoaded) {
-          list = await ensureCompaniesLoaded("equipment");
         }
       } catch (err) {
         console.warn("Failed to fetch companies for submission", err);

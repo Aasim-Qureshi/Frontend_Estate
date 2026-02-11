@@ -6,7 +6,7 @@ import { useSession } from '../context/SessionContext';
 import { useNavStatus } from '../context/NavStatusContext';
 import navigation from '../constants/navigation';
 import { useTranslation } from 'react-i18next';
-import { syncTaqeemSnapshot } from '../../shared/helper/taqeemSync';
+import { emitTaqeemConflict, syncTaqeemSnapshot } from '../../shared/helper/taqeemSync';
 
 const { valueSystemGroups } = navigation;
 
@@ -25,7 +25,7 @@ const getCompanyIdentity = (company) => {
 const Sidebar = ({ currentView, onViewChange }) => {
     const { t } = useTranslation();
     const { isFeatureBlocked, isAdmin } = useSystemControl();
-    const { user, isAuthenticated, token, login, logout, isGuest } = useSession();
+    const { user, isAuthenticated, token, login } = useSession();
     const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
     const {
         selectedCard,
@@ -176,7 +176,10 @@ const Sidebar = ({ currentView, onViewChange }) => {
             let snapshot = null;
             if (activeToken) {
                 try {
-                    snapshot = await syncTaqeemSnapshot({ token: activeToken });
+                    snapshot = await syncTaqeemSnapshot({
+                        token: activeToken,
+                        cachedUser: user || null,
+                    });
                 } catch (err) {
                     snapshot = null;
                 }
@@ -186,10 +189,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 const message = snapshot?.message || 'This Taqeem user is already linked. Please login with your phone.';
                 setTaqeemStatus('error', message);
                 setCompanyStatus('error', message);
-                if (isGuest) {
-                    logout();
-                }
-                onViewChange?.('login');
+                emitTaqeemConflict({
+                    ...snapshot,
+                    taqeemUser:
+                        snapshot?.taqeemUser ||
+                        user?.taqeemUser ||
+                        user?.taqeem?.username ||
+                        null,
+                });
                 return;
             }
 

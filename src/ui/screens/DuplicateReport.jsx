@@ -1394,6 +1394,9 @@ const DuplicateReport = ({ onViewChange }) => {
 
       let list = companies;
       try {
+        if ((!list || list.length === 0) && loadSavedCompanies) {
+          list = await loadSavedCompanies("equipment");
+        }
         if ((!list || list.length === 0) && window?.electronAPI?.getCompanies) {
           const data = await window.electronAPI.getCompanies();
           const fetched = Array.isArray(data?.data)
@@ -1407,9 +1410,6 @@ const DuplicateReport = ({ onViewChange }) => {
               { autoSelect: false, skipNavigation: true, quiet: true },
             );
           }
-        }
-        if ((!list || list.length === 0) && loadSavedCompanies) {
-          list = await loadSavedCompanies("equipment");
         }
       } catch (err) {
         console.warn("Failed to fetch companies for submission", err);

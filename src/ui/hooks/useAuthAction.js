@@ -23,7 +23,7 @@ const isTaqeemAuthSuccess = (authStatus) => {
 };
 
 export const useAuthAction = () => {
-  const { token, login, isGuest } = useSession();
+  const { token, login, isGuest, user } = useSession();
   const { taqeemStatus, setTaqeemStatus } = useNavStatus();
   const { systemState } = useSystemControl();
   const { selectedCompany } = useValueNav();
@@ -57,6 +57,8 @@ export const useAuthAction = () => {
 
         const isTaqeemLoggedIn = taqeemStatus?.state === "success";
         const guestSession = isGuest || !token;
+        const selectedCompanyOfficeId =
+          selectedCompany?.officeId || selectedCompany?.office_id || null;
 
         console.log("[useAuthAction] auth context", {
           hasToken: !!token,
@@ -79,6 +81,8 @@ export const useAuthAction = () => {
           {
             isGuest: guestSession,
             guestAccessEnabled: systemState?.guestAccessEnabled ?? true,
+            cachedUser: user || null,
+            selectedCompanyOfficeId,
           },
         );
 
@@ -203,6 +207,7 @@ export const useAuthAction = () => {
       taqeemStatus,
       setTaqeemStatus,
       isGuest,
+      user,
       systemState?.guestAccessEnabled,
       selectedCompany,
     ],
