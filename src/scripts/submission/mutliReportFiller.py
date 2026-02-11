@@ -716,8 +716,8 @@ async def create_reports_by_batch(browser, batch_id, tabs_num=3):
         if not batch_id:
             return {"status": "FAILED", "error": "Missing batch_id"}
 
-        cursor = db.multiapproachreports.find({"batchId": batch_id})
-        records = await cursor.to_list(length=None)
+        record_data = await http_get(f"/new-scripts/batch/{batch_id}")
+        records = record_data.get("reports", [])
 
         if not records:
             return {
