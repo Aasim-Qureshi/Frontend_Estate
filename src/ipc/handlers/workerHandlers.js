@@ -27,6 +27,56 @@ const workerHandlers = {
     }
   },
 
+  async getDummyPdfPath() {
+    try {
+      const fs = require("fs").promises; // Use promises version
+
+      // For development
+      if (process.env.NODE_ENV === "development") {
+        const devPath = path.join(
+          process.cwd(),
+          "public",
+          "dummy_placeholder.pdf",
+        );
+        // Check if file exists - use await
+        try {
+          await fs.access(devPath);
+          console.log("[MAIN] Found dummy PDF at dev path:", devPath);
+          return { status: "SUCCESS", path: devPath };
+        } catch (e) {
+          console.warn("Development dummy PDF not found at:", devPath);
+        }
+      }
+
+      // For production - check multiple possible locations
+      const possiblePaths = [
+        path.join(process.resourcesPath, "dummy_placeholder.pdf"),
+        path.join(process.resourcesPath, "app.asar", "dummy_placeholder.pdf"),
+        path.join(process.resourcesPath, "app", "dummy_placeholder.pdf"),
+        path.join(__dirname, "../../assets/dummy_placeholder.pdf"),
+        path.join(__dirname, "../../../assets/dummy_placeholder.pdf"),
+        path.join(__dirname, "../../public/dummy_placeholder.pdf"),
+        path.join(__dirname, "../../../public/dummy_placeholder.pdf"),
+        path.join(__dirname, "../../../../public/dummy_placeholder.pdf"),
+      ];
+
+      for (const testPath of possiblePaths) {
+        try {
+          await fs.access(testPath);
+          console.log("[MAIN] Found dummy PDF at:", testPath);
+          return testPath;
+        } catch (e) {
+          // File doesn't exist at this path, try next
+          continue;
+        }
+      }
+
+      throw new Error("Dummy PDF not found in any expected location");
+    } catch (error) {
+      console.error("[MAIN] Get dummy PDF path error:", error);
+      return { status: "ERROR", error: error.message };
+    }
+  },
   async showOpenDialog() {
     try {
       const { cancelled, filePaths } = await dialog.showOpenDialog({

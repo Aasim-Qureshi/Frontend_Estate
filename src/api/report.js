@@ -192,7 +192,6 @@ const multiExcelUpload = async (
   const skipPdfUpload = validationPdfFiles.length === 0;
   if (skipPdfUpload) {
     formData.append("skipPdfUpload", "true");
-    formData.append("dummy_pdf_path", "dummy_placeholder.pdf");
   }
 
   const response = await httpClient.post("/multi-approach", formData, {
@@ -294,15 +293,10 @@ const createDuplicateReport = async (
   pdfPathMap = {},
 ) => {
   const url = `/duplicate-report`;
-
-  // Create FormData from payload if needed
   const formData = new FormData();
 
   if (payload && typeof payload.append === "function") {
     // payload is already a FormData object
-    formData.append("reportId", payload.get("reportId") || "");
-
-    // Copy all entries from payload to formData
     for (const [key, value] of payload.entries()) {
       formData.append(key, value);
     }
@@ -322,16 +316,13 @@ const createDuplicateReport = async (
     formData.append("companyOfficeId", companyOfficeId);
   }
 
-  // Add PDF path mappings (NEW)
-  Object.entries(pdfPathMap || {}).forEach(([key, value]) => {
-    formData.append(key, value);
-  });
+  // Add PDF absolute path - get it directly from pdfPathMap.pdfPath
+  if (pdfPathMap && pdfPathMap.pdfPath) {
+    formData.append("pdfPath", pdfPathMap.pdfPath);
+  }
 
   // Check if we have any PDF files
-  const hasPdfFiles =
-    (pdfPathMap && Object.keys(pdfPathMap).length > 0) ||
-    payload?.pdfFile ||
-    formData.has("pdfFile");
+  const hasPdfFiles = (pdfPathMap && pdfPathMap.pdfPath) || formData.has("pdf");
 
   if (!hasPdfFiles) {
     formData.append("skipPdfUpload", "true");

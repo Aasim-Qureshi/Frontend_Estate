@@ -826,6 +826,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   const [storeOnlyLoading, setStoreOnlyLoading] = useState(false);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [pdfPathMap, setPdfPathMap] = useState({});
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -899,10 +900,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
   };
 
-  const handlePdfChange = (e) => {
+  const handlePdfChange = async (e) => {
     const files = Array.from(e.target.files || []);
-    const oversizedFiles = files.filter((file) => file.size > MAX_PDF_SIZE);
 
+    // Check for oversized files
+    const oversizedFiles = files.filter((file) => file.size > MAX_PDF_SIZE);
     if (oversizedFiles.length > 0) {
       const oversizedNames = oversizedFiles.map((f) => f.name).join(", ");
       setError(
@@ -916,7 +918,29 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
 
     setPdfFiles(files);
+
+    // Get absolute paths for the selected PDFs
+    if (files.length > 0) {
+      const paths = await getAbsolutePaths(files);
+      setPdfPathMap(paths);
+    } else {
+      setPdfPathMap({});
+    }
+
     resetMessages();
+  };
+
+  const getAbsolutePaths = async (files) => {
+    const paths = {};
+    for (const file of files) {
+      const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
+      if (absolutePath) {
+        const baseName = normalizeKey(stripExtension(file.name));
+        paths[baseName] = absolutePath;
+      }
+    }
+    console.log("PDF paths", paths);
+    return paths;
   };
 
   const ensureGuestSession = async () => {
@@ -1024,11 +1048,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           "Uploading files to server...",
         ),
       );
+
+      // Pass pdfPathMap to the API function
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
         !wantsPdfUpload,
         selectedCompanyOfficeId || null,
+        wantsPdfUpload ? pdfPathMap : {}, // Pass the path map
       );
 
       if (data.status !== "success") {
@@ -2116,11 +2143,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           "Uploading files to server...",
         ),
       );
+
+      // Pass pdfPathMap to the API function
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
         !wantsPdfUpload,
         selectedCompanyOfficeId || null,
+        wantsPdfUpload ? pdfPathMap : {}, // Pass the path map
       );
 
       if (data.status !== "success") {
@@ -2147,6 +2177,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       await loadUnassignedReports(activeToken);
       setExcelFiles([]);
       setPdfFiles([]);
+      setPdfPathMap({}); // Reset path map
       setWantsPdfUpload(false);
     } catch (err) {
       console.error("Upload failed", err);

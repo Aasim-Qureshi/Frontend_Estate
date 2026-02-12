@@ -688,6 +688,7 @@ const DuplicateReport = ({ onViewChange }) => {
   const [assetSelectFilters, setAssetSelectFilters] = useState({});
   const [assetActionBusy, setAssetActionBusy] = useState({});
   const [assetEdit, setAssetEdit] = useState(null);
+  const [pdfPathMap, setPdfPathMap] = useState({});
   const [assetDraft, setAssetDraft] = useState({
     asset_name: "",
     asset_usage_id: "",
@@ -721,9 +722,9 @@ const DuplicateReport = ({ onViewChange }) => {
     [selectedReportIds],
   );
   const temporaryReports = isGuestUser ? reports : unassignedReports;
-    const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
-    const showTemporarySection =
-        isGuestUser || unassignedLoading || unassignedReports.length > 0;
+  const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
+  const showTemporarySection =
+    isGuestUser || unassignedLoading || unassignedReports.length > 0;
   const companyFromList = useMemo(
     () => matchCompanyBySelection(companies, selectedCompany),
     [companies, selectedCompany],
@@ -762,6 +763,27 @@ const DuplicateReport = ({ onViewChange }) => {
     [selectedCompany],
   );
   const valuerInputsDisabled = valuerOptions.length === 0;
+  const normalizeKey = (value) =>
+    (value || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[\W_]+/g, "");
+
+  const stripExtension = (filename = "") => filename.replace(/\.[^.]+$/, "");
+
+  const getAbsolutePaths = async (files) => {
+    const paths = {};
+    for (const file of files) {
+      const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
+      if (absolutePath) {
+        const baseName = normalizeKey(stripExtension(file.name));
+        paths[baseName] = absolutePath;
+      }
+    }
+    console.log("PDF paths", paths);
+    return paths;
+  };
 
   const requiredFields = useMemo(
     () => [
@@ -943,6 +965,7 @@ const DuplicateReport = ({ onViewChange }) => {
       setValuers(buildDefaultValuers());
       setExcelFile(null);
       setPdfFile(null);
+      setPdfPathMap({}); // Add this
       setWantsPdfUpload(false);
       setErrors({});
       setEditingReportId(null);
@@ -1000,6 +1023,7 @@ const DuplicateReport = ({ onViewChange }) => {
       setFileNotes,
       setFormData,
       setPdfFile,
+      setPdfPathMap, // Add this
       setReportSelectFilter,
       setReportUsers,
       setSelectedAssetsByReport,
@@ -1033,7 +1057,7 @@ const DuplicateReport = ({ onViewChange }) => {
         page: currentPage,
         limit: pageSize,
         status: reportSelectFilter,
-        companyOfficeId: isGuestUser ? null : (selectedCompanyOfficeId || null),
+        companyOfficeId: isGuestUser ? null : selectedCompanyOfficeId || null,
       });
 
       const rows = normalizeReportsResponse(result);
@@ -1060,7 +1084,14 @@ const DuplicateReport = ({ onViewChange }) => {
     } finally {
       setReportsLoading(false);
     }
-  }, [currentPage, pageSize, reportSelectFilter, selectedCompanyOfficeId, isGuestUser, normalizeReportsResponse]);
+  }, [
+    currentPage,
+    pageSize,
+    reportSelectFilter,
+    selectedCompanyOfficeId,
+    isGuestUser,
+    normalizeReportsResponse,
+  ]);
 
   const loadUnassignedReports = useCallback(async () => {
     try {
@@ -1091,7 +1122,13 @@ const DuplicateReport = ({ onViewChange }) => {
     } finally {
       setUnassignedLoading(false);
     }
-  }, [token, pageSize, reportSelectFilter, normalizeReportsResponse, isGuestUser]);
+  }, [
+    token,
+    pageSize,
+    reportSelectFilter,
+    normalizeReportsResponse,
+    isGuestUser,
+  ]);
 
   useEffect(() => {
     loadReports();
@@ -1302,9 +1339,24 @@ const DuplicateReport = ({ onViewChange }) => {
     }
   };
 
-  const setPdfFileAndRemember = (file) => {
+  const setPdfFileAndRemember = async (file) => {
     setPdfFile(file);
     setFileNotes((prev) => ({ ...prev, pdfName: file ? file.name : null }));
+
+    // Get absolute path for the PDF file
+    if (file) {
+      const absolutePath =
+        await window.electronAPI?.getFileAbsolutePath?.(file);
+      if (absolutePath) {
+        // Use a fixed key "pdfPath" since there's only one PDF
+        setPdfPathMap({ pdfPath: absolutePath });
+        console.log("PDF absolute path:", absolutePath);
+      } else {
+        setPdfPathMap({});
+      }
+    } else {
+      setPdfPathMap({});
+    }
   };
 
   const handlePdfToggle = (checked) => {
@@ -1416,7 +1468,9 @@ const DuplicateReport = ({ onViewChange }) => {
       }
 
       if (!list || list.length === 0) {
-        throw new Error("No companies available. Login to Taqeem and try again.");
+        throw new Error(
+          "No companies available. Login to Taqeem and try again.",
+        );
       }
 
       if (preferredCompany && !ignorePreferred) {
@@ -1424,20 +1478,17 @@ const DuplicateReport = ({ onViewChange }) => {
           skipNavigation: false,
           quiet: true,
         });
-        setCompanyStatus?.(
-          "success",
-          `Company: ${chosen?.name || "Selected"}`,
-        );
+        setCompanyStatus?.("success", `Company: ${chosen?.name || "Selected"}`);
         return chosen;
       }
 
       if (list.length === 1) {
         const chosen = list[0];
-        await setSelectedCompany(chosen, { skipNavigation: false, quiet: true });
-        setCompanyStatus?.(
-          "success",
-          `Company: ${chosen.name || "Selected"}`,
-        );
+        await setSelectedCompany(chosen, {
+          skipNavigation: false,
+          quiet: true,
+        });
+        setCompanyStatus?.("success", `Company: ${chosen.name || "Selected"}`);
         return chosen;
       }
 
@@ -1618,7 +1669,9 @@ const DuplicateReport = ({ onViewChange }) => {
 
         const targetReport =
           reports.find((item) => getReportRecordId(item) === recordId) ||
-          unassignedReports.find((item) => getReportRecordId(item) === recordId);
+          unassignedReports.find(
+            (item) => getReportRecordId(item) === recordId,
+          );
         const needsCompany = !targetReport?.company_office_id;
         let assignedOfficeId = targetReport?.company_office_id
           ? String(targetReport.company_office_id)
@@ -1851,14 +1904,30 @@ const DuplicateReport = ({ onViewChange }) => {
       }),
     );
     payload.append("excel", excelFile);
+
+    // Handle PDF upload with absolute path
     if (wantsPdfUpload && pdfFile) {
       payload.append("pdf", pdfFile);
+
+      if (pdfPathMap.pdfPath) {
+        payload.append("pdfPath", pdfPathMap.pdfPath);
+      }
+
+      payload.append("skipPdfUpload", "false");
+    } else {
+      payload.append("skipPdfUpload", "true");
+      payload.append("dummy_pdf_path", "dummy_placeholder.pdf");
     }
 
     try {
       setSubmitting(true);
       setStatus(null);
-      const result = await createDuplicateReport(payload, selectedCompanyOfficeId || null);
+      const result = await createDuplicateReport(
+        payload,
+        selectedCompanyOfficeId || null,
+        wantsPdfUpload ? pdfPathMap : {}, // Pass PDF path map
+      );
+
       if (result?.success) {
         setStatus({ type: "success", message: "Report added successfully." });
         setIsValidationCollapsed(false);
@@ -1867,6 +1936,8 @@ const DuplicateReport = ({ onViewChange }) => {
         if (closeModal) {
           setShowCreateModal(false);
         }
+        // Reset PDF path map after successful upload
+        setPdfPathMap({});
         return true;
       } else {
         setStatus({
@@ -1928,7 +1999,7 @@ const DuplicateReport = ({ onViewChange }) => {
 
       const result = await executeWithAuth(
         async () => {
-          // 1) STORE report using CURRENT edited formData (this is already correct)
+          // 1) STORE report using CURRENT edited formData
           const payload = new FormData();
           const draftSnapshot = {
             ...formData,
@@ -1938,37 +2009,51 @@ const DuplicateReport = ({ onViewChange }) => {
 
           payload.append("formData", JSON.stringify(draftSnapshot));
           payload.append("excel", excelFile);
-          if (wantsPdfUpload && pdfFile) payload.append("pdf", pdfFile);
 
-          const createRes = await createDuplicateReport(payload, selectedCompanyOfficeId || null);
+          // Handle PDF upload with absolute path
+          if (wantsPdfUpload && pdfFile) {
+            payload.append("pdf", pdfFile);
+
+            // Add PDF absolute path mapping
+            // Add PDF absolute path - just append the path string directly
+            if (pdfPathMap.pdfPath) {
+              payload.append("pdfPath", pdfPathMap.pdfPath);
+            }
+
+            payload.append("skipPdfUpload", "false");
+          } else {
+            payload.append("skipPdfUpload", "true");
+            payload.append("dummy_pdf_path", "dummy_placeholder.pdf");
+          }
+
+          const createRes = await createDuplicateReport(
+            payload,
+            selectedCompanyOfficeId || null,
+            wantsPdfUpload ? pdfPathMap : {}, // Pass PDF path map
+          );
+
           if (!createRes?.success) {
             throw new Error(createRes?.message || "Could not save report.");
           }
 
-          // 2) FETCH newest reports (page 1, status all) and MATCH by content
-          // ⚠️ Adjust params below to what your backend supports
+          // Reset PDF path map after successful upload
+          setPdfPathMap({});
+
+          // 2) FETCH newest reports and MATCH by content
           const fetched = await fetchDuplicateReports({
             page: 1,
             limit: 50,
             status: "all",
             companyOfficeId: selectedCompanyOfficeId || null,
-            // if your API supports sorting, add it:
-            // sort: "createdAt:desc"
           });
 
           const list = normalizeReportsResponse(fetched) || [];
-
-          // If backend returns newest-first already, great.
-          // If not, we sort safely on frontend too.
           const newestFirst = [...list].sort(
             (a, b) => getReportSortTimestamp(b) - getReportSortTimestamp(a),
           );
 
           const created = findCreatedReport(newestFirst, draftSnapshot);
-
-          // As a last fallback, use newest report
           const chosen = created || newestFirst[0];
-
           const recordId = getReportRecordId(chosen);
           const chosenReportId = chosen?.report_id;
 
@@ -2033,13 +2118,13 @@ const DuplicateReport = ({ onViewChange }) => {
         },
       );
 
-        if (result?.success) {
-          setStatus({
-            type: "success",
-            message: "Stored + submitted successfully.",
-          });
-          await loadReports();
-          setShowCreateModal(false);
+      if (result?.success) {
+        setStatus({
+          type: "success",
+          message: "Stored + submitted successfully.",
+        });
+        await loadReports();
+        setShowCreateModal(false);
       }
     } catch (err) {
       setStatus({ type: "error", message: err?.message || "Failed." });
@@ -2891,8 +2976,12 @@ const DuplicateReport = ({ onViewChange }) => {
         <div className="rounded-lg border border-slate-200 bg-slate-50/60 shadow-sm p-3 mb-3">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-slate-800">Temporary Reports</h3>
-              <p className="text-[10px] text-slate-500">Reports without company assignment.</p>
+              <h3 className="text-sm font-semibold text-slate-800">
+                Temporary Reports
+              </h3>
+              <p className="text-[10px] text-slate-500">
+                Reports without company assignment.
+              </p>
             </div>
             <button
               type="button"
@@ -2917,8 +3006,12 @@ const DuplicateReport = ({ onViewChange }) => {
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
               <div>
-                <h3 className="text-base font-semibold text-slate-800">Temporary Reports</h3>
-                <p className="text-[11px] text-slate-500">Reports without company assignment.</p>
+                <h3 className="text-base font-semibold text-slate-800">
+                  Temporary Reports
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Reports without company assignment.
+                </p>
               </div>
               <button
                 type="button"
@@ -2934,49 +3027,79 @@ const DuplicateReport = ({ onViewChange }) => {
               </div>
               <button
                 type="button"
-                onClick={() => (isGuestUser ? loadReports(false) : loadUnassignedReports())}
+                onClick={() =>
+                  isGuestUser ? loadReports(false) : loadUnassignedReports()
+                }
                 disabled={temporaryLoading}
                 className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
               >
-                <RefreshCw className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`}
+                />
                 {temporaryLoading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
             <div className="px-4 pb-4">
               {temporaryLoading ? (
-                <div className="text-xs text-slate-600">Loading temporary reports...</div>
+                <div className="text-xs text-slate-600">
+                  Loading temporary reports...
+                </div>
               ) : temporaryReports.length === 0 ? (
-                <div className="text-xs text-slate-600">No temporary reports found.</div>
+                <div className="text-xs text-slate-600">
+                  No temporary reports found.
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-xs text-slate-700">
                     <thead className="bg-slate-100 text-slate-600 uppercase">
                       <tr>
-                        <th className="px-3 py-2 text-left font-semibold">Report ID</th>
-                        <th className="px-3 py-2 text-left font-semibold">Client</th>
-                        <th className="px-3 py-2 text-left font-semibold">Assets</th>
-                        <th className="px-3 py-2 text-left font-semibold">Status</th>
-                        <th className="px-3 py-2 text-left font-semibold">Action</th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Report ID
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Client
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Assets
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Status
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Action
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {temporaryReports.map((report) => {
                         const recordId = getReportRecordId(report);
-                        const assetCount = Array.isArray(report?.asset_data) ? report.asset_data.length : 0;
+                        const assetCount = Array.isArray(report?.asset_data)
+                          ? report.asset_data.length
+                          : 0;
                         const statusKey = getReportStatus(report);
-                        const statusLabel = reportStatusLabels[statusKey] || statusKey || "New";
-                        const statusClass = reportStatusClasses[statusKey] || "border-slate-200 bg-slate-50 text-slate-700";
+                        const statusLabel =
+                          reportStatusLabels[statusKey] || statusKey || "New";
+                        const statusClass =
+                          reportStatusClasses[statusKey] ||
+                          "border-slate-200 bg-slate-50 text-slate-700";
                         return (
-                          <tr key={recordId || report._id} className="hover:bg-slate-50">
+                          <tr
+                            key={recordId || report._id}
+                            className="hover:bg-slate-50"
+                          >
                             <td className="px-3 py-2 text-[11px] text-slate-800">
                               {report.report_id || "Not Submitted"}
                             </td>
                             <td className="px-3 py-2 text-[11px] text-slate-700">
                               {report.client_name || report.title || "???"}
                             </td>
-                            <td className="px-3 py-2 text-[11px] text-slate-700">{assetCount}</td>
+                            <td className="px-3 py-2 text-[11px] text-slate-700">
+                              {assetCount}
+                            </td>
                             <td className="px-3 py-2 text-[11px]">
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
+                              >
                                 {statusLabel}
                               </span>
                             </td>
@@ -2984,8 +3107,11 @@ const DuplicateReport = ({ onViewChange }) => {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const tabsForAssets = resolveTabsForAssets(assetCount);
-                                  submitToTaqeem(recordId, tabsForAssets, { withLoading: false });
+                                  const tabsForAssets =
+                                    resolveTabsForAssets(assetCount);
+                                  submitToTaqeem(recordId, tabsForAssets, {
+                                    withLoading: false,
+                                  });
                                 }}
                                 className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700"
                               >
@@ -3001,7 +3127,10 @@ const DuplicateReport = ({ onViewChange }) => {
               )}
               {isGuestUser && (
                 <div className="mt-3 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700">
-                  <span>Register your account to keep these reports linked to your phone.</span>
+                  <span>
+                    Register your account to keep these reports linked to your
+                    phone.
+                  </span>
                   <button
                     type="button"
                     onClick={() => onViewChange?.("registration")}
@@ -3015,7 +3144,6 @@ const DuplicateReport = ({ onViewChange }) => {
           </div>
         </div>
       )}
-
 
       <Section title="Reports">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">

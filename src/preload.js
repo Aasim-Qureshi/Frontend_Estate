@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   platform: process.platform,
   versions: process.versions,
 
+  getDummyPdfPath: () => safeInvoke("get-dummy-pdf-path"),
+
   // Auth
   login: (credentials) => safeInvoke("login", credentials),
   publicLogin: (isAuth) => safeInvoke("public-login", isAuth),
