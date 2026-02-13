@@ -772,17 +772,33 @@ const DuplicateReport = ({ onViewChange }) => {
 
   const stripExtension = (filename = "") => filename.replace(/\.[^.]+$/, "");
 
-  const getAbsolutePaths = async (files) => {
-    const paths = {};
-    for (const file of files) {
-      const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
-      if (absolutePath) {
-        const baseName = normalizeKey(stripExtension(file.name));
-        paths[baseName] = absolutePath;
+  const getAbsolutePaths = async (file, skipPdfUpload = false) => {
+    if (skipPdfUpload) {
+      // Call the Electron API to get the actual bundled dummy PDF path
+      const result = await window.electronAPI?.getDummyPdfPath?.();
+      console.log("📎 getDummyPdfPath result:", result);
+
+      if (result) {
+        return { pdfPath: result }; // ALWAYS return the path, don't filter it
+      } else {
+        console.warn("⚠️ Failed to get dummy PDF path:", result?.error);
+        // Fallback to string - backend will handle
+        return { pdfPath: "dummy_placeholder.pdf" };
       }
     }
-    console.log("PDF paths", paths);
-    return paths;
+
+    if (!file) {
+      return {};
+    }
+
+    const absolutePath = await window.electronAPI?.getFileAbsolutePath?.(file);
+    if (absolutePath) {
+      console.log("✅ Using real PDF absolute path:", absolutePath);
+      return { pdfPath: absolutePath };
+    }
+
+    console.log("⚠️ No absolute path found for PDF");
+    return {};
   };
 
   const requiredFields = useMemo(
@@ -1343,22 +1359,16 @@ const DuplicateReport = ({ onViewChange }) => {
     setPdfFile(file);
     setFileNotes((prev) => ({ ...prev, pdfName: file ? file.name : null }));
 
-    // Get absolute path for the PDF file
-    if (file) {
-      const absolutePath =
-        await window.electronAPI?.getFileAbsolutePath?.(file);
-      if (absolutePath) {
-        // Use a fixed key "pdfPath" since there's only one PDF
-        setPdfPathMap({ pdfPath: absolutePath });
-        console.log("PDF absolute path:", absolutePath);
-      } else {
-        setPdfPathMap({});
-      }
-    } else {
+    if (!file) {
       setPdfPathMap({});
+      return;
     }
-  };
 
+    // Get absolute path for the PDF file
+    const paths = await getAbsolutePaths(file, false);
+    setPdfPathMap(paths);
+    console.log("PDF absolute path:", paths.pdfPath);
+  };
   const handlePdfToggle = (checked) => {
     setWantsPdfUpload(checked);
     if (!checked) {
@@ -1905,19 +1915,30 @@ const DuplicateReport = ({ onViewChange }) => {
     );
     payload.append("excel", excelFile);
 
-    // Handle PDF upload with absolute path
+    // Handle PDF upload with absolute path or dummy
+    let pdfPaths = {};
     if (wantsPdfUpload && pdfFile) {
+      pdfPaths = await getAbsolutePaths(pdfFile, false);
       payload.append("pdf", pdfFile);
-
-      if (pdfPathMap.pdfPath) {
-        payload.append("pdfPath", pdfPathMap.pdfPath);
+      if (pdfPaths.pdfPath) {
+        payload.append("pdfPath", pdfPaths.pdfPath);
+        console.log("📎 Sending uploaded PDF path:", pdfPaths.pdfPath);
       }
-
       payload.append("skipPdfUpload", "false");
     } else {
+      // Get the actual bundled dummy PDF path
+      pdfPaths = await getAbsolutePaths(null, true);
       payload.append("skipPdfUpload", "true");
-      payload.append("dummy_pdf_path", "dummy_placeholder.pdf");
+
+      // ALWAYS send the pdfPath if we have it - no filtering!
+      if (pdfPaths.pdfPath) {
+        payload.append("pdfPath", pdfPaths.pdfPath);
+        console.log("📎 Sending bundled dummy PDF path:", pdfPaths.pdfPath);
+      }
     }
+
+    // Update pdfPathMap state
+    setPdfPathMap(pdfPaths);
 
     try {
       setSubmitting(true);
@@ -1925,7 +1946,7 @@ const DuplicateReport = ({ onViewChange }) => {
       const result = await createDuplicateReport(
         payload,
         selectedCompanyOfficeId || null,
-        wantsPdfUpload ? pdfPathMap : {}, // Pass PDF path map
+        pdfPaths,
       );
 
       if (result?.success) {
@@ -2010,26 +2031,37 @@ const DuplicateReport = ({ onViewChange }) => {
           payload.append("formData", JSON.stringify(draftSnapshot));
           payload.append("excel", excelFile);
 
-          // Handle PDF upload with absolute path
+          let pdfPaths = {};
           if (wantsPdfUpload && pdfFile) {
+            pdfPaths = await getAbsolutePaths(pdfFile, false);
             payload.append("pdf", pdfFile);
-
-            // Add PDF absolute path mapping
-            // Add PDF absolute path - just append the path string directly
-            if (pdfPathMap.pdfPath) {
-              payload.append("pdfPath", pdfPathMap.pdfPath);
+            if (pdfPaths.pdfPath) {
+              payload.append("pdfPath", pdfPaths.pdfPath);
+              console.log(
+                "📎 [Store&Submit] Sending uploaded PDF path:",
+                pdfPaths.pdfPath,
+              );
             }
-
             payload.append("skipPdfUpload", "false");
           } else {
+            // Get the actual bundled dummy PDF path
+            pdfPaths = await getAbsolutePaths(null, true);
             payload.append("skipPdfUpload", "true");
-            payload.append("dummy_pdf_path", "dummy_placeholder.pdf");
+
+            // ALWAYS send the pdfPath if we have it
+            if (pdfPaths.pdfPath) {
+              payload.append("pdfPath", pdfPaths.pdfPath);
+              console.log(
+                "📎 [Store&Submit] Sending bundled dummy PDF path:",
+                pdfPaths.pdfPath,
+              );
+            }
           }
 
           const createRes = await createDuplicateReport(
             payload,
             selectedCompanyOfficeId || null,
-            wantsPdfUpload ? pdfPathMap : {}, // Pass PDF path map
+            pdfPathMap, // Pass PDF path map
           );
 
           if (!createRes?.success) {

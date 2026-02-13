@@ -316,17 +316,23 @@ const createDuplicateReport = async (
     formData.append("companyOfficeId", companyOfficeId);
   }
 
-  // Add PDF absolute path - get it directly from pdfPathMap.pdfPath
+  // ALWAYS check for pdfPath in the map and append it if present
+  // This will be the bundled dummy PDF path when skipping upload
   if (pdfPathMap && pdfPathMap.pdfPath) {
     formData.append("pdfPath", pdfPathMap.pdfPath);
+    console.log("📎 API: Appending pdfPath:", pdfPathMap.pdfPath);
   }
 
-  // Check if we have any PDF files
-  const hasPdfFiles = (pdfPathMap && pdfPathMap.pdfPath) || formData.has("pdf");
+  // Check if we have any PDF files OR a pdfPath
+  const hasPdfFiles = formData.has("pdf") || (pdfPathMap && pdfPathMap.pdfPath);
 
   if (!hasPdfFiles) {
     formData.append("skipPdfUpload", "true");
     formData.append("dummy_pdf_path", "dummy_placeholder.pdf");
+    console.log("📎 API: No PDF files or paths, using fallback");
+  } else {
+    // Don't append skipPdfUpload if we have a path - let the frontend control this
+    console.log("📎 API: Has PDF files or path:", hasPdfFiles);
   }
 
   const response = await httpClient.post(url, formData, {

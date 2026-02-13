@@ -1001,7 +1001,37 @@ const MultiExcelUpload = ({ onViewChange }) => {
     null,
     { storage: "session" },
   );
+  const getAbsolutePaths = async (
+    files,
+    skipPdfUpload = false,
+    excelFilesList = [],
+  ) => {
+    const paths = {};
 
+    // If skipping PDF upload, use the bundled dummy PDF for each Excel file
+    if (skipPdfUpload && excelFilesList.length > 0) {
+      const dummyPath = await window.electronAPI?.getDummyPdfPath?.();
+      if (dummyPath) {
+        excelFilesList.forEach((file) => {
+          const baseName = normalizeKey(stripExtension(file.name));
+          paths[baseName] = dummyPath;
+        });
+        console.log("Using dummy PDF paths:", paths);
+        return paths;
+      }
+    }
+
+    // Normal flow - get absolute paths for uploaded PDFs
+    for (const file of files) {
+      const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
+      if (absolutePath) {
+        const baseName = normalizeKey(stripExtension(file.name));
+        paths[baseName] = absolutePath;
+      }
+    }
+    console.log("PDF paths", paths);
+    return paths;
+  };
   const chargedBatchesRef = useRef(new Set());
   const chargeBatchPoints = useCallback(
     async (batchId, amount, { reportIds = [] } = {}) => {
@@ -2511,6 +2541,14 @@ const MultiExcelUpload = ({ onViewChange }) => {
       async (params) => {
         const { token: authToken } = params;
 
+        let pdfPaths = {};
+        if (wantsPdfUpload && pdfFiles.length > 0) {
+          pdfPaths = await getAbsolutePaths(pdfFiles, false);
+        } else {
+          // No PDF upload - use dummy PDFs
+          pdfPaths = await getAbsolutePaths([], true, excelFiles);
+        }
+
         // Step 1: Upload files to backend
         setSuccess(
           wantsPdfUpload
@@ -2523,6 +2561,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
           wantsPdfUpload ? pdfFiles : [],
           useDefaultValuers ? [] : buildValuersPayload(),
           selectedCompanyOfficeId || null,
+          pdfPaths,
         );
 
         if (data.status !== "success") {
@@ -2608,6 +2647,15 @@ const MultiExcelUpload = ({ onViewChange }) => {
       async (params) => {
         const { token: authToken } = params;
 
+        // Get PDF absolute paths - pass skip flag
+        let pdfPaths = {};
+        if (wantsPdfUpload && pdfFiles.length > 0) {
+          pdfPaths = await getAbsolutePaths(pdfFiles, false);
+        } else {
+          // No PDF upload - use dummy PDFs
+          pdfPaths = await getAbsolutePaths([], true, excelFiles);
+        }
+
         setSuccess(
           wantsPdfUpload
             ? "Uploading files to server..."
@@ -2619,6 +2667,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
           wantsPdfUpload ? pdfFiles : [],
           useDefaultValuers ? [] : buildValuersPayload(),
           selectedCompanyOfficeId || null,
+          pdfPaths,
         );
 
         if (!data || data.status !== "success") {

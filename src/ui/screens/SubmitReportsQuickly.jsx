@@ -930,8 +930,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     resetMessages();
   };
 
-  const getAbsolutePaths = async (files) => {
+  // Add this function after the existing helper functions (around line 300)
+  const getAbsolutePaths = async (
+    files,
+    skipPdfUpload = false,
+    excelFilesList = [],
+  ) => {
     const paths = {};
+
+    // If skipping PDF upload, use the bundled dummy PDF for each Excel file
+    if (skipPdfUpload && excelFilesList.length > 0) {
+      const dummyPath = await window.electronAPI?.getDummyPdfPath?.();
+      if (dummyPath) {
+        excelFilesList.forEach((file) => {
+          const baseName = normalizeKey(stripExtension(file.name));
+          paths[baseName] = dummyPath;
+        });
+        console.log("Using dummy PDF paths:", paths);
+        return paths;
+      }
+    }
+
+    // Normal flow - get absolute paths for uploaded PDFs
     for (const file of files) {
       const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
       if (absolutePath) {
@@ -1049,13 +1069,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ),
       );
 
+      let pdfPaths = {};
+      if (wantsPdfUpload && pdfFiles.length > 0) {
+        pdfPaths = await getAbsolutePaths(pdfFiles, false);
+      } else {
+        // No PDF upload - use dummy PDFs
+        pdfPaths = await getAbsolutePaths([], true, excelFiles);
+      }
+
       // Pass pdfPathMap to the API function
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
         !wantsPdfUpload,
         selectedCompanyOfficeId || null,
-        wantsPdfUpload ? pdfPathMap : {}, // Pass the path map
+        pdfPaths,
       );
 
       if (data.status !== "success") {
@@ -2144,13 +2172,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ),
       );
 
+      let pdfPaths = {};
+      if (wantsPdfUpload && pdfFiles.length > 0) {
+        pdfPaths = await getAbsolutePaths(pdfFiles, false);
+      } else {
+        // No PDF upload - use dummy PDFs
+        pdfPaths = await getAbsolutePaths([], true, excelFiles);
+      }
+
       // Pass pdfPathMap to the API function
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
         !wantsPdfUpload,
         selectedCompanyOfficeId || null,
-        wantsPdfUpload ? pdfPathMap : {}, // Pass the path map
+        pdfPaths,
       );
 
       if (data.status !== "success") {
