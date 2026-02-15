@@ -7,8 +7,9 @@ import httpx
 # Configuration
 # ==============================
 
-BASE_API_URL = "http://localhost:3000/api"
+# BASE_API_URL = "http://localhost:3000/api"
 
+BASE_API_URL = "http://167.71.231.64:3000/api"
 
 # ==============================
 # Errors
@@ -394,7 +395,6 @@ async def update_report_check_status(
 ):
     """
     Update report deletion/check status via API
-
     Args:
         report_id: Report ID
         user_id: User ID (optional)
@@ -406,7 +406,6 @@ async def update_report_check_status(
     """
     try:
         updates = {}
-
         if total_assets is not None:
             updates["total_assets"] = total_assets
         if remaining_assets is not None:
@@ -416,27 +415,40 @@ async def update_report_check_status(
         if deleted is not None:
             updates["deleted"] = deleted
 
+        # ✅ FIX: Only update if we have actual updates to send
+        if not updates:
+            return True  # Nothing to update, consider it success
+
         payload = {
             "report_id": str(report_id),
             "updates": updates,
         }
-
-        print("payload,", payload)
 
         if user_id:
             payload["user_id"] = str(user_id)
         if company_office_id:
             payload["company_office_id"] = str(company_office_id)
 
-        response = await http_patch(
-            "/new-scripts/update-check-status",
-            json=payload,
-        )
+        # ✅ Add timeout and better error handling
+        try:
+            response = await asyncio.wait_for(
+                http_patch("/new-scripts/update-check-status", json=payload),
+                timeout=5.0,  # 5 second timeout
+            )
+            success = response.get("success", False)
+            if not success:
+                print(
+                    f"[API] update_report_check_status returned success=False for {report_id}",
+                    "WARN",
+                )
+            return success
+        except asyncio.TimeoutError:
+            print(f"[API] update_report_check_status timeout for {report_id}", "WARN")
+            return False  # Don't crash, just log and continue
 
-        return response.get("success", False)
     except Exception as e:
-        print(f"[API ERROR] update_report_check_status: {e}")
-        return False
+        print(f"[API ERROR] update_report_check_status: {e}", "WARN")
+        return False  # Don't crash the deletion process
 
 
 async def recompute_report_status(report_id):
