@@ -1069,11 +1069,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ),
       );
 
+      // Inside handleStoreAndSubmit, replace the PDF path handling section:
+
       let pdfPaths = {};
       if (wantsPdfUpload && pdfFiles.length > 0) {
         pdfPaths = await getAbsolutePaths(pdfFiles, false);
       } else {
-        // No PDF upload - use dummy PDFs
+        // No PDF upload - use dummy PDFs for all Excel files
         pdfPaths = await getAbsolutePaths([], true, excelFiles);
       }
 
@@ -1081,9 +1083,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
-        !wantsPdfUpload,
+        !wantsPdfUpload, // skipPdfUpload flag
         selectedCompanyOfficeId || null,
-        pdfPaths,
+        pdfPaths, // Pass the pdfPaths object
       );
 
       if (data.status !== "success") {
@@ -2172,11 +2174,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         ),
       );
 
+      // Inside handleUpload, replace the PDF path handling section:
+
       let pdfPaths = {};
       if (wantsPdfUpload && pdfFiles.length > 0) {
         pdfPaths = await getAbsolutePaths(pdfFiles, false);
       } else {
-        // No PDF upload - use dummy PDFs
+        // No PDF upload - use dummy PDFs for all Excel files
         pdfPaths = await getAbsolutePaths([], true, excelFiles);
       }
 
@@ -2184,9 +2188,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const data = await submitReportsQuicklyUpload(
         excelFiles,
         wantsPdfUpload ? pdfFiles : [],
-        !wantsPdfUpload,
+        !wantsPdfUpload, // skipPdfUpload flag
         selectedCompanyOfficeId || null,
-        pdfPaths,
+        pdfPaths, // Pass the pdfPaths object
       );
 
       if (data.status !== "success") {

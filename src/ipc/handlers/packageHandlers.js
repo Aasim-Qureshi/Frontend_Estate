@@ -97,7 +97,6 @@ const setElectronCookieForBaseUrl = async (baseUrl, cookieObj) => {
 
 const packageHandlers = {
   async handleApiRequest(event, requestData) {
-    // Extract parameters from requestData object
     if (!requestData || typeof requestData !== "object") {
       throw new Error(
         "Invalid request data: expected object with method, url, data, and headers",
@@ -109,119 +108,118 @@ const packageHandlers = {
     if (!method || !url) {
       throw new Error("Method and URL are required for API request");
     }
-    // Try multiple backend candidates: env var first, then local, then deployed
+
     const candidates = [];
-
     const envUrl = process.env.BACKEND_URL;
-    if (envUrl) {
-      candidates.push(envUrl.replace(/\/$/, ""));
-    }
+    if (envUrl) candidates.push(envUrl.replace(/\/$/, ""));
 
-    // Common local dev addresses
     candidates.push(
-      "http://167.71.231.64:3000",
+      // "http://167.71.231.64:3000",
       "http://localhost:3000",
       "http://127.0.0.1:3000",
       "https://future-electron-backend.onrender.com",
     );
 
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+    const attemptRequest = async (baseUrl) => {
+      const fullUrl = `${baseUrl}${url}`;
+      const config = {
+        method: method.toUpperCase(),
+        url: fullUrl,
+        headers: { "Content-Type": "application/json", ...headers },
+        data,
+        timeout: 10000,
+        validateStatus: () => true,
+      };
+
+      console.log(`[API] Attempting ${config.method} ${config.url}`);
+      const response = await axios(config);
+
+      // Handle Set-Cookie headers
+      const setCookieHeader =
+        response.headers?.["set-cookie"] || response.headers?.["Set-Cookie"];
+      if (setCookieHeader) {
+        const cookieStrings = Array.isArray(setCookieHeader)
+          ? setCookieHeader
+          : [setCookieHeader];
+        for (const cookieStr of cookieStrings) {
+          try {
+            const parsed = parseSetCookieString(cookieStr);
+            await setElectronCookieForBaseUrl(baseUrl, parsed);
+          } catch (err) {
+            console.warn(
+              "[Cookies] Could not parse/set Set-Cookie header:",
+              cookieStr,
+              err,
+            );
+          }
+        }
+      } else if (response.data?.refreshToken) {
+        await setElectronCookieForBaseUrl(baseUrl, {
+          name: "refreshToken",
+          value: response.data.refreshToken,
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+          maxAge: 7 * 24 * 60 * 60,
+        });
+      }
+
+      if (response.status >= 200 && response.status < 300) {
+        console.log(`[API] Success: ${config.method} ${config.url}`);
+        return response.data;
+      }
+
+      let msg = response.data?.message || `HTTP ${response.status}`;
+      if (
+        [401, 403].includes(response.status) ||
+        msg === "Invalid or expired token"
+      ) {
+        msg = "Please login to our system";
+      }
+
+      const err = new Error(msg);
+      err.status = response.status;
+      err.response = { data: response.data, headers: response.headers };
+      throw err;
+    };
+
     let lastError = null;
 
     for (const baseUrl of candidates) {
       try {
-        const fullUrl = `${baseUrl}${url}`;
-        const config = {
-          method: method.toUpperCase(),
-          url: fullUrl,
-          headers: {
-            "Content-Type": "application/json",
-            ...headers,
-          },
-          data: data,
-          timeout: 10000,
-          validateStatus: () => true, // handle non-2xx manually so we can inspect headers
-        };
-
-        console.log(`[API] Attempting ${config.method} ${config.url}`);
-        const response = await axios(config);
-
-        // If backend set Set-Cookie header(s), set them into Electron cookie store
-        const setCookieHeader =
-          response.headers &&
-          (response.headers["set-cookie"] || response.headers["Set-Cookie"]);
-        if (setCookieHeader) {
-          const cookieStrings = Array.isArray(setCookieHeader)
-            ? setCookieHeader
-            : [setCookieHeader];
-          for (const cookieStr of cookieStrings) {
-            try {
-              const parsed = parseSetCookieString(cookieStr);
-              // Set cookie against the baseUrl so subsequent requests include it
-              await setElectronCookieForBaseUrl(baseUrl, parsed);
-            } catch (err) {
-              console.warn(
-                "[Cookies] Could not parse/set Set-Cookie header:",
-                cookieStr,
-                err,
-              );
-            }
-          }
-        } else if (response.data && response.data.refreshToken) {
-          // fallback: server returned refreshToken in JSON payload — set it as HttpOnly cookie
-          const refreshToken = response.data.refreshToken;
-          const cookieObj = {
-            name: "refreshToken",
-            value: refreshToken,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            path: "/",
-            maxAge: 7 * 24 * 60 * 60, // seconds
-          };
-          await setElectronCookieForBaseUrl(baseUrl, cookieObj);
-        }
-
-        // If status is 2xx return data, otherwise surface error to renderer
-        if (response.status >= 200 && response.status < 300) {
-          console.log(`[API] Success: ${config.method} ${config.url}`);
-          return response.data;
-        }
-
-        // create error-like object to include status and body
-        let msg = response.data?.message || `HTTP ${response.status}`;
-
-        // Normalize auth errors
-        if (
-          response.status === 401 ||
-          response.status === 403 ||
-          msg === "Invalid or expired token"
-        ) {
-          msg = "Please login to our system";
-        }
-
-        const err = new Error(msg);
-        err.status = response.status;
-        err.response = { data: response.data, headers: response.headers };
-        throw err;
+        return await attemptRequest(baseUrl);
       } catch (error) {
+        // Retry once on ECONNREFUSED with a short delay
+        if (error.code === "ECONNREFUSED") {
+          console.log(
+            `[API] ECONNREFUSED on ${baseUrl}${url} — retrying in 1s...`,
+          );
+          await sleep(1000);
+          try {
+            return await attemptRequest(baseUrl);
+          } catch (retryError) {
+            console.log(`[API] Retry also failed: ${retryError.message}`);
+            error = retryError;
+          }
+        }
+
         lastError = error;
         const status = error.response?.status ?? error.status;
         const message = error.response?.data?.message || error.message;
+
         notifyAuthExpired(event, status, message);
         console.log(
           `[API] Failed (${status || "error"}): ${baseUrl}${url} - ${message}`,
         );
 
-        // If 404, try next candidate
-        if (status === 404) {
-          continue;
-        }
+        if (status === 404) continue;
 
-        // For other errors, throw immediately so UI gets response details
         throw error;
       }
     }
 
-    // All candidates exhausted
     const error = new Error(
       `No reachable backend. Last error: ${lastError?.message}`,
     );

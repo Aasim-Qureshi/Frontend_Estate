@@ -655,13 +655,54 @@ const UploadReportElrajhi = ({ onViewChange }) => {
 
   const stripExtensionLocal = (filename = "") =>
     filename.replace(/\.[^.]+$/, "");
-
-  const getAbsolutePaths = async (files) => {
+  const getAbsolutePaths = async (
+    files,
+    skipPdfUpload = false,
+    excelFilesList = [],
+  ) => {
     const paths = {};
+
+    if (skipPdfUpload && excelFilesList.length > 0) {
+      const dummyPath = await window.electronAPI?.getDummyPdfPath?.();
+      if (dummyPath) {
+        // Read asset names from the Excel file(s) and key the dummy path by asset_name
+        // so the backend can match them correctly (same as how real PDFs are matched)
+        for (const excelFile of excelFilesList) {
+          try {
+            const buffer = await excelFile.arrayBuffer();
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(buffer);
+            const marketSheet = workbook.getWorksheet("market");
+            if (marketSheet) {
+              const rows = worksheetToObjects(marketSheet);
+              rows.forEach((row) => {
+                const assetName = row.asset_name || row.assetName;
+                if (assetName) {
+                  paths[assetName] = dummyPath;
+                }
+              });
+            }
+          } catch (err) {
+            console.warn(
+              "[ElrajhiUpload] Could not read asset names from Excel for dummy paths, falling back to file basename:",
+              err,
+            );
+            const baseName = stripExtensionLocal(excelFile.name);
+            paths[baseName] = dummyPath;
+          }
+        }
+        console.log(
+          "[ElrajhiUpload] Using dummy PDF paths (keyed by asset name):",
+          paths,
+        );
+        return paths;
+      }
+    }
+
     for (const file of files) {
       const absolutePath = window.electronAPI?.getFileAbsolutePath?.(file);
       if (absolutePath) {
-        const baseName = normalizeKeyLocal(stripExtensionLocal(file.name));
+        const baseName = stripExtensionLocal(file.name);
         paths[baseName] = absolutePath;
       }
     }
@@ -1314,7 +1355,11 @@ const UploadReportElrajhi = ({ onViewChange }) => {
           // Collect absolute PDF paths from the local filesystem
           let pdfPathMap = {};
           if (wantsPdfUpload && validationPdfFiles.length > 0) {
-            pdfPathMap = await getAbsolutePaths(validationPdfFiles);
+            pdfPathMap = await getAbsolutePaths(validationPdfFiles, false);
+          } else {
+            pdfPathMap = await getAbsolutePaths([], true, [
+              validationExcelFile,
+            ]);
           }
 
           // Upload to backend
@@ -1470,10 +1515,11 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         type: "info",
         text: "Saving PDF reports to database...",
       });
-      // Collect absolute PDF paths from the local filesystem
       let pdfPathMap = {};
       if (wantsPdfUpload && validationPdfFiles.length > 0) {
-        pdfPathMap = await getAbsolutePaths(validationPdfFiles);
+        pdfPathMap = await getAbsolutePaths(validationPdfFiles, false);
+      } else {
+        pdfPathMap = await getAbsolutePaths([], true, [validationExcelFile]);
       }
 
       // Upload to backend
@@ -2411,7 +2457,12 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             );
           }
           // Collect absolute PDF paths from the local filesystem
-          const pdfPathMap = await getAbsolutePaths(pdfFiles);
+          let pdfPathMap = {};
+          if (pdfFiles.length > 0) {
+            pdfPathMap = await getAbsolutePaths(pdfFiles, false);
+          } else {
+            pdfPathMap = await getAbsolutePaths([], true, [excelFile]);
+          }
 
           // ---- Build multipart/form-data ----
           const formData = new FormData();
