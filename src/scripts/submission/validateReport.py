@@ -74,68 +74,148 @@ def _clean_text(s: str) -> str:
     return s
 
 
+def _normalize_report_status(value: str):
+    """
+    Convert Arabic / mixed status text into internal constants.
+    """
+    if not value:
+        return None
+
+    v = _normalize_text(value)
+
+    STATUS_MAP = {
+        "مسودة": "DRAFT",
+        "مقبول": "APPROVED",
+        "معتمد": "APPROVED",
+        "مرفوض": "REJECTED",
+        "قيد المراجعة": "UNDER_REVIEW",
+        "قيد التنفيذ": "IN_PROGRESS",
+    }
+
+    # exact match first
+    if v in STATUS_MAP:
+        return STATUS_MAP[v]
+
+    # partial match (safer for messy HTML)
+    for ar, normalized in STATUS_MAP.items():
+        if ar in v:
+            return normalized
+
+    return v  # fallback → return cleaned original
+
+
+def _fix_mojibake(text: str) -> str:
+    """
+    Repair UTF-8 text that was accidentally decoded as latin-1.
+    If not broken, returns original text.
+    """
+    if not text:
+        return text
+    try:
+        repaired = text.encode("latin1").decode("utf-8")
+        # avoid replacing valid latin text accidentally
+        if repaired:
+            return repaired
+    except Exception:
+        pass
+    return text
+
+
+def _normalize_text(text: str) -> str:
+    """
+    Clean + normalize extracted text.
+    """
+    text = _fix_mojibake(text)
+    return _clean_text(text or "").strip()
+
+
 def extract_report_info_from_html(html: str) -> dict:
     """
-    Extract key/value pairs from the 'accordion-body pt-0 bg-white' block.
+    Extract key/value pairs from report HTML.
+
     Returns:
-      {
+    {
         "info": {label: value, ...},
         "reportStatusLabel": "...",
         "reportStatus": "..."
-      }
+    }
     """
     if not html:
-        return {"info": {}, "reportStatusLabel": None, "reportStatus": None}
+        return {
+            "info": {},
+            "reportStatusLabel": None,
+            "reportStatus": None,
+        }
 
-    # isolate accordion-body block (more flexible regex)
+    # --------------------------------------------------
+    # isolate accordion body (fallback to full html)
+    # --------------------------------------------------
     m = re.search(
         r'(<div[^>]*class="[^"]*accordion-body[^"]*"[^>]*>.*?</div>)',
         html,
         flags=re.S | re.I,
     )
-    block = m.group(1) if m else html  # fallback to full html if not found
+    block = m.group(1) if m else html
 
     info = {}
 
-    # extract rows: <span>label</span> then <b>value</b>
-    for span_txt, b_txt in re.findall(
-        r"<span[^>]*>(.*?)</span>\s*<b[^>]*>(.*?)</b>", block, flags=re.S | re.I
-    ):
-        label = _clean_text(span_txt)
-        value = _clean_text(b_txt)
+    # --------------------------------------------------
+    # helper to insert values safely
+    # --------------------------------------------------
+    def add_info(label_raw, value_raw):
+        label = _normalize_text(label_raw)
+        value = _normalize_text(value_raw)
         if label:
             info[label] = value or None
 
-    # extract link rows: <span>label</span> ... <a href="...">
+    # --------------------------------------------------
+    # 1) span + <b>
+    # --------------------------------------------------
+    for span_txt, b_txt in re.findall(
+        r"<span[^>]*>(.*?)</span>\s*<b[^>]*>(.*?)</b>",
+        block,
+        flags=re.S | re.I,
+    ):
+        add_info(span_txt, b_txt)
+
+    # --------------------------------------------------
+    # 2) span + link
+    # --------------------------------------------------
     for span_txt, href in re.findall(
         r"<span[^>]*>(.*?)</span>.*?<a[^>]*href=[\"']([^\"']+)[\"']",
         block,
         flags=re.S | re.I,
     ):
-        label = _clean_text(span_txt)
+        label = _normalize_text(span_txt)
         if label and label not in info:
             info[label] = href.strip()
 
-    # If no info extracted, try a broader search in the entire HTML
+    # --------------------------------------------------
+    # fallback search (broader extraction)
+    # --------------------------------------------------
     if not info:
-        # Look for any span followed by b or strong
-        for span_txt, b_txt in re.findall(
-            r"<span[^>]*>(.*?)</span>\s*(?:<b[^>]*>|<strong[^>]*>)(.*?)(?:</b>|</strong>)",
+        for span_txt, val_txt in re.findall(
+            r"<span[^>]*>(.*?)</span>\s*"
+            r"(?:<b[^>]*>|<strong[^>]*>)(.*?)"
+            r"(?:</b>|</strong>)",
             html,
             flags=re.S | re.I,
         ):
-            label = _clean_text(span_txt)
-            value = _clean_text(b_txt)
-            if label:
-                info[label] = value or None
+            add_info(span_txt, val_txt)
 
-    # report status
+    # --------------------------------------------------
+    # detect report status (Arabic-safe)
+    # --------------------------------------------------
     status_label = None
     status_value = None
+
+    TARGET_STATUS = "حالة التقرير"
+
     for k, v in info.items():
-        if "Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±" in k:
+        normalized_key = _normalize_text(k)
+        if TARGET_STATUS in normalized_key:
             status_label = k
-            status_value = v
+            status_value = _normalize_report_status(v)
             break
 
     return {
@@ -665,7 +745,10 @@ async def validate_report_simple(browser, report_id: str):
         html = await wait_for_report_info_html(page, timeout_seconds=10)
 
         # --- Hard failure texts ---
-        if "ÙÙØ³ ÙØ¯ÙÙ ØµÙØ§Ø­ÙØ© ÙÙØªÙØ§Ø¬Ø¯ ÙÙØ§ !" in html or "ÙØ°Ù Ø§ÙØµÙØ­Ø© ØºÙØ± ÙÙØ¬ÙØ¯Ø©!" in html:
+        if (
+            "ÙÙØ³ ÙØ¯ÙÙ ØµÙØ§Ø­ÙØ© ÙÙØªÙØ§Ø¬Ø¯ ÙÙØ§ !" in html
+            or "ÙØ°Ù Ø§ÙØµÙØ­Ø© ØºÙØ± ÙÙØ¬ÙØ¯Ø©!" in html
+        ):
             return {
                 "status": "NOT_FOUND",
                 "exists": False,

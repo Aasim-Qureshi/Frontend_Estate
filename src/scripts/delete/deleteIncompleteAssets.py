@@ -754,6 +754,7 @@ async def delete_incomplete_assets_flow(
 
         html = await wait_for_report_info_html(page, timeout_seconds=10)
         extracted = extract_report_info_from_html(html)
+        print("extracted: ", extracted)
         report_status = extracted.get("reportStatus")
         if not report_status or (
             report_status.strip() != DRAFT_STATUS_AR

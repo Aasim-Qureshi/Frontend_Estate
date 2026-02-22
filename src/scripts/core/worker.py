@@ -8,6 +8,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.company_context import set_selected_company
+from scripts.core.httpClient import http_get, http_post
 from scripts.delete.cancelledReportHandler import handle_cancelled_report
 from scripts.delete.deleteIncompleteAssets import (
     delete_incomplete_assets_flow,
@@ -111,27 +112,18 @@ running_tasks = {}
 async def get_reports_by_batch(batch_id):
     if not batch_id:
         return {"status": "FAILED", "error": "Missing batchId"}
-
     try:
-        cursor = mongo_db.urgentreports.find({"batch_id": batch_id})
-        docs = await cursor.to_list(length=None)
-        if not docs:
+        response = await http_get(f"/new-scripts/urgent-batch/{batch_id}")
+        if response.get("success"):
             return {
-                "status": "FAILED",
-                "error": f"No reports found for batchId {batch_id}",
-                "reports": [],
+                "status": "SUCCESS",
+                "message": response.get("message", ""),
+                "reports": response.get("reports", []),
             }
-
-        report_ids = []
-        for doc in docs:
-            rid = doc.get("report_id") or doc.get("reportId") or doc.get("reportid")
-            if rid:
-                report_ids.append(str(rid))
-
         return {
-            "status": "SUCCESS" if report_ids else "FAILED",
-            "message": f"Fetched {len(report_ids)} report ids for batch {batch_id}",
-            "reports": report_ids,
+            "status": "FAILED",
+            "error": response.get("message", "Not found"),
+            "reports": [],
         }
     except Exception as e:
         return {"status": "FAILED", "error": str(e), "reports": []}
@@ -630,50 +622,36 @@ async def handle_command(cmd):
         company_office_id = cmd.get("companyOfficeId")
         page = int(cmd.get("page", 1))
         limit = int(cmd.get("limit", 10))
+        search_term = cmd.get("searchTerm")
 
         if not user_id:
             result = {"status": "FAILED", "error": "Missing userId"}
         else:
             try:
-                query = {"user_id": str(user_id), "deleted": True}
+                params = {"userId": user_id, "page": page, "limit": limit}
                 if company_office_id:
-                    query["company_office_id"] = str(company_office_id)
+                    params["companyOfficeId"] = company_office_id
                 if delete_type:
-                    query["delete_type"] = delete_type
-                search_term = cmd.get("searchTerm")
+                    params["deleteType"] = delete_type
                 if search_term:
-                    query["report_id"] = {"$regex": str(search_term), "$options": "i"}
-                skip = max(page - 1, 0) * limit
-                coll = mongo_db.report_deletions
-                total = await coll.count_documents(query)
-                cursor = coll.find(query).sort("updated_at", -1).skip(skip).limit(limit)
-                docs = await cursor.to_list(length=limit)
-                items = []
-                for d in docs:
-                    items.append(
-                        {
-                            "report_id": d.get("report_id"),
-                            "delete_type": d.get("delete_type"),
-                            "deleted": bool(d.get("deleted")),
-                            "remaining_assets": d.get("remaining_assets"),
-                            "total_assets": d.get("total_assets"),
-                            "result": d.get("result"),
-                            "report_status": d.get("report_status"),
-                            "updated_at": d.get("updated_at").isoformat()
-                            if d.get("updated_at")
-                            else None,
-                            "deleted_at": d.get("deleted_at").isoformat()
-                            if d.get("deleted_at")
-                            else None,
-                        }
-                    )
-                result = {
-                    "status": "SUCCESS",
-                    "items": items,
-                    "total": total,
-                    "page": page,
-                    "limit": limit,
-                }
+                    params["searchTerm"] = search_term
+
+                response = await http_get(
+                    "/new-scripts/report-deletions", params=params
+                )
+                if response.get("success"):
+                    result = {
+                        "status": "SUCCESS",
+                        "items": response.get("items", []),
+                        "total": response.get("total", 0),
+                        "page": page,
+                        "limit": limit,
+                    }
+                else:
+                    result = {
+                        "status": "FAILED",
+                        "error": response.get("message", "Failed"),
+                    }
             except Exception as e:
                 result = {"status": "FAILED", "error": str(e)}
 
@@ -686,67 +664,16 @@ async def handle_command(cmd):
             result = {"status": "FAILED", "error": "Missing deletionData"}
         else:
             try:
-                from datetime import datetime
-
-                coll = mongo_db.report_deletions
-                doc = {
-                    "report_id": str(deletion_data.get("reportId")),
-                    "user_id": str(deletion_data.get("userId")),
-                    "action": deletion_data.get("action"),
-                    "result": deletion_data.get("result"),
-                    "report_status": deletion_data.get("reportStatus"),
-                    "total_assets": deletion_data.get("totalAssets", 0),
-                    "deleted": deletion_data.get("result")
-                    in ["Report - Deleted", "Asset - Deleted"],
-                    "delete_type": "report"
-                    if deletion_data.get("action") == "delete-report"
-                    else "assets"
-                    if deletion_data.get("action") == "delete-assets"
-                    else None,
-                    "updated_at": datetime.utcnow(),
-                    "deleted_at": datetime.utcnow()
-                    if deletion_data.get("result")
-                    in ["Report - Deleted", "Asset - Deleted"]
-                    else None,
-                }
-                if deletion_data.get("companyOfficeId"):
-                    doc["company_office_id"] = str(deletion_data.get("companyOfficeId"))
-                if deletion_data.get("error"):
-                    doc["error"] = deletion_data.get("error")
-
-                await coll.insert_one(doc)
-                result = {"status": "SUCCESS", "message": "Deletion record stored"}
-            except Exception as e:
-                result = {"status": "FAILED", "error": str(e)}
-
-        result["commandId"] = cmd.get("commandId")
-        print(json.dumps(result), flush=True)
-
-    elif action == "store-report-deletion":
-        deletion_data = cmd.get("deletionData")
-        if not deletion_data:
-            result = {"status": "FAILED", "error": "Missing deletionData"}
-        else:
-            try:
-                coll = mongo_db.report_deletions
-                deletion_data["user_id"] = str(deletion_data.get("userId"))
-                deletion_data["report_id"] = str(deletion_data.get("reportId"))
-                deletion_data["action"] = deletion_data.get("action")
-                deletion_data["result"] = deletion_data.get("result")
-                deletion_data["report_status"] = deletion_data.get("reportStatus")
-                deletion_data["total_assets"] = deletion_data.get("totalAssets", 0)
-                deletion_data["updated_at"] = datetime.utcnow()
-                if deletion_data.get("companyOfficeId"):
-                    deletion_data["company_office_id"] = str(
-                        deletion_data.get("companyOfficeId")
-                    )
-
-                if deletion_data.get("error"):
-                    deletion_data["error"] = deletion_data.get("error")
-
-                # Insert the deletion record
-                await coll.insert_one(deletion_data)
-                result = {"status": "SUCCESS", "message": "Deletion record stored"}
+                response = await http_post(
+                    "/new-scripts/report-deletions", json=deletion_data
+                )
+                if response.get("success"):
+                    result = {"status": "SUCCESS", "message": "Deletion record stored"}
+                else:
+                    result = {
+                        "status": "FAILED",
+                        "error": response.get("message", "Failed"),
+                    }
             except Exception as e:
                 result = {"status": "FAILED", "error": str(e)}
 
@@ -758,51 +685,32 @@ async def handle_command(cmd):
         company_office_id = cmd.get("companyOfficeId")
         page = int(cmd.get("page", 1))
         limit = int(cmd.get("limit", 10))
+        search_term = cmd.get("searchTerm")
+
         if not user_id:
             result = {"status": "FAILED", "error": "Missing userId"}
         else:
             try:
-                query = {"user_id": str(user_id)}
+                params = {"userId": user_id, "page": page, "limit": limit}
                 if company_office_id:
-                    query["company_office_id"] = str(company_office_id)
-                search_term = cmd.get("searchTerm")
+                    params["companyOfficeId"] = company_office_id
                 if search_term:
-                    query["report_id"] = {"$regex": str(search_term), "$options": "i"}
-                skip = max(page - 1, 0) * limit
-                coll = mongo_db.report_deletions
-                total = await coll.count_documents(query)
-                cursor = (
-                    coll.find(query)
-                    .sort("last_status_check_at", -1)
-                    .skip(skip)
-                    .limit(limit)
-                )
-                docs = await cursor.to_list(length=limit)
-                items = []
-                for d in docs:
-                    items.append(
-                        {
-                            "report_id": d.get("report_id"),
-                            "report_status": d.get("report_status"),
-                            "report_status_label": d.get("report_status_label"),
-                            "assets_exact": d.get("assets_exact"),
-                            "last_status_check_status": d.get(
-                                "last_status_check_status"
-                            ),
-                            "last_status_check_at": d.get(
-                                "last_status_check_at"
-                            ).isoformat()
-                            if d.get("last_status_check_at")
-                            else None,
-                        }
-                    )
-                result = {
-                    "status": "SUCCESS",
-                    "items": items,
-                    "total": total,
-                    "page": page,
-                    "limit": limit,
-                }
+                    params["searchTerm"] = search_term
+
+                response = await http_get("/new-scripts/checked-reports", params=params)
+                if response.get("success"):
+                    result = {
+                        "status": "SUCCESS",
+                        "items": response.get("items", []),
+                        "total": response.get("total", 0),
+                        "page": page,
+                        "limit": limit,
+                    }
+                else:
+                    result = {
+                        "status": "FAILED",
+                        "error": response.get("message", "Failed"),
+                    }
             except Exception as e:
                 result = {"status": "FAILED", "error": str(e)}
 
@@ -817,33 +725,18 @@ async def handle_command(cmd):
             result = {"status": "FAILED", "error": "Missing userId or reportIds"}
         else:
             try:
-                from bson import ObjectId
-
-                coll = mongo_db["report_deletions"]
-                query = {
-                    "user_id": str(user_id),
-                    "report_id": {"$in": [str(rid) for rid in report_ids]},
-                }
-                # Get all records sorted by updated_at descending
-                cursor = coll.find(query).sort("updated_at", -1)
-                docs = await cursor.to_list(length=None)
-
-                # Get latest result for each report_id (since sorted by updated_at desc, first occurrence is latest)
-                validation_results = {}
-                for d in docs:
-                    report_id = d.get("report_id")
-                    if report_id and report_id not in validation_results:
-                        validation_results[report_id] = {
-                            "report_id": report_id,
-                            "result": d.get("result"),
-                            "report_status": d.get("report_status"),
-                            "total_assets": d.get("total_assets", 0),
-                        }
-
-                result = {
-                    "status": "SUCCESS",
-                    "items": list(validation_results.values()),
-                }
+                response = await http_post(
+                    "/new-scripts/validation-results",
+                    params={"userId": user_id},
+                    json={"reportIds": report_ids},
+                )
+                if response.get("success"):
+                    result = {"status": "SUCCESS", "items": response.get("items", [])}
+                else:
+                    result = {
+                        "status": "FAILED",
+                        "error": response.get("message", "Failed"),
+                    }
             except Exception as e:
                 result = {"status": "FAILED", "error": str(e)}
 
