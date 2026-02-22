@@ -17,9 +17,9 @@ from .validateReport import check_report_existence
 
 VALID_STATUSES = {"INCOMPLETE", "COMPLETE", "SENT", "CONFIRMED"}
 SENT_BUTTON_MARKER = 'id="reject"'
-SENT_STATUS_LABEL = "Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±"
-SENT_STATUS_VALUE = "ÙØ±Ø³Ù"
-CONFIRMED_BUTTON_TEXT = "Ø´ÙØ§Ø¯Ø© Ø§ÙØªØ³Ø¬ÙÙ"
+SENT_STATUS_LABEL = "حالة التقرير"
+SENT_STATUS_VALUE = "مرسل"
+CONFIRMED_BUTTON_TEXT = "شهادة التسجيل"
 
 
 def chunk_items(items, n):
