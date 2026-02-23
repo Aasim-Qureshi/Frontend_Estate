@@ -1,10 +1,15 @@
-import asyncio, json, sys
+import asyncio
+import json
+import sys
+
 from scripts.core.utils import log, wait_for_element
-from scripts.core.browser import new_tab
 
 _location_cache = {}
+
+
 async def set_location(page, country_code, region_code, city_code):
     try:
+
         async def set_field(selector, value):
             if not value:
                 return
@@ -40,8 +45,10 @@ async def set_location(page, country_code, region_code, city_code):
         print(f"Location injection failed: {e}", file=sys.stderr)
         return False
 
+
 def _js(val):
     return json.dumps(val, ensure_ascii=False)
+
 
 async def _set_input_value_by_id(page, el_id: str, value):
     code = f"""
@@ -59,6 +66,7 @@ async def _set_input_value_by_id(page, el_id: str, value):
     """
     ok = await page.evaluate(code)
     return bool(ok)
+
 
 async def _set_select_value_by_id(page, el_id: str, value):
     # JS boolean must be lowercase 'false'
@@ -80,7 +88,9 @@ async def _set_select_value_by_id(page, el_id: str, value):
     ok = await page.evaluate(code)
     return bool(ok)
 
+
 # ---------- Select2 UNDERLYING <select> helpers (hard-coded path) ----------
+
 
 async def _set_underlying_select(page, select_css: str, value: str) -> bool:
     """Set hidden <select> value and trigger change; prefer jQuery/Select2 when present."""
@@ -115,6 +125,7 @@ async def _set_underlying_select(page, select_css: str, value: str) -> bool:
     log(f"[loc:set] {select_css} <- {value} => {res}", "INFO")
     return res in ("ok", "ok-fallback")
 
+
 async def _sync_select2_container_text(page, select_css: str) -> None:
     """Fallback: update Select2 visible label text/title to selected option."""
     await page.evaluate(f"""
@@ -132,16 +143,23 @@ async def _sync_select2_container_text(page, select_css: str) -> None:
     }})()
     """)
 
+
 async def _count_select_options(page, select_css: str) -> int:
-    return int(await page.evaluate(f"""
+    return int(
+        await page.evaluate(f"""
     (() => {{
       const el = document.querySelector({json.dumps(select_css)});
       if (!el || !el.options) return 0;
       return el.options.length;
     }})()
-    """) or 0)
+    """)
+        or 0
+    )
 
-async def _wait_select_has_options(page, select_css: str, min_count: int = 2, timeout: float = 12.0) -> bool:
+
+async def _wait_select_has_options(
+    page, select_css: str, min_count: int = 2, timeout: float = 12.0
+) -> bool:
     """Wait until a <select> has at least min_count options (after parent change)."""
     start = asyncio.get_event_loop().time()
     while asyncio.get_event_loop().time() - start < timeout:
@@ -152,6 +170,7 @@ async def _wait_select_has_options(page, select_css: str, min_count: int = 2, ti
         await asyncio.sleep(0.4)
     log(f"[loc:wait] timeout waiting options for {select_css}", "WARN")
     return False
+
 
 async def _verify_select2_non_placeholder(page, container_css: str) -> bool:
     """Check visible Select2 container is not 'Select'/'ØªØ­Ø¯ÙØ¯' or empty."""
@@ -166,7 +185,9 @@ async def _verify_select2_non_placeholder(page, container_css: str) -> bool:
     log(f"[loc:verify] {container_css} -> {ok}", "INFO")
     return bool(ok)
 
+
 # ---------- Submit & wait ----------
+
 
 async def _submit_via_save(page):
     """
@@ -199,6 +220,7 @@ async def _submit_via_save(page):
     mode = await page.evaluate(code)
     log(f"[save] submit mode: {mode}", "INFO")
     return mode
+
 
 async def _wait_post_save(page, macro_id: str, timeout=12):
     """
@@ -236,7 +258,9 @@ async def _wait_post_save(page, macro_id: str, timeout=12):
     log("[save-wait] timeout waiting for post-save transition.", "ERR")
     return False
 
+
 # ---------- Location (HARD-CODED C/R/C = "1") ----------
+
 
 async def _find_option_value_by_labels(page, select_css: str, labels: list[str]):
     labels = [s for s in labels if s]
@@ -262,6 +286,7 @@ async def _find_option_value_by_labels(page, select_css: str, labels: list[str])
     }})()
     """)
 
+
 async def _first_valid_option_value(page, select_css: str):
     return await page.evaluate(f"""
     (() => {{
@@ -275,6 +300,7 @@ async def _first_valid_option_value(page, select_css: str):
     }})()
     """)
 
+
 async def _get_value(page, select_css: str) -> str | None:
     return await page.evaluate(f"""
     (() => {{
@@ -282,6 +308,7 @@ async def _get_value(page, select_css: str) -> str | None:
       return el ? String(el.value ?? '') : null;
     }})()
     """)
+
 
 async def set_location_select2s(page, values: dict) -> None:
     """
@@ -293,7 +320,9 @@ async def set_location_select2s(page, values: dict) -> None:
     ok_country = await _set_underlying_select(page, "#country_id", "1")
     await _wait_select_has_options(page, "#region", min_count=2, timeout=15)
     await asyncio.sleep(0.3)
-    v_country = await _verify_select2_non_placeholder(page, "span#select2-country_id-container")
+    v_country = await _verify_select2_non_placeholder(
+        page, "span#select2-country_id-container"
+    )
     if not v_country:
         await _sync_select2_container_text(page, "#country_id")
 
@@ -301,7 +330,9 @@ async def set_location_select2s(page, values: dict) -> None:
     ok_region = await _set_underlying_select(page, "#region", "1")
     await _wait_select_has_options(page, "#city", min_count=2, timeout=15)
     await asyncio.sleep(0.3)
-    v_region = await _verify_select2_non_placeholder(page, "span#select2-region-container")
+    v_region = await _verify_select2_non_placeholder(
+        page, "span#select2-region-container"
+    )
     if not v_region:
         await _sync_select2_container_text(page, "#region")
 
@@ -322,7 +353,9 @@ async def set_location_select2s(page, values: dict) -> None:
     if city_val:
         ok_city = await _set_underlying_select(page, "#city", city_val)
         await asyncio.sleep(0.3)
-        v_city = await _verify_select2_non_placeholder(page, "span#select2-city-container")
+        v_city = await _verify_select2_non_placeholder(
+            page, "span#select2-city-container"
+        )
         if not v_city:
             await _sync_select2_container_text(page, "#city")
 
@@ -333,17 +366,20 @@ async def set_location_select2s(page, values: dict) -> None:
         await asyncio.sleep(0.2)
         await _sync_select2_container_text(page, "#region")
 
-    log(f"[loc:summary] country=1 ok={ok_country}, region=1 ok={ok_region}, city={city_val} ok={ok_city}", "INFO")
+    log(
+        f"[loc:summary] country=1 ok={ok_country}, region=1 ok={ok_region}, city={city_val} ok={ok_city}",
+        "INFO",
+    )
+
 
 # ---------- Main entry ----------
+
 
 async def edit_macro_and_save(page, macro_id: str, values: dict):
     url = f"https://qima.taqeem.sa/report/macro/{macro_id}/edit"
     log(f"Editing macro #{macro_id} -> {url}", "STEP")
     await page.get(url)
     await wait_for_element(page, "#region", timeout=60)
-    
-
     # Neutralize dialogs
     try:
         await page.evaluate("""() => {
@@ -371,7 +407,11 @@ async def edit_macro_and_save(page, macro_id: str, values: dict):
     await set_in("inspected_at", "inspected_at", "inspected_at (date)")
     await set_in("value", "value", "value")
     await set_in("production_capacity", "production_capacity", "production_capacity")
-    await set_in("production_capacity_measuring_unit", "production_capacity_measuring_unit", "production_capacity_measuring_unit")
+    await set_in(
+        "production_capacity_measuring_unit",
+        "production_capacity_measuring_unit",
+        "production_capacity_measuring_unit",
+    )
     await set_in("owner_name", "owner_name", "owner_name")
     await set_in("product_type", "product_type", "product_type")
 

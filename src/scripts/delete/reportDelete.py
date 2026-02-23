@@ -39,7 +39,7 @@ TBODY_XPATH_FALLBACK = (
     "/html/body/div/div[5]/div[2]/div/div[8]/div/div/div/div[2]/div[2]/table/tbody"
 )
 
-INCOMPLETE_AR = "ØºÙØ± ÙÙØªÙÙØ©"
+INCOMPLETE_AR = "غير مكتملة"
 macro_link_re = re.compile(r"/report/macro/(\d+)/(?:show|edit|delete)")
 
 # DataTables subpage pagination
@@ -59,7 +59,7 @@ DATATABLE_PREV_SEL = (
 # Main (outer) pagination
 MAIN_NEXT_SEL = 'a.page-link[rel="next"]'
 
-DRAFT_STATUS_AR = "ÙØ³ÙØ¯Ø©"
+DRAFT_STATUS_AR = "مسودة"
 DRAFT_STATUS_EN = "draft"
 
 
@@ -206,7 +206,7 @@ async def _try_click_inline_confirm(page):
     try:
         clicked = await page.evaluate("""
         () => {
-          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","Ø­Ø°Ù","ØªØ£ÙÙØ¯","ÙÙØ§ÙÙ"];
+          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","حذف","تأكيد","موافق"];
           const els = Array.from(document.querySelectorAll('button, [type=button], [type=submit], a'));
           for (const el of els) {
             const t = (el.innerText || el.value || "").trim();
@@ -488,7 +488,7 @@ async def delete_incomplete_assets_and_leave_one(
     page, process_id: str = None, total_assets_state: dict | None = None
 ):
     """
-    Delete assets with 'ØºÙØ± ÙÙØªÙÙØ©' on the CURRENT subpage.
+    Delete assets with 'غير مكتملة' on the CURRENT subpage..
     NEW BEHAVIOUR:
       - Delete *all* incomplete assets.
       - Do NOT keep any incomplete asset on purpose.
@@ -971,14 +971,14 @@ async def create_one_asset_and_get_macro(
         log(f"[create-asset] failed to set macros=1: {e}", "ERR")
         return None
 
-    # 2) Click Save button ("Ø­ÙØ¸" / "Save")
+    # 2) Click Save button ("حفظ" / "Save")
     try:
         clicked = await page.evaluate("""
         (() => {
             const btns = Array.from(document.querySelectorAll("input[type=submit], button"));
             for (const b of btns) {
                 const t = (b.value || b.innerText || "").trim();
-                if (t.includes("Ø­ÙØ¸") || t.toLowerCase().includes("save")) {
+                if (t.includes("حفظ") || t.toLowerCase().includes("save")) {
                     b.click();
                     return true;
                 }
@@ -1387,7 +1387,8 @@ async def delete_report_flow(
 
             # ð No assets at all: create ONE asset and then fill it using template
             log(
-                f"Report {report_id}: No assets remain. Creating one new assetâ¦", "INFO"
+                f"Report {report_id}: No assets remain. Creating one new assetâ¦",
+                "INFO",
             )
             macro_id = await create_one_asset_and_get_macro(page, report_id, process_id)
             if not macro_id:
