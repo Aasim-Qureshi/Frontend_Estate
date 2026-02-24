@@ -104,7 +104,7 @@ async def _click_datatable_go_last(page) -> bool:
     try:
         res = await page.evaluate(js)
         if isinstance(res, dict) and res.get("ok"):
-            log("DataTables pager: clicked Next â now on sub-page 2.", "OK")
+            log("DataTables pager: clicked Next → now on sub-page 2.", "OK")
             return True
         else:
             log(f"DataTables pager: {res}", "INFO")

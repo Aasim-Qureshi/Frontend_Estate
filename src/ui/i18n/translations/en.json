@@ -594,9 +594,7 @@
             "bulkActions": "Bulk Actions",
             "bulk": {
                 "uploadAndSubmit": "Submit to Taqeem",
-                "delete": "Delete",
-                "sendToApprover": "Send to Approver",
-                "approve": "Approve"
+                "delete": "Delete"
             },
             "goButton": "Go",
             "filter": {
@@ -636,8 +634,6 @@
                 "retryIncomplete": "Retry incomplete assets",
                 "delete": "Delete",
                 "edit": "Edit",
-                "sendToApprover": "Send to Approver",
-                "approve": "Approve",
                 "go": "Go",
                 "working": "Working..."
             },
@@ -651,6 +647,10 @@
                     "status": "Status"
                 },
                 "none": "No assets available for this report."
+            },
+            "refresh": {
+                "refreshing": "Refreshing...",
+                "refresh": "Refresh"
             },
             "pagination": {
                 "summary": "Showing {{from}} to {{to}} of {{total}} reports",
@@ -666,6 +666,7 @@
             "issuesLabel": "Issues: {{count}}",
             "pdfsLabel": "PDFs: {{count}}",
             "closeButton": "Close",
+            "continueButton": "Continue",
             "emptyMessage": "Upload Excel files to generate validation results.",
             "noIssues": "No issues detected",
             "noIssuesDetails": "Your Excel files look clean. You can proceed with uploading and submission.",
@@ -695,7 +696,15 @@
                 "noIssues": "No asset issues detected."
             },
             "footerHint": "Close this panel after reviewing the issues.",
-            "panelHeader": "Validation on Excel sheet"
+            "footerContinueHint": "Continue to edit report info and choose the upload action.",
+            "panelHeader": "Validation on Excel sheet",
+            "step2": {
+                "title": "Step 2: Edit report information",
+                "subtitle": "Update important report fields before choosing how to continue.",
+                "fixValidationFirst": "Fix validation issues first, then choose one of the action buttons below.",
+                "actionHint": "Choose how to continue with the uploaded reports.",
+                "back": "Back to validation"
+            }
         },
         "validation": {
             "status": {

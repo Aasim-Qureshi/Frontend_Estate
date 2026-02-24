@@ -26,6 +26,7 @@
     "appId": "com.example.valuetech",
     "files": [
       "dist/**/*",
+      "public/**/*",
       "src/**/*",
       "preload.js",
       "assets/**/*",

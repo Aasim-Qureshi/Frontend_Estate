@@ -109,24 +109,91 @@ mongo_db = mongo_client["test"]
 running_tasks = {}
 
 
+def _extract_report_ids(records):
+    """Normalize report IDs from API payload and preserve order."""
+    if not isinstance(records, list):
+        return []
+
+    report_ids = []
+    seen = set()
+
+    for item in records:
+        if isinstance(item, dict):
+            report_id = item.get("report_id") or item.get("reportId") or item.get(
+                "reportid"
+            )
+        else:
+            report_id = item
+
+        normalized = str(report_id).strip() if report_id is not None else ""
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        report_ids.append(normalized)
+
+    return report_ids
+
+
 async def get_reports_by_batch(batch_id):
     if not batch_id:
-        return {"status": "FAILED", "error": "Missing batchId"}
+        return {"status": "FAILED", "error": "Missing batchId", "reports": []}
+
+    primary_error = None
+
+    # Primary source for ElRajhi upload batches: returns report records.
+    try:
+        response = await http_get(f"/new-scripts/batch/{batch_id}")
+        if response.get("success"):
+            report_ids = _extract_report_ids(response.get("reports", []))
+            if report_ids:
+                return {
+                    "status": "SUCCESS",
+                    "message": response.get("message", ""),
+                    "reports": report_ids,
+                }
+            return {
+                "status": "FAILED",
+                "error": f"No submitted report IDs found for batch {batch_id}",
+                "reports": [],
+            }
+        primary_error = response.get("message", "Not found")
+    except Exception as e:
+        primary_error = str(e)
+
+    # Legacy fallback for older urgent batches.
     try:
         response = await http_get(f"/new-scripts/urgent-batch/{batch_id}")
         if response.get("success"):
+            report_ids = _extract_report_ids(response.get("reports", []))
+            if report_ids:
+                return {
+                    "status": "SUCCESS",
+                    "message": response.get("message", ""),
+                    "reports": report_ids,
+                }
             return {
-                "status": "SUCCESS",
-                "message": response.get("message", ""),
-                "reports": response.get("reports", []),
+                "status": "FAILED",
+                "error": f"No submitted report IDs found for batch {batch_id}",
+                "reports": [],
             }
+
+        fallback_error = response.get("message", "Not found")
+        if primary_error:
+            fallback_error = f"{primary_error} | fallback: {fallback_error}"
         return {
             "status": "FAILED",
-            "error": response.get("message", "Not found"),
+            "error": fallback_error,
             "reports": [],
         }
     except Exception as e:
-        return {"status": "FAILED", "error": str(e), "reports": []}
+        fallback_error = str(e)
+        if primary_error:
+            fallback_error = f"{primary_error} | fallback: {fallback_error}"
+        return {
+            "status": "FAILED",
+            "error": fallback_error,
+            "reports": [],
+        }
 
 
 async def handle_command(cmd):

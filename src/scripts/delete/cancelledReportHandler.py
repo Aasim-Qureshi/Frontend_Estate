@@ -7,7 +7,7 @@ from .pagination import go_to_last_asset_page
 from .assetDelete import delete_latest_asset
 MACROS_INPUT_SEL = "#macros"
 SAVE_BTN_SEL = "input.btn.btn-primary.btn-lg.mt-2[type='submit'][value='Save']"
-CANCELLED_VALUES = {"ÙÙØºÙ", "ÙÙØºÙ", "Canceled", "Cancelled"}
+CANCELLED_VALUES = {"ملغى", "ملغي", "Canceled", "Cancelled"}
 
 async def _set_macros_to_one(page) -> bool:
     """Set the 'Number of Macros' input to 1"""
@@ -30,7 +30,7 @@ async def _set_macros_to_one(page) -> bool:
         return False
 
 async def _click_save(page) -> bool:
-    """Click the Save button (supports English 'Save' and Arabic 'Ø­ÙØ¸')"""
+    """Click the Save button (supports English 'Save' and Arabic 'حفظ')"""
     # Try the standard English button first
     btn = await wait_for_element(page, SAVE_BTN_SEL, timeout=12)
     if btn:
@@ -44,7 +44,7 @@ async def _click_save(page) -> bool:
     try:
         ok = await page.evaluate("""
             (() => {
-              const texts = ["Save", "Ø­ÙØ¸"];
+              const texts = ["Save", "حفظ"];
               const candidates = Array.from(
                 document.querySelectorAll('input[type=submit], button')
               );
@@ -90,7 +90,7 @@ async def _create_single_macro(report_id: str) -> bool:
         log("Failed to set Number of Macros to 1.", "ERR")
         return False
 
-    # Click Save (supports English 'Save' and Arabic 'Ø­ÙØ¸')
+    # Click Save (supports English 'Save' and Arabic 'حفظ')
     if not await _click_save(page):
         log("Save button not found/click failed on asset-create page.", "ERR")
         return False
@@ -179,7 +179,7 @@ async def handle_cancelled_report(report_id: str, control_state=None) -> dict:
 
         # Check if cancelled
         if status_val not in CANCELLED_VALUES:
-            log(f"Report {report_id} is not cancelled â no macro creation needed.", "INFO")
+            log(f"Report {report_id} is not cancelled — no macro creation needed.", "INFO")
             return {
                 "status": "NOT_CANCELLED",
                 "reportId": report_id,
@@ -189,7 +189,7 @@ async def handle_cancelled_report(report_id: str, control_state=None) -> dict:
             }
 
         # Report is cancelled - create and delete macro
-        log(f"Report {report_id} is cancelled ({status_val}) â creating and deleting 1 macro.", "STEP")
+        log(f"Report {report_id} is cancelled ({status_val}) → creating and deleting 1 macro.", "STEP")
         ok = await _create_single_macro(report_id)
         
         if ok:

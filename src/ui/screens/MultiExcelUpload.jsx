@@ -659,7 +659,7 @@ const validateAssetUsageId = (sheetName, rows) => {
       issues.push({
         field: "asset_usage_id",
         location,
-        message: `asset_usage_id ${num} is outside the allowed range (38â€“56) for asset "${assetName}".`,
+        message: `asset_usage_id ${num} is outside the allowed range (38-56) for asset "${assetName}".`,
       });
     }
   });

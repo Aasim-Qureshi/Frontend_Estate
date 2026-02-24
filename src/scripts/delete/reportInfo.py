@@ -173,15 +173,15 @@ async def extract_report_info(page, timeout: float = 30.0, interval: float = 0.5
 
     # Create convenient aliases for common fields
     alias = {
-        "status": pick(["Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±:", "Ø­Ø§ÙØ© Ø§ÙØªÙØ±ÙØ±", "Report Status:", "Report Status"]),
-        "issue_date": pick(["ØªØ§Ø±ÙØ® Ø¥ØµØ¯Ø§Ø± Ø§ÙØªÙØ±ÙØ±:", "ØªØ§Ø±ÙØ® Ø¥ØµØ¯Ø§Ø± Ø§ÙØªÙØ±ÙØ±", "Report Issue Date"]),
-        "assumptions": pick(["Ø§ÙØ§ÙØªØ±Ø§Ø¶Ø§Øª:", "Ø§ÙØ§ÙØªØ±Ø§Ø¶Ø§Øª"]),
-        "special_assumptions": pick(["Ø§ÙØ§ÙØªØ±Ø§Ø¶Ø§Øª Ø§ÙØ®Ø§ØµØ©:", "Ø§ÙØ§ÙØªØ±Ø§Ø¶Ø§Øª Ø§ÙØ®Ø§ØµØ©"]),
-        "final_value": pick(["Ø§ÙØ±Ø£Ù Ø§ÙÙÙØ§Ø¦Ù ÙÙ Ø§ÙÙÙÙØ©:", "Ø§ÙØ±Ø£Ù Ø§ÙÙÙØ§Ø¦Ù ÙÙ Ø§ÙÙÙÙØ©", "Final Opinion of Value"]),
-        "original_report_file": pick(["ÙÙÙ Ø£ØµÙ Ø§ÙØªÙØ±ÙØ±:", "ÙÙÙ Ø£ØµÙ Ø§ÙØªÙØ±ÙØ±"]),
-        "purpose": pick(["Ø§ÙØºØ±Ø¶ ÙÙ Ø§ÙØªÙÙÙÙ:", "Ø§ÙØºØ±Ø¶ ÙÙ Ø§ÙØªÙÙÙÙ", "Purpose of Valuation"]),
-        "report_type": pick(["ÙÙØ¹ Ø§ÙØªÙØ±ÙØ±:", "ÙÙØ¹ Ø§ÙØªÙØ±ÙØ±", "Report Type"]),
-        "valuation_date": pick(["ØªØ§Ø±ÙØ® Ø§ÙØªÙÙÙÙ:", "ØªØ§Ø±ÙØ® Ø§ÙØªÙÙÙÙ", "Valuation Date"]),
+        "status": pick(["حالة التقرير:", "حالة التقرير", "Report Status:", "Report Status"]),
+        "issue_date": pick(["تاريخ إصدار التقرير:", "تاريخ إصدار التقرير", "Report Issue Date"]),
+        "assumptions": pick(["الافتراضات:", "الافتراضات"]),
+        "special_assumptions": pick(["الافتراضات الخاصة:", "الافتراضات الخاصة"]),
+        "final_value": pick(["الرأي النهائي في القيمة:", "الرأي النهائي في القيمة", "Final Opinion of Value"]),
+        "original_report_file": pick(["ملف أصل التقرير:", "ملف أصل التقرير"]),
+        "purpose": pick(["الغرض من التقييم:", "الغرض من التقييم", "Purpose of Valuation"]),
+        "report_type": pick(["نوع التقرير:", "نوع التقرير", "Report Type"]),
+        "valuation_date": pick(["تاريخ التقييم:", "تاريخ التقييم", "Valuation Date"]),
     }
 
     # Log preview of found data

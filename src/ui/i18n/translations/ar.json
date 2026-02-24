@@ -202,11 +202,11 @@
                 "description": "تنزيل شهادة تسجيل باستخدام رقم التقرير."
             },
             "duplicate-report": {
-                "label": "رفع تقرير يدوي",
+                "label": "رفع تقرير جديد",
                 "description": "أدخل بيانات التقرير وارفع ملف الإكسل ثم أرسل إلى تقييم."
             },
             "multi-excel-upload": {
-                "label": "رفع ملفات إكسل متعددة",
+                "label": "رفع تقارير متعددة",
                 "description": "رفع عدة ملفات إكسل وإنشاء تقارير دفعة واحدة."
             },
             "manual-multi-report": {
@@ -278,11 +278,11 @@
                 "description": "حذف الأصول بأمان."
             },
             "submit-reports-quickly": {
-                "label": "إرسال التقارير بسرعة",
+                "label": "رفع سريع",
                 "description": "إرسال التقارير بسرعة مع الحد الأدنى من إدخال البيانات باستخدام ملفات إكسل."
             },
             "upload-assets": {
-                "label": "رفع الأصول",
+                "label": "رفع أصول التقرير",
                 "description": "رفع ملفات الأصول وإرفاقها بالتقارير الموجودة."
             },
             "system-status": {
@@ -324,8 +324,8 @@
             "apps": "التطبيقات",
             "upload-report-elrajhi": "رفع تقرير (الراجحي)",
             "download-certificate": "تنزيل شهادة برقم التقرير",
-            "duplicate-report": "رفع تقرير يدوي",
-            "multi-excel-upload": "رفع ملفات إكسل متعددة",
+            "duplicate-report": "رفع تقرير جديد",
+            "multi-excel-upload": "رفع تقارير متعددة",
             "manual-multi-report": "رفع تقارير متعددة يدوياً",
             "macro-edit": "تعديل الماكرو",
             "grab-macro-ids": "جلب معرّفات الماكرو",
@@ -577,18 +577,58 @@
             "choosePdfFiles": "اختر ملفات PDF",
             "willUseDummyPdf": "سيتم استخدام {{placeholder}}",
             "downloading": "جاري التنزيل...",
-            "exportTemplate": "تصدير قالب إكسل",
+            "exportTemplate": "تنزيل قالب إكسل",
             "reset": "إعادة تعيين"
         },
         "actions": {
             "uploading": "جاري الرفع...",
             "submitting": "جاري الإرسال...",
-            "storeAndSubmitNow": "احفظ وارسل الي الهيئه الآن",
-            "storeAndSubmitLater": "احفظ وارسل الي الهيئه لاحقًا"
+            "storeAndSubmitNow": "حفظ وارسال الآن",
+            "storeAndSubmitLater": "حفظ وارسال لاحقًا"
+        },
+        "editModal": {
+            "title": "تعديل التقرير",
+            "close": "إغلاق",
+            "cancel": "إلغاء",
+            "update": "تحديث",
+            "updating": "جاري التحديث...",
+            "field": {
+                "title": "العنوان",
+                "clientName": "اسم العميل",
+                "telephone": "الهاتف",
+                "email": "البريد الإلكتروني"
+            }
+        },
+        "temporarySection": {
+            "title": "تقارير مؤقتة",
+            "subtitle": "تقارير بدون تعيين شركة.",
+            "open": "عرض التقارير المؤقتة"
+        },
+        "temporaryModal": {
+            "title": "تقارير مؤقتة",
+            "subtitle": "تقارير بدون تعيين شركة.",
+            "close": "إغلاق",
+            "guestSession": "تقارير جلسة الضيف.",
+            "unassigned": "تقارير غير معيّنة.",
+            "refreshing": "جاري التحديث...",
+            "refresh": "تحديث",
+            "loading": "جاري تحميل التقارير المؤقتة...",
+            "empty": "لا توجد تقارير مؤقتة.",
+            "unknownClient": "غير معروف",
+            "assignAndSubmit": "تعيين وإرسال",
+            "registerHint": "سجّل حسابك للاحتفاظ بارتباط هذه التقارير برقم هاتفك.",
+            "register": "تسجيل",
+            "table": {
+                "reportId": "رقم التقرير",
+                "client": "العميل",
+                "assets": "الأصول",
+                "status": "الحالة",
+                "action": "الإجراء"
+            }
         },
         "reports": {
             "title": "التقارير",
-            "bulkActions": "--إجراءات لأكثر من تقرير--",
+            "bulkActions": "إجراءات متعددة",
             "bulk": {
                 "uploadAndSubmit": "رفع وإرسال إلى تقييم",
                 "delete": "حذف",
@@ -629,6 +669,7 @@
             "notSubmitted": "غير مُرسل",
             "row": {
                 "actions": "الإجراءات",
+                "submitToTaqeem": "ارسال الي تقييم",
                 "checkStatus": "فحص الحالة",
                 "retryIncomplete": "إعادة رفع الأصول غير المكتملة",
                 "delete": "حذف",
@@ -649,6 +690,10 @@
                 },
                 "none": "لا توجد أصول لهذا التقرير."
             },
+            "refresh": {
+                "refreshing": "جاري التحديث...",
+                "refresh": "تحديث"
+            },
             "pagination": {
                 "summary": "عرض {{from}} إلى {{to}} من أصل {{total}} تقريرًا",
                 "previous": "السابق",
@@ -663,6 +708,8 @@
             "issuesLabel": "المشكلات: {{count}}",
             "pdfsLabel": "ملفات PDF: {{count}}",
             "closeButton": "إغلاق",
+            "continueButton": "متابعة",
+            "loadingHint": "يرجى الانتظار بينما نتحقق من ملف الإكسل. ستظهر النتائج في نفس النافذة.",
             "emptyMessage": "ارفع ملفات إكسل لتوليد نتائج التحقق.",
             "noIssues": "لم يتم العثور على مشاكل",
             "noIssuesDetails": "ملفات إكسل نظيفة. يمكنك المتابعة بالرفع والتقديم.",
@@ -692,7 +739,29 @@
                 "noIssues": "لم يتم اكتشاف مشكلات في الأصول."
             },
             "footerHint": "أغلق اللوحة بعد مراجعة المشكلات.",
-            "panelHeader": "التحقق من ملف الإكسل"
+            "footerContinueHint": "تابع لتعديل معلومات التقرير ثم اختر إجراء الرفع.",
+            "panelHeader": "التحقق من ملف الإكسل",
+            "step2": {
+                "title": "الخطوة 2: تعديل معلومات التقرير",
+                "subtitle": "حدّث حقول التقرير المهمة ثم اختر رفع ملفات PDF أو استخدام الملف البديل.",
+                "fixValidationFirst": "أصلح مشكلات التحقق أولًا، ثم اختر أحد أزرار الإجراء أدناه.",
+                "actionHint": "اختر كيفية المتابعة للتقارير المرفوعة.",
+                "back": "العودة إلى التحقق",
+                "pdfSection": {
+                    "title": "إرفاق ملفات PDF (اختياري)",
+                    "subtitle": "يمكنك رفع ملفات PDF المطابقة الآن، أو التخطي واستخدام الملف البديل تلقائيًا.",
+                    "modeUpload": "وضع الرفع",
+                    "modePlaceholder": "وضع الملف البديل",
+                    "usePlaceholder": "استخدام ملف PDF بديل",
+                    "usePlaceholderHint": "تخطَّ رفع ملفات PDF يدويًا واستخدم الملف البديل المدمج.",
+                    "uploadPdfs": "رفع ملفات PDF",
+                    "uploadPdfsHint": "ارفع ملفات PDF بأسماء مطابقة لأسماء ملفات الإكسل.",
+                    "chooseButton": "اختيار ملفات PDF",
+                    "matchWarning": "بعض أسماء ملفات PDF لا تطابق أسماء ملفات الإكسل.",
+                    "matchSuccess": "جميع ملفات PDF المحددة تطابق أسماء ملفات الإكسل.",
+                    "moreFiles": "+{{count}} ملف إضافي"
+                }
+            }
         },
         "validation": {
             "status": {

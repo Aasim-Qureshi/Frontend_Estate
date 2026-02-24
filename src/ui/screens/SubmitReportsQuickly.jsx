@@ -29,7 +29,6 @@ import {
   Edit,
   RefreshCw,
   Table,
-  Download,
   FileIcon,
   X,
 } from "lucide-react";
@@ -43,11 +42,42 @@ import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 import { deductPoints } from "../utils/points";
 import { downloadTemplateFile } from "../utils/templateDownload";
 import { useValueNav } from "../context/ValueNavContext";
+import excelIconFallback from "../../../public/images/excelicon.png";
 
 const DUMMY_PDF_NAME = "dummy_placeholder.pdf";
 
 const getReportRecordId = (report) =>
   report?._id || report?.id || report?.recordId || "";
+
+const toPositiveInt = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.trunc(numeric);
+};
+
+const resolveReportAssetCount = (report, fallback = 0) => {
+  const fromAssets = Array.isArray(report?.asset_data)
+    ? report.asset_data.length
+    : 0;
+  if (fromAssets > 0) return fromAssets;
+
+  const candidates = [
+    report?.number_of_macros,
+    report?.numberOfMacros,
+    report?.asset_count,
+    report?.assets_count,
+    report?.assetCount,
+    report?.total_assets,
+    fallback,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = toPositiveInt(candidate);
+    if (normalized > 0) return normalized;
+  }
+
+  return 0;
+};
 
 const isAssetComplete = (asset) => {
   const value = asset?.submitState ?? asset?.submit_state;
@@ -92,6 +122,15 @@ const reportStatusClasses = {
 };
 const QUICK_PAGE_NAME = "Submit Reports Quickly";
 const QUICK_PAGE_SOURCE = "submit-reports-quickly";
+const DEFAULT_REPORT_INFO_FORM = {
+  title: "",
+  client_name: "",
+  purpose_id: "1",
+  value_premise_id: "1",
+  report_type: "تقرير مفصل",
+  telephone: "999999999",
+  email: "a@a.com",
+};
 
 const isTaqeemAuthSuccess = (authStatus) => {
   if (authStatus === true) return true;
@@ -784,11 +823,15 @@ const MAX_PDF_SIZE = 20 * 1024 * 1024; // 20 MB in bytes
 
 const SubmitReportsQuickly = ({ onViewChange }) => {
   const { token, login, user, isGuest } = useSession();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const translate = useCallback(
     (key, defaultValue, options = {}) =>
       t(`submitReportsQuickly.${key}`, { defaultValue, ...options }),
     [t],
+  );
+  const isArabicUi = useMemo(
+    () => i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) === "rtl",
+    [i18n, i18n?.language, i18n?.resolvedLanguage],
   );
   const { systemState } = useSystemControl();
   const { executeWithAuth } = useAuthAction();
@@ -843,6 +886,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   const [validationMessage, setValidationMessage] = useState(null);
   const [validationTableTab, setValidationTableTab] = useState("assets");
   const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationModalStep, setValidationModalStep] = useState("validation");
   const [showTemporaryModal, setShowTemporaryModal] = useState(false);
   const [showInsufficientPointsModal, setShowInsufficientPointsModal] =
     useState(false);
@@ -874,15 +918,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   const [bulkAction, setBulkAction] = useState("");
   const [editingReportId, setEditingReportId] = useState(null);
   const [reportProgress, setReportProgress] = useState({}); // { recordId: { percentage: 0, status: 'idle', message: '' } }
-  const [formData, setFormData] = useState({
-    title: "",
-    client_name: "",
-    purpose_id: "1",
-    value_premise_id: "1",
-    report_type: "تقرير مفصل",
-    telephone: "999999999",
-    email: "a@a.com",
+  const [uploadFormData, setUploadFormData] = useState({
+    ...DEFAULT_REPORT_INFO_FORM,
   });
+  const [formData, setFormData] = useState({
+    ...DEFAULT_REPORT_INFO_FORM,
+  });
+  const [excelIconSrc, setExcelIconSrc] = useState(excelIconFallback);
 
   const excelInputRef = useRef(null);
   const pdfInputRef = useRef(null);
@@ -890,6 +932,38 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   const reportCreatedCacheRef = useRef(new Map());
   const pendingCompanySelectionRef = useRef(null);
   const isTaqeemLoggedIn = taqeemStatus?.state === "success";
+
+  useEffect(() => {
+    let objectUrl = null;
+    let disposed = false;
+
+    const loadIconFromPublic = async () => {
+      try {
+        if (!window?.electronAPI?.readTemplateFile) return;
+        const result = await window.electronAPI.readTemplateFile(
+          "images/excelicon.png",
+        );
+        if (!result?.success || !Array.isArray(result.arrayBuffer)) return;
+        const bytes = Uint8Array.from(result.arrayBuffer);
+        if (!bytes.length) return;
+
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+        if (!disposed) {
+          setExcelIconSrc(objectUrl);
+        }
+      } catch (err) {
+        // Keep fallback icon from webpack bundle.
+      }
+    };
+
+    loadIconFromPublic();
+    return () => {
+      disposed = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, []);
 
   const handleExcelChange = (e) => {
     const files = Array.from(e.target.files || []);
@@ -1016,6 +1090,51 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     return list;
   }, []);
 
+  const syncUploadFormFromValidation = useCallback((items = []) => {
+    const snapshot =
+      items.find((item) => item?.snapshot)?.snapshot || DEFAULT_REPORT_INFO_FORM;
+    setUploadFormData({
+      title: String(snapshot?.title || ""),
+      client_name: String(snapshot?.client_name || ""),
+      purpose_id: String(snapshot?.purpose_id || "1"),
+      value_premise_id: String(snapshot?.value_premise_id || "1"),
+      report_type: String(snapshot?.report_type || "تقرير مفصل"),
+      telephone: String(snapshot?.telephone || "999999999"),
+      email: String(snapshot?.email || "a@a.com"),
+    });
+  }, []);
+
+  const applyUploadFormToCreatedReports = useCallback(
+    async (createdReports = []) => {
+      const payload = {
+        title: String(uploadFormData.title || "").trim(),
+        client_name: String(uploadFormData.client_name || "").trim(),
+        purpose_id: String(uploadFormData.purpose_id || "1"),
+        value_premise_id: String(uploadFormData.value_premise_id || "1"),
+        report_type: String(uploadFormData.report_type || "تقرير مفصل"),
+        telephone: String(uploadFormData.telephone || "999999999").trim(),
+        email: String(uploadFormData.email || "a@a.com").trim(),
+      };
+
+      const ids = (createdReports || [])
+        .map((report) => getReportRecordId(report))
+        .filter(Boolean);
+      if (!ids.length) return;
+
+      const updates = await Promise.allSettled(
+        ids.map((id) => updateSubmitReportsQuickly(id, payload)),
+      );
+      const failed = updates.filter((result) => result.status === "rejected");
+      if (failed.length > 0) {
+        console.warn(
+          "[SubmitReportsQuickly] Failed to apply edited report info for some uploaded reports.",
+          failed,
+        );
+      }
+    },
+    [uploadFormData],
+  );
+
   const handleStoreAndSubmit = async () => {
     try {
       setStoreAndSubmitLoading(true);
@@ -1098,6 +1217,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const createdReports = Array.isArray(data.reports) ? data.reports : [];
       if (createdReports.length) {
         setReports((prev) => mergeReports(prev, createdReports));
+        await applyUploadFormToCreatedReports(createdReports);
       }
 
       const insertedCount = data.created || 0;
@@ -1141,10 +1261,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         );
       }
 
+      const reportMetaById = recentReports.reduce((acc, report) => {
+        const id = getReportRecordId(report);
+        if (!id) return acc;
+        acc[id] = {
+          assetCount: resolveReportAssetCount(report),
+          batchId: report?.batch_id || report?.batchId || null,
+        };
+        return acc;
+      }, {});
+
       const tabsNum = Math.max(1, Number(recommendedTabs) || 3);
       const queuePayload = {
         source: QUICK_PAGE_SOURCE,
         reportIds,
+        reportMetaById,
         tabsNum,
         currentIndex: 0,
         resumeOnLoad: false,
@@ -1215,15 +1346,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
   };
 
+  const openPdfPicker = useCallback(() => {
+    if (pdfInputRef?.current) {
+      pdfInputRef.current.value = null;
+      pdfInputRef.current.click();
+    }
+  }, []);
+
   const handlePdfToggle = (checked) => {
     setWantsPdfUpload(checked);
     if (!checked) {
       setPdfFiles([]);
-    } else {
-      if (pdfInputRef?.current) {
-        pdfInputRef.current.value = null;
-        pdfInputRef.current.click();
-      }
+      setPdfPathMap({});
     }
     resetMessages();
   };
@@ -1268,6 +1402,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   const resetValidation = () => {
     setValidationItems([]);
     setValidationMessage(null);
+    setValidationModalStep("validation");
     setShowValidationModal(false);
   };
 
@@ -1761,54 +1896,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     : 0;
   const totalValidationIssues = validationIssueRows.length + pdfIssueCount;
   const hasValidationIssues = totalValidationIssues > 0;
-  const validationStatus = useMemo(() => {
-    if (validating) {
-      return {
-        text: translate("validation.status.validating", "Validating..."),
-        tone: "info",
-      };
-    }
-    if (excelFiles.length === 0) {
-      return {
-        text: translate(
-          "validation.status.uploadPrompt",
-          "Upload an Excel file to validate.",
-        ),
-        tone: "neutral",
-      };
-    }
-    if (hasValidationIssues || validationMessage?.type === "error") {
-      return {
-        text: translate(
-          "validation.status.hasIssues",
-          "You have issues in excel sheet.",
-        ),
-        tone: "error",
-      };
-    }
-    if (validationItems.length > 0) {
-      return {
-        text: translate(
-          "validation.status.clean",
-          "No issues, you can upload it now.",
-        ),
-        tone: "success",
-      };
-    }
-    return {
-      text: translate("validation.status.pending", "Validation pending."),
-      tone: "neutral",
-    };
-  }, [
-    validating,
-    excelFiles.length,
-    hasValidationIssues,
-    validationItems.length,
-    validationMessage?.type,
-    translate,
-  ]);
-  const canOpenValidation =
-    validationItems.length > 0 || Boolean(validationMessage);
 
   const localizeIssue = useCallback(
     (key, defaultValue, options = {}) =>
@@ -1816,7 +1903,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     [translate],
   );
 
-  const runValidation = async (excelList, pdfMap) => {
+  const runValidation = async (
+    excelList,
+    pdfMap,
+    { keepCurrentStep = false, ensureModalOpen = true } = {},
+  ) => {
     if (!excelList.length) {
       resetValidation();
       return;
@@ -1827,6 +1918,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       type: "info",
       text: "Reading Excel files and validating...",
     });
+    setValidationItems([]);
+    setValidationTableTab("assets");
+    if (ensureModalOpen) {
+      setShowValidationModal(true);
+    }
+    if (!keepCurrentStep) {
+      setValidationModalStep("validation");
+    }
 
     const shouldValidatePdf = wantsPdfUpload;
 
@@ -2035,6 +2134,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     return performValidation()
       .then((results) => {
         setValidationItems(results);
+        syncUploadFormFromValidation(results);
 
         const totalIssues = results.reduce(
           (acc, r) => acc + (r.issues?.length || 0),
@@ -2068,7 +2168,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           });
         }
         setValidationTableTab("assets");
-        setShowValidationModal(true);
+        if (ensureModalOpen) {
+          setShowValidationModal(true);
+        }
+        if (keepCurrentStep) {
+          setValidationModalStep((prevStep) =>
+            prevStep === "edit" ? "edit" : "validation",
+          );
+        } else {
+          setValidationModalStep("validation");
+        }
       })
       .catch((err) => {
         console.error("Validation failed", err);
@@ -2081,7 +2190,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               "Failed to validate Excel files.",
             ),
         });
-        setShowValidationModal(true);
+        if (ensureModalOpen) {
+          setShowValidationModal(true);
+        }
+        if (keepCurrentStep) {
+          setValidationModalStep((prevStep) =>
+            prevStep === "edit" ? "edit" : "validation",
+          );
+        } else {
+          setValidationModalStep("validation");
+        }
       })
       .finally(() => {
         setValidating(false);
@@ -2090,7 +2208,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
   useEffect(() => {
     if (excelFiles.length > 0) {
-      runValidation(excelFiles, pdfMatchInfo.pdfMap);
+      const keepCurrentStep =
+        showValidationModal && validationModalStep === "edit";
+      runValidation(excelFiles, pdfMatchInfo.pdfMap, {
+        keepCurrentStep,
+        ensureModalOpen: true,
+      });
     } else {
       resetValidation();
     }
@@ -2203,6 +2326,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const createdReports = Array.isArray(data.reports) ? data.reports : [];
       if (createdReports.length) {
         setReports((prev) => mergeReports(prev, createdReports));
+        await applyUploadFormToCreatedReports(createdReports);
       }
 
       const insertedCount = data.created || 0;
@@ -2258,6 +2382,27 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       setStoreOnlyLoading(false);
     }
   };
+
+  const closeValidationModal = useCallback(() => {
+    setShowValidationModal(false);
+    setValidationModalStep("validation");
+  }, []);
+
+  const handleValidationContinue = useCallback(() => {
+    setValidationModalStep("edit");
+  }, []);
+
+  const executeUploadModalAction = useCallback(
+    async (mode) => {
+      closeValidationModal();
+      if (mode === "now") {
+        await handleStoreAndSubmit();
+        return;
+      }
+      await handleUpload();
+    },
+    [closeValidationModal, handleStoreAndSubmit, handleUpload],
+  );
 
   const resolveTabsForAssets = useCallback(
     (assetCount) => {
@@ -2630,6 +2775,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         resume = false,
         skipAuth = false,
         skipCompanySelect = false,
+        assetCountOverride = null,
+        batchIdOverride = null,
       } = options;
 
       if (!recordId) {
@@ -2651,10 +2798,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const report =
         reports.find((item) => getReportRecordId(item) === recordId) ||
         unassignedReports.find((item) => getReportRecordId(item) === recordId);
-      const assetList = Array.isArray(report?.asset_data)
-        ? report.asset_data
-        : [];
-      const assetCount = assetList.length;
+      const assetCount = resolveReportAssetCount(report, assetCountOverride);
       let assignedOfficeId = report?.company_office_id
         ? String(report.company_office_id)
         : "";
@@ -2833,7 +2977,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 pageName: QUICK_PAGE_NAME,
                 pageSource: QUICK_PAGE_SOURCE,
                 assetCount,
-                batchId: report?.batch_id,
+                batchId: report?.batch_id || report?.batchId || batchIdOverride,
               });
             }
           } catch (deductErr) {
@@ -2895,6 +3039,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             .map((id) => String(id || "").trim())
             .filter(Boolean)
         : [];
+      const reportMetaById =
+        queuePayload?.reportMetaById &&
+        typeof queuePayload.reportMetaById === "object"
+          ? queuePayload.reportMetaById
+          : {};
 
       if (!reportIds.length) {
         resetPendingSubmit();
@@ -2911,6 +3060,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const basePayload = {
         source: queuePayload?.source || QUICK_PAGE_SOURCE,
         reportIds,
+        reportMetaById,
         tabsNum: resolvedTabs,
       };
 
@@ -2921,9 +3071,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       try {
         for (let index = startIndex; index < reportIds.length; index += 1) {
           const recordId = reportIds[index];
+          const meta = reportMetaById?.[recordId] || {};
           const result = await submitToTaqeem(recordId, resolvedTabs, {
             withLoading: false,
             resume: resume || index > startIndex,
+            assetCountOverride: meta?.assetCount,
+            batchIdOverride: meta?.batchId,
           });
 
           if (result?.success) {
@@ -3408,118 +3561,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       return;
     }
 
-    if (bulkAction === "send-approver") {
-      try {
-        setSuccess(
-          translate(
-            "messages.success.sendingToApprover",
-            "Sending {{count}} report(s) to approver...",
-            { count: selectedIds.length },
-          ),
-        );
-
-        // Get reports with report_id (Taqeem report IDs)
-        const reportsToSend = selectedIds
-          .map((id) => reports.find((r) => getReportRecordId(r) === id))
-          .filter((r) => r && r.report_id);
-
-        if (reportsToSend.length === 0) {
-          setError(
-            translate(
-              "messages.error.noReportsWithTaqeemId",
-              "No reports with Taqeem report IDs found. Reports must be submitted to Taqeem first.",
-            ),
-          );
-          return;
-        }
-        const reportIds = useMemo(
-          () => reports.map(getReportRecordId).filter(Boolean),
-          [reports],
-        );
-
-        if (!window.electronAPI?.finalizeMultipleReports) {
-          throw new Error("Desktop integration unavailable. Restart the app.");
-        }
-
-        const result =
-          await window.electronAPI.finalizeMultipleReports(reportIds);
-
-        if (result?.status !== "SUCCESS") {
-          throw new Error(
-            result?.error || "Failed to send reports to approver.",
-          );
-        }
-
-        // Update report status to "sent" for all selected reports
-        for (const id of selectedIds) {
-          try {
-            await updateSubmitReportsQuickly(id, { report_status: "sent" });
-          } catch (err) {
-            console.error(`Failed to update report ${id}:`, err);
-          }
-        }
-
-        await loadReports();
-        setSelectedReportIds([]);
-        setBulkAction("");
-        setSuccess(
-          translate(
-            "messages.success.sentToApprover",
-            "Successfully sent {{count}} report(s) to approver.",
-            { count: reportsToSend.length },
-          ),
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
-            translate(
-              "messages.error.sendToApprover",
-              "Failed to send reports to approver.",
-            ),
-        );
-      }
-      return;
-    }
-
-    if (bulkAction === "approve") {
-      try {
-        setSuccess(
-          translate(
-            "messages.success.approvingReports",
-            "Approving {{count}} report(s)...",
-            { count: selectedIds.length },
-          ),
-        );
-
-        for (const id of selectedIds) {
-          try {
-            await updateSubmitReportsQuickly(id, { checked: true });
-          } catch (err) {
-            console.error(`Failed to approve report ${id}:`, err);
-          }
-        }
-
-        await loadReports();
-        setSelectedReportIds([]);
-        setBulkAction("");
-        setSuccess(
-          translate(
-            "messages.success.approvedReports",
-            "Successfully approved {{count}} report(s).",
-            { count: selectedIds.length },
-          ),
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
-            translate(
-              "messages.error.approveReports",
-              "Failed to approve reports.",
-            ),
-        );
-      }
-      return;
-    }
   };
 
   const handleReportAction = async (report, action) => {
@@ -3705,88 +3746,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       handleDeleteReport(report);
     } else if (action === "edit") {
       handleEditReport(report);
-    } else if (action === "send-approver") {
-      setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
-      try {
-        if (!report.report_id) {
-          setError(
-            translate(
-              "messages.error.reportMustBeSubmitted",
-              "Report must be submitted to Taqeem first (must have a report_id).",
-            ),
-          );
-          return;
-        }
-
-        setSuccess(
-          translate(
-            "messages.success.sendingReportToApprover",
-            "Sending report to approver...",
-          ),
-        );
-
-        if (!window.electronAPI?.finalizeMultipleReports) {
-          throw new Error("Desktop integration unavailable. Restart the app.");
-        }
-
-        const result = await window.electronAPI.finalizeMultipleReports([
-          report.report_id,
-        ]);
-
-        if (result?.status !== "SUCCESS") {
-          throw new Error(
-            result?.error || "Failed to send report to approver.",
-          );
-        }
-
-        // Update report status to "sent"
-        await updateSubmitReportsQuickly(recordId, { report_status: "sent" });
-
-        await loadReports();
-        setSuccess(
-          translate(
-            "messages.success.reportSentToApprover",
-            "Report sent to approver successfully.",
-          ),
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
-            translate(
-              "messages.error.sendReportToApprover",
-              "Failed to send report to approver.",
-            ),
-        );
-      } finally {
-        setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
-      }
-    } else if (action === "approve") {
-      setReportActionBusy((prev) => ({ ...prev, [recordId]: true }));
-      try {
-        setSuccess(
-          translate("messages.success.approvingReport", "Approving report..."),
-        );
-
-        await updateSubmitReportsQuickly(recordId, { checked: true });
-
-        await loadReports();
-        setSuccess(
-          translate(
-            "messages.success.reportApproved",
-            "Report approved successfully.",
-          ),
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
-            translate(
-              "messages.error.approveReport",
-              "Failed to approve report.",
-            ),
-        );
-      } finally {
-        setReportActionBusy((prev) => ({ ...prev, [recordId]: false }));
-      }
     }
   };
 
@@ -3927,20 +3886,26 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         onViewChange={onViewChange}
       />
       <div className="space-y-1.5">
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <label className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50 cursor-pointer hover:bg-blue-50 hover:border-blue-400 transition-all min-w-[180px] flex-[0.85] group">
-              <div className="flex items-center gap-2 text-[10px] text-slate-700">
-                <FileSpreadsheet className="w-4 h-4 text-blue-600 group-hover:text-blue-700" />
-                <span className="font-semibold">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/25 shadow-[0_12px_32px_rgba(15,23,42,0.1)] p-2.5">
+          <div className="pointer-events-none absolute -top-12 -left-12 h-28 w-28 rounded-full bg-blue-200/20 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-14 -right-10 h-32 w-32 rounded-full bg-emerald-200/20 blur-2xl" />
+          <div
+            className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+            style={{ direction: isArabicUi ? "rtl" : "ltr" }}
+          >
+            <label
+              className={`group relative flex min-h-[52px] items-center gap-2.5 rounded-xl border border-slate-300/90 bg-white/90 px-2.5 py-2 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
+                isArabicUi ? "text-right" : "text-left"
+              }`}
+            >
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 ring-1 ring-blue-200/70">
+                <FileSpreadsheet className="h-4 w-4 text-blue-700" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[10px] font-semibold text-slate-800">
                   {excelFiles.length ? (
                     excelFiles.length === 1 ? (
-                      <span
-                        className="truncate max-w-[150px]"
-                        title={excelFiles[0].name}
-                      >
-                        {excelFiles[0].name}
-                      </span>
+                      <span title={excelFiles[0].name}>{excelFiles[0].name}</span>
                     ) : (
                       translate(
                         "filePicker.selectedFiles",
@@ -3952,7 +3917,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     translate("filePicker.chooseExcel", "Choose Excel file")
                   )}
                 </span>
-              </div>
+                <span className="block text-[9px] font-medium text-slate-500">
+                  .xlsx / .xls
+                </span>
+              </span>
+              <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-2 py-1 text-[10px] font-semibold text-white shadow-sm transition-colors group-hover:bg-blue-700">
+                {translate("filePicker.browse", "Browse")}
+              </span>
               <input
                 ref={excelInputRef}
                 type="file"
@@ -3964,154 +3935,68 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                   e.currentTarget.value = null;
                 }}
               />
-              <span className="text-[10px] font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">
-                {translate("filePicker.browse", "Browse")}
-              </span>
             </label>
-            <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50 transition-all hover:bg-blue-50 hover:border-blue-400 min-w-[220px] flex-[1.35] group">
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-700">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                  checked={wantsPdfUpload}
-                  onChange={(e) => handlePdfToggle(e.target.checked)}
-                />
-                <Files className="w-4 h-4 text-blue-600" />
-                <span className="font-semibold">
-                  {translate("filePicker.uploadPdfs", "Upload PDFs")}
+            <input
+              ref={pdfInputRef}
+              type="file"
+              multiple
+              accept=".pdf"
+              className="hidden"
+              onChange={handlePdfChange}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setExcelFiles([]);
+                setPdfFiles([]);
+                setWantsPdfUpload(false);
+                resetValidation();
+                resetMessages();
+                if (excelInputRef?.current) {
+                  excelInputRef.current.value = null;
+                }
+                if (pdfInputRef?.current) {
+                  pdfInputRef.current.value = null;
+                }
+              }}
+              className="group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-[10px] font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-[1px] hover:border-slate-400 hover:bg-slate-50 md:w-auto"
+            >
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200 transition-colors group-hover:bg-slate-200">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </span>
+              {translate("filePicker.reset", "Reset")}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              disabled={downloadingTemplate}
+              title={translate(
+                "filePicker.exportTemplate",
+                "Export Excel Template",
+              )}
+              aria-label={translate(
+                "filePicker.exportTemplate",
+                "Export Excel Template",
+              )}
+              className="group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-3 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+            >
+              {downloadingTemplate ? (
+                <Loader2 className="h-4 w-4 animate-spin text-emerald-700" />
+              ) : (
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/80 ring-1 ring-emerald-200/90">
+                  <img
+                    src={excelIconSrc}
+                    alt="Excel icon"
+                    onError={() => setExcelIconSrc(excelIconFallback)}
+                    className="h-4 w-4 pointer-events-none object-contain"
+                  />
                 </span>
-                <span className="text-[10px] text-slate-600">
-                  {pdfFiles.length
-                    ? translate(
-                        "filePicker.selectedPdfs",
-                        "{{count}} file(s) selected",
-                        { count: pdfFiles.length },
-                      )
-                    : wantsPdfUpload
-                      ? translate(
-                          "filePicker.choosePdfFiles",
-                          "Choose PDF files",
-                        )
-                      : translate(
-                          "filePicker.willUseDummyPdf",
-                          "Will use {{placeholder}}",
-                          { placeholder: DUMMY_PDF_NAME },
-                        )}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (pdfInputRef?.current) {
-                    pdfInputRef.current.value = null;
-                    pdfInputRef.current.click();
-                  }
-                }}
-                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 whitespace-nowrap"
-              >
-                {translate("filePicker.browse", "Browse")}
-              </button>
-              <input
-                ref={pdfInputRef}
-                type="file"
-                multiple
-                accept=".pdf"
-                className="hidden"
-                onChange={handlePdfChange}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                disabled={downloadingTemplate}
-                className="inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-50 px-2.5 py-1.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {downloadingTemplate ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
-                {downloadingTemplate
-                  ? translate("filePicker.downloading", "Downloading...")
-                  : translate(
-                      "filePicker.exportTemplate",
-                      "Export Excel Template",
-                    )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setExcelFiles([]);
-                  setPdfFiles([]);
-                  setWantsPdfUpload(false);
-                  resetValidation();
-                  resetMessages();
-                  if (excelInputRef?.current) {
-                    excelInputRef.current.value = null;
-                  }
-                  if (pdfInputRef?.current) {
-                    pdfInputRef.current.value = null;
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                {translate("filePicker.reset", "Reset")}
-              </button>
-            </div>
+              )}
+              <span className="text-[10px] font-semibold leading-tight">
+                {translate("filePicker.exportTemplate", "Export Excel Template")}
+              </span>
+            </button>
           </div>
-        </div>
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={handleStoreAndSubmit}
-            disabled={storeAndSubmitLoading || !isReadyToUpload}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-green-600 hover:bg-green-700
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-          >
-            {storeAndSubmitLoading || submitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            {storeAndSubmitLoading
-              ? translate("actions.uploading", "Uploading...")
-              : submitting
-                ? translate("actions.submitting", "Submitting...")
-                : translate(
-                    "actions.storeAndSubmitNow",
-                    "Store and Submit Now",
-                  )}
-          </button>
-          <button
-            type="button"
-            onClick={handleUpload}
-            disabled={storeOnlyLoading || !isReadyToUpload}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-blue-600 hover:bg-blue-700
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-          >
-            {storeOnlyLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileIcon className="w-4 h-4" />
-            )}
-            {storeOnlyLoading
-              ? translate("actions.uploading", "Uploading...")
-              : translate(
-                  "actions.storeAndSubmitLater",
-                  "Store and Submit Later",
-                )}
-          </button>
         </div>
       </div>
 
@@ -4133,44 +4018,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         </div>
       )}
 
-      {/* Validation Console */}
-      <button
-        type="button"
-        onClick={() => {
-          if (canOpenValidation) {
-            setShowValidationModal(true);
-          }
-        }}
-        disabled={!canOpenValidation}
-        className={`w-full rounded-lg border border-blue-200/60 bg-gradient-to-r from-blue-50/70 via-white to-blue-50/70 px-3 py-2 text-left shadow-sm card-animate flex flex-wrap items-center justify-between gap-2 ${canOpenValidation ? "hover:border-blue-300/70" : "cursor-default"} disabled:opacity-80`}
-      >
-        <span className="text-xs font-semibold text-slate-700">
-          {translate("validation.panelHeader", "Validation on Excel sheet")}
-        </span>
-        <span
-          className={`text-xs font-semibold ${
-            validationStatus.tone === "error"
-              ? "text-rose-600"
-              : validationStatus.tone === "success"
-                ? "text-emerald-600"
-                : validationStatus.tone === "info"
-                  ? "text-blue-600"
-                  : "text-slate-500"
-          }`}
-        >
-          {validationStatus.text}
-        </span>
-      </button>
-
       {showTemporarySection && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 shadow-sm p-3 mb-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-amber-900">
-                Temporary Reports
+                {translate(
+                  "temporarySection.title",
+                  "Temporary Reports",
+                )}
               </h3>
               <p className="text-[10px] text-amber-700">
-                Reports without company assignment.
+                {translate(
+                  "temporarySection.subtitle",
+                  "Reports without company assignment.",
+                )}
               </p>
             </div>
             <button
@@ -4179,7 +4041,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-50"
             >
               <Table className="w-3 h-3" />
-              Show Temporary Reports
+              {translate(
+                "temporarySection.open",
+                "Show Temporary Reports",
+              )}
             </button>
           </div>
         </div>
@@ -4197,10 +4062,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-amber-100">
               <div>
                 <h3 className="text-base font-semibold text-amber-900">
-                  Temporary Reports
+                  {translate(
+                    "temporaryModal.title",
+                    "Temporary Reports",
+                  )}
                 </h3>
                 <p className="text-[11px] text-amber-700">
-                  Reports without company assignment.
+                  {translate(
+                    "temporaryModal.subtitle",
+                    "Reports without company assignment.",
+                  )}
                 </p>
               </div>
               <button
@@ -4208,12 +4079,20 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 onClick={() => setShowTemporaryModal(false)}
                 className="text-amber-700 hover:text-amber-900 text-sm font-semibold"
               >
-                Close
+                {translate("temporaryModal.close", "Close")}
               </button>
             </div>
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="text-[11px] text-amber-700">
-                {isGuestUser ? "Guest session reports." : "Unassigned reports."}
+                {isGuestUser
+                  ? translate(
+                      "temporaryModal.guestSession",
+                      "Guest session reports.",
+                    )
+                  : translate(
+                      "temporaryModal.unassigned",
+                      "Unassigned reports.",
+                    )}
               </div>
               <button
                 type="button"
@@ -4226,28 +4105,46 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <RefreshCw
                   className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`}
                 />
-                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                {temporaryLoading
+                  ? translate("temporaryModal.refreshing", "Refreshing...")
+                  : translate("temporaryModal.refresh", "Refresh")}
               </button>
             </div>
             <div className="px-4 pb-4">
               {temporaryLoading ? (
                 <div className="text-[11px] text-amber-700">
-                  Loading temporary reports...
+                  {translate(
+                    "temporaryModal.loading",
+                    "Loading temporary reports...",
+                  )}
                 </div>
               ) : temporaryReports.length === 0 ? (
                 <div className="text-[11px] text-amber-700">
-                  No temporary reports found.
+                  {translate(
+                    "temporaryModal.empty",
+                    "No temporary reports found.",
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-slate-700">
                     <thead className="bg-amber-100/70 text-amber-900">
                       <tr>
-                        <th className="px-2 py-1.5 text-left">Report ID</th>
-                        <th className="px-2 py-1.5 text-left">Client</th>
-                        <th className="px-2 py-1.5 text-left">Assets</th>
-                        <th className="px-2 py-1.5 text-left">Status</th>
-                        <th className="px-2 py-1.5 text-left">Action</th>
+                        <th className="px-2 py-1.5 text-left">
+                          {translate("temporaryModal.table.reportId", "Report ID")}
+                        </th>
+                        <th className="px-2 py-1.5 text-left">
+                          {translate("temporaryModal.table.client", "Client")}
+                        </th>
+                        <th className="px-2 py-1.5 text-left">
+                          {translate("temporaryModal.table.assets", "Assets")}
+                        </th>
+                        <th className="px-2 py-1.5 text-left">
+                          {translate("temporaryModal.table.status", "Status")}
+                        </th>
+                        <th className="px-2 py-1.5 text-left">
+                          {translate("temporaryModal.table.action", "Action")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-100">
@@ -4257,8 +4154,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           ? report.asset_data.length
                           : 0;
                         const statusKey = getReportStatus(report);
-                        const statusLabel =
-                          reportStatusLabels[statusKey] || statusKey || "New";
+                        const statusLabel = translate(
+                          `reports.filter.${statusKey}`,
+                          reportStatusLabels[statusKey] || statusKey || "New",
+                        );
                         const statusClass =
                           reportStatusClasses[statusKey] ||
                           "border-slate-200 bg-slate-50 text-slate-700";
@@ -4268,10 +4167,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             className="hover:bg-amber-50/60"
                           >
                             <td className="px-2 py-1.5 text-[11px] text-slate-800">
-                              {report.report_id || "Not Submitted"}
+                              {report.report_id ||
+                                translate("reports.notSubmitted", "Not Submitted")}
                             </td>
                             <td className="px-2 py-1.5 text-[11px] text-slate-700">
-                              {report.client_name || report.title || "???"}
+                              {report.client_name ||
+                                report.title ||
+                                translate("temporaryModal.unknownClient", "Unknown")}
                             </td>
                             <td className="px-2 py-1.5 text-[11px] text-slate-700">
                               {assetCount}
@@ -4292,7 +4194,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 }}
                                 className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-700"
                               >
-                                Assign & Submit
+                                {translate(
+                                  "temporaryModal.assignAndSubmit",
+                                  "Assign & Submit",
+                                )}
                               </button>
                             </td>
                           </tr>
@@ -4305,15 +4210,17 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               {isGuestUser && (
                 <div className="mt-3 flex items-center justify-between rounded-md border border-amber-200 bg-amber-100/60 px-2 py-1 text-[10px] text-amber-900">
                   <span>
-                    Register your account to keep these reports linked to your
-                    phone.
+                    {translate(
+                      "temporaryModal.registerHint",
+                      "Register your account to keep these reports linked to your phone.",
+                    )}
                   </span>
                   <button
                     type="button"
                     onClick={() => onViewChange?.("registration")}
                     className="rounded-md bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-amber-800"
                   >
-                    Register
+                    {translate("temporaryModal.register", "Register")}
                   </button>
                 </div>
               )}
@@ -4322,18 +4229,17 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-slate-800">
-            {translate("reports.title", "Reports")}
-          </h3>
-        </div>
-        <div className="space-y-">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
+      <div className="mb-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div className="w-full" dir={isArabicUi ? "rtl" : "ltr"}>
+          <div className="flex w-full flex-wrap items-center gap-1.5 text-[11px] md:flex-nowrap">
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold text-slate-700">
+              {translate("reports.title", "Reports")}
+            </span>
+
             <select
               value={bulkAction}
               onChange={(e) => setBulkAction(e.target.value)}
-              className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer truncate"
+              className="h-7 w-40 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer truncate"
             >
               <option value="">
                 {translate("reports.bulkActions", "Bulk Actions")}
@@ -4344,31 +4250,26 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               <option value="delete">
                 {translate("reports.bulk.delete", "Delete")}
               </option>
-              <option value="send-approver">
-                {translate("reports.bulk.sendToApprover", "Send to Approver")}
-              </option>
-              <option value="approve">
-                {translate("reports.bulk.approve", "Approve")}
-              </option>
             </select>
+
             <button
               type="button"
               onClick={handleBulkAction}
               disabled={!bulkAction || selectedReportIds.length === 0}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold"
+              className="h-7 rounded-md bg-blue-600 px-2.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {translate("reports.goButton", "Go")}
             </button>
 
-            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+            <label className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700">
               {translate("reports.filter.label", "Filter:")}
               <select
                 value={reportSelectFilter}
                 onChange={(e) => {
                   setReportSelectFilter(e.target.value);
-                  setCurrentPage(1); // Reset to page 1 when filter changes
+                  setCurrentPage(1);
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+                className="h-6 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
               >
                 <option value="all">
                   {translate("reports.filter.all", "All statuses")}
@@ -4391,7 +4292,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               </select>
             </label>
 
-            <div className="relative">
+            <div className="relative min-w-[240px] flex-1">
               <input
                 type="text"
                 placeholder={translate(
@@ -4401,13 +4302,19 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
-                  setCurrentPage(1); // Reset to page 1 when searching
+                  setCurrentPage(1);
                 }}
-                className="rounded-md border border-slate-300 bg-white pl-9 pr-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 w-52"
+                className={`h-7 w-full rounded-md border border-slate-300 bg-white text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 ${
+                  isArabicUi ? "pr-8 pl-7 text-right" : "pl-8 pr-7 text-left"
+                }`}
               />
-              <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 ${
+                  isArabicUi ? "right-2" : "left-2"
+                }`}
+              >
                 <svg
-                  className="w-3.5 h-3.5 text-slate-400"
+                  className="w-3 h-3 text-slate-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -4425,10 +4332,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <button
                   type="button"
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className={`absolute top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 ${
+                    isArabicUi ? "left-2" : "right-2"
+                  }`}
                 >
                   <svg
-                    className="w-3.5 h-3.5"
+                    className="w-3 h-3"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -4445,7 +4354,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               )}
             </div>
 
-            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+            <label className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700">
               {translate("reports.itemsPerPageLabel", "Items per page:")}
               <select
                 value={itemsPerPage}
@@ -4453,7 +4362,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                   setItemsPerPage(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+                className="h-6 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
               >
                 <option value="5">5</option>
                 <option value="10">10</option>
@@ -4462,38 +4371,24 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <option value="100">100</option>
               </select>
             </label>
-            <button
-              type="button"
-              onClick={() => loadReports()}
-              disabled={reportsLoading}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${reportsLoading ? "animate-spin" : ""}`}
-              />
-              {reportsLoading
-                ? translate("reports.refresh.refreshing", "Refreshing...")
-                : translate("reports.refresh.refresh", "Refresh")}
-            </button>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-700">
-              <span className="text-slate-600">
-                {translate("reports.totalCount", "Total: {{count}} report(s)", {
-                  count: filteredReports.length,
-                })}
-              </span>
-              {filteredReports.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleToggleSelectAll}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  {allFilteredSelected
-                    ? translate("reports.clearAll", "Clear all")
-                    : translate("reports.selectAll", "Select all")}
-                </button>
-              )}
-            </div>
+            <span className="inline-flex h-7 items-center rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-semibold text-blue-700">
+              {translate("reports.totalCount", "Total: {{count}} report(s)", {
+                count: filteredReports.length,
+              })}
+            </span>
+
+            {filteredReports.length > 0 && (
+              <button
+                type="button"
+                onClick={handleToggleSelectAll}
+                className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:border-blue-300"
+              >
+                {allFilteredSelected
+                  ? translate("reports.clearAll", "Clear all")
+                  : translate("reports.selectAll", "Select all")}
+              </button>
+            )}
           </div>
         </div>
 
@@ -4525,30 +4420,60 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         {filteredReports.length > 0 && (
           <>
             <div className="w-full overflow-x-auto">
-              <div className="min-w-full">
-                <table className="w-full text-xs text-slate-700">
+              <div className="min-w-full" dir={isArabicUi ? "rtl" : "ltr"}>
+                <table className="w-full table-fixed text-xs text-slate-700">
+                  <colgroup>
+                    <col className="w-12" />
+                    <col className="w-10" />
+                    <col className="w-36" />
+                    <col />
+                    <col className="w-28" />
+                    <col className="w-36" />
+                    <col className="w-56" />
+                    <col className="w-16" />
+                  </colgroup>
                   <thead className="bg-gradient-to-r from-blue-50 to-indigo-50 text-slate-800 border-b-2 border-blue-200">
                     <tr>
-                      <th className="px-2 py-2 text-left w-12 text-[10px] font-semibold uppercase tracking-wider">
+                      <th className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider">
                         {translate("reports.table.index", "#")}
                       </th>
-                      <th className="px-2 py-2 text-left w-10 text-[10px] font-semibold uppercase tracking-wider"></th>
-                      <th className="px-2 py-2 text-left w-32 text-[10px] font-semibold uppercase tracking-wider">
+                      <th className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider"></th>
+                      <th
+                        className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider ${
+                          isArabicUi ? "text-right" : "text-left"
+                        }`}
+                      >
                         {translate("reports.table.reportId", "Report ID")}
                       </th>
-                      <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                      <th
+                        className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider ${
+                          isArabicUi ? "text-right" : "text-left"
+                        }`}
+                      >
                         {translate("reports.table.client", "Client")}
                       </th>
-                      <th className="px-2 py-2 text-left w-24 text-[10px] font-semibold uppercase tracking-wider">
+                      <th
+                        className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider ${
+                          isArabicUi ? "text-right" : "text-left"
+                        }`}
+                      >
                         {translate("reports.table.finalValue", "Final value")}
                       </th>
-                      <th className="px-2 py-2 text-left w-28 text-[10px] font-semibold uppercase tracking-wider">
+                      <th
+                        className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider ${
+                          isArabicUi ? "text-right" : "text-left"
+                        }`}
+                      >
                         {translate("reports.table.status", "Status")}
                       </th>
-                      <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                      <th
+                        className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider ${
+                          isArabicUi ? "text-right" : "text-left"
+                        }`}
+                      >
                         {translate("reports.table.action", "Action")}
                       </th>
-                      <th className="px-2 py-2 text-left w-16 text-[10px] font-semibold uppercase tracking-wider">
+                      <th className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider">
                         {translate("reports.table.select", "Select")}
                       </th>
                     </tr>
@@ -4576,10 +4501,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                       return (
                         <React.Fragment key={recordId || `report-${idx}`}>
                           <tr className="border-t border-slate-200 bg-white hover:bg-blue-50/30 transition-colors">
-                            <td className="px-2 py-2 text-slate-600 text-xs font-medium">
+                            <td className="px-2 py-2 text-center text-slate-600 text-xs font-medium">
                               {idx + 1}
                             </td>
-                            <td className="px-2 py-2">
+                            <td className="px-2 py-2 text-center">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -4606,7 +4531,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 )}
                               </button>
                             </td>
-                            <td className="px-2 py-2">
+                            <td
+                              className={`px-2 py-2 ${
+                                isArabicUi ? "text-right" : "text-left"
+                              }`}
+                            >
                               <div
                                 className="text-xs font-semibold text-slate-900 truncate"
                                 title={
@@ -4631,17 +4560,27 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                               </div>
                             </td>
                             <td
-                              className="px-2 py-2 truncate"
+                              className={`px-2 py-2 truncate ${
+                                isArabicUi ? "text-right" : "text-left"
+                              }`}
                               title={report.client_name || "-"}
                             >
                               <span className="text-xs text-slate-700">
                                 {report.client_name || "-"}
                               </span>
                             </td>
-                            <td className="px-2 py-2 text-xs font-medium text-slate-700">
+                            <td
+                              className={`px-2 py-2 text-xs font-medium text-slate-700 ${
+                                isArabicUi ? "text-right" : "text-left"
+                              }`}
+                            >
                               {report.final_value || "-"}
                             </td>
-                            <td className="px-2 py-2">
+                            <td
+                              className={`px-2 py-2 ${
+                                isArabicUi ? "text-right" : "text-left"
+                              }`}
+                            >
                               <div className="flex flex-col gap-1">
                                 <span
                                   className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
@@ -4744,7 +4683,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                 )}
                               </div>
                             </td>
-                            <td className="px-2 py-2">
+                            <td
+                              className={`px-2 py-2 ${
+                                isArabicUi ? "text-right" : "text-left"
+                              }`}
+                            >
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-1">
                                   <select
@@ -4789,21 +4732,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                       {translate(
                                         "reports.row.delete",
                                         "Delete",
-                                      )}
-                                    </option>
-                                    <option value="edit">
-                                      {translate("reports.row.edit", "Edit")}
-                                    </option>
-                                    <option value="send-approver">
-                                      {translate(
-                                        "reports.row.sendToApprover",
-                                        "Send to Approver",
-                                      )}
-                                    </option>
-                                    <option value="approve">
-                                      {translate(
-                                        "reports.row.approve",
-                                        "Approve",
                                       )}
                                     </option>
                                   </select>
@@ -4857,13 +4785,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <td
-                                colSpan={8}
-                                className="bg-blue-50/20 border-t border-blue-200"
-                              >
+                              <td colSpan={8} className="bg-blue-50/20 border-t border-blue-200">
                                 <div className="p-2 space-y-2">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div className="text-xs text-slate-700 font-medium">
+                                    <div
+                                      className={`text-xs text-slate-700 font-medium ${
+                                        isArabicUi ? "text-right" : "text-left"
+                                      }`}
+                                    >
                                       {translate(
                                         "reports.assets.label",
                                         "Assets",
@@ -4876,34 +4805,64 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                   </div>
                                   <div className="rounded-md border border-slate-200 overflow-hidden bg-white shadow-sm">
                                     <div className="max-h-48 overflow-y-auto">
-                                      <table className="w-full text-xs text-slate-700">
+                                      <table
+                                        className="w-full table-fixed text-xs text-slate-700"
+                                        dir={isArabicUi ? "rtl" : "ltr"}
+                                      >
+                                        <colgroup>
+                                          <col className="w-36" />
+                                          <col />
+                                          <col className="w-28" />
+                                          <col className="w-24" />
+                                          <col className="w-28" />
+                                        </colgroup>
                                         <thead className="bg-slate-50 text-slate-800 border-b border-slate-200 sticky top-0">
                                           <tr>
-                                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            <th
+                                              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                                isArabicUi ? "text-right" : "text-left"
+                                              }`}
+                                            >
                                               {translate(
                                                 "reports.assets.table.macroId",
                                                 "Macro ID",
                                               )}
                                             </th>
-                                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            <th
+                                              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                                isArabicUi ? "text-right" : "text-left"
+                                              }`}
+                                            >
                                               {translate(
                                                 "reports.assets.table.assetName",
                                                 "Asset name",
                                               )}
                                             </th>
-                                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            <th
+                                              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                                isArabicUi ? "text-right" : "text-left"
+                                              }`}
+                                            >
                                               {translate(
                                                 "reports.assets.table.finalValue",
                                                 "Final value",
                                               )}
                                             </th>
-                                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            <th
+                                              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                                isArabicUi ? "text-right" : "text-left"
+                                              }`}
+                                            >
                                               {translate(
                                                 "reports.assets.table.sheet",
                                                 "Sheet",
                                               )}
                                             </th>
-                                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            <th
+                                              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                                isArabicUi ? "text-right" : "text-left"
+                                              }`}
+                                            >
                                               {translate(
                                                 "reports.assets.table.status",
                                                 "Status",
@@ -4915,7 +4874,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                           {assetList.length === 0 ? (
                                             <tr>
                                               <td
-                                                colSpan={4}
+                                                colSpan={5}
                                                 className="px-2 py-2 text-center text-slate-500 text-xs"
                                               >
                                                 {translate(
@@ -4949,21 +4908,41 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                   key={`${recordId}-${assetIdx}`}
                                                   className="border-t border-slate-200 hover:bg-slate-50/50"
                                                 >
-                                                  <td className="px-2 py-1.5 text-slate-700 text-xs font-mono">
+                                                  <td
+                                                    className={`px-2 py-1.5 text-slate-700 text-xs font-mono ${
+                                                      isArabicUi ? "text-right" : "text-left"
+                                                    }`}
+                                                  >
                                                     {asset.id ||
                                                       asset.macro_id ||
                                                       "-"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 text-xs font-medium">
+                                                  <td
+                                                    className={`px-2 py-1.5 text-slate-700 text-xs font-medium ${
+                                                      isArabicUi ? "text-right" : "text-left"
+                                                    }`}
+                                                  >
                                                     {asset.asset_name || "-"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 text-xs">
+                                                  <td
+                                                    className={`px-2 py-1.5 text-slate-700 text-xs ${
+                                                      isArabicUi ? "text-right" : "text-left"
+                                                    }`}
+                                                  >
                                                     {asset.final_value || "-"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-600 text-xs">
+                                                  <td
+                                                    className={`px-2 py-1.5 text-slate-600 text-xs ${
+                                                      isArabicUi ? "text-right" : "text-left"
+                                                    }`}
+                                                  >
                                                     {asset.source_sheet || "-"}
                                                   </td>
-                                                  <td className="px-2 py-1.5">
+                                                  <td
+                                                    className={`px-2 py-1.5 ${
+                                                      isArabicUi ? "text-right" : "text-left"
+                                                    }`}
+                                                  >
                                                     <span
                                                       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold ${statusClass}`}
                                                     >
@@ -5256,7 +5235,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       {showValidationModal && (
         <div
           className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto px-4 py-6"
-          onClick={() => setShowValidationModal(false)}
+          onClick={() => {
+            if (!validating) {
+              closeValidationModal();
+            }
+          }}
         >
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" />
           <div
@@ -5302,7 +5285,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         {translate(
                           "validationModal.filesLabel",
                           "Files: {{count}}",
-                          { count: validationItems.length },
+                          {
+                            count: validating
+                              ? excelFiles.length
+                              : validationItems.length,
+                          },
                         )}
                       </span>
                       <span
@@ -5334,11 +5321,26 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowValidationModal(false)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white hover:bg-white/20 whitespace-nowrap"
+                      onClick={
+                        validationModalStep === "validation"
+                          ? handleValidationContinue
+                          : closeValidationModal
+                      }
+                      disabled={validating}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white hover:bg-white/20 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <X className="w-3.5 h-3.5" />
-                      {translate("validationModal.closeButton", "Close")}
+                      {validating ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : validationModalStep === "validation" ? (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      ) : (
+                        <X className="w-3.5 h-3.5" />
+                      )}
+                      {validating
+                        ? translate("validation.status.validating", "Validating...")
+                        : validationModalStep === "validation"
+                          ? translate("validationModal.continueButton", "Continue")
+                          : translate("validationModal.closeButton", "Close")}
                     </button>
                   </div>
                 </div>
@@ -5346,6 +5348,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <div className="relative flex-1 overflow-y-auto px-5 py-4">
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_55%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.08),transparent_50%)]" />
                   <div className="relative z-10 space-y-4">
+                    {validating ? (
+                      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 px-5 py-6 shadow-[0_12px_40px_rgba(59,130,246,0.14)]">
+                        <div className="flex items-center gap-3 text-blue-800">
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {translate(
+                                "validation.status.validating",
+                                "Validating...",
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-blue-700/90">
+                              {translate(
+                                "validationModal.loadingHint",
+                                "Please wait while we validate the Excel sheet. Results will appear in this same modal.",
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : validationModalStep === "validation" ? (
+                      <>
                     {!validationItems.length && !validationMessage && (
                       <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-xs text-slate-600">
                         {translate(
@@ -5604,23 +5628,354 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         )}
                       </div>
                     )}
+                      </>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-blue-900 shadow-[0_10px_30px_rgba(59,130,246,0.12)]">
+                          <div className="text-sm font-semibold">
+                            {translate(
+                              "validationModal.step2.title",
+                              "Step 2: Edit report information",
+                            )}
+                          </div>
+                          <p className="text-xs text-blue-900/80 mt-1">
+                            {translate(
+                              "validationModal.step2.subtitle",
+                              "Update important report fields and choose whether to upload PDFs or use the placeholder.",
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {translate("editModal.field.title", "Title")}
+                            </label>
+                            <input
+                              type="text"
+                              value={uploadFormData.title}
+                              onChange={(e) =>
+                                setUploadFormData((prev) => ({
+                                  ...prev,
+                                  title: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {translate(
+                                "editModal.field.clientName",
+                                "Client Name",
+                              )}
+                            </label>
+                            <input
+                              type="text"
+                              value={uploadFormData.client_name}
+                              onChange={(e) =>
+                                setUploadFormData((prev) => ({
+                                  ...prev,
+                                  client_name: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {translate("editModal.field.telephone", "Telephone")}
+                            </label>
+                            <input
+                              type="text"
+                              value={uploadFormData.telephone}
+                              onChange={(e) =>
+                                setUploadFormData((prev) => ({
+                                  ...prev,
+                                  telephone: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {translate("editModal.field.email", "Email")}
+                            </label>
+                            <input
+                              type="email"
+                              value={uploadFormData.email}
+                              onChange={(e) =>
+                                setUploadFormData((prev) => ({
+                                  ...prev,
+                                  email: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm space-y-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                                <Files className="w-3.5 h-3.5 text-blue-600" />
+                                {translate(
+                                  "validationModal.step2.pdfSection.title",
+                                  "PDF attachment (optional)",
+                                )}
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-600">
+                                {translate(
+                                  "validationModal.step2.pdfSection.subtitle",
+                                  "Choose to upload matching PDFs now, or skip and use the placeholder automatically.",
+                                )}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                                wantsPdfUpload
+                                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              }`}
+                            >
+                              {wantsPdfUpload
+                                ? translate(
+                                    "validationModal.step2.pdfSection.modeUpload",
+                                    "Upload mode",
+                                  )
+                                : translate(
+                                    "validationModal.step2.pdfSection.modePlaceholder",
+                                    "Placeholder mode",
+                                  )}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePdfToggle(false)}
+                              className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                                !wantsPdfUpload
+                                  ? "border-emerald-300 bg-emerald-50"
+                                  : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="text-xs font-semibold text-slate-800">
+                                {translate(
+                                  "validationModal.step2.pdfSection.usePlaceholder",
+                                  "Use placeholder PDF",
+                                )}
+                              </div>
+                              <p className="mt-1 text-[10px] text-slate-600">
+                                {translate(
+                                  "validationModal.step2.pdfSection.usePlaceholderHint",
+                                  "Skip manual PDF upload and use the built-in placeholder file.",
+                                )}
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePdfToggle(true)}
+                              className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                                wantsPdfUpload
+                                  ? "border-blue-300 bg-blue-50"
+                                  : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="text-xs font-semibold text-slate-800">
+                                {translate(
+                                  "validationModal.step2.pdfSection.uploadPdfs",
+                                  "Upload PDFs",
+                                )}
+                              </div>
+                              <p className="mt-1 text-[10px] text-slate-600">
+                                {translate(
+                                  "validationModal.step2.pdfSection.uploadPdfsHint",
+                                  "Upload PDF files with names matching each Excel filename.",
+                                )}
+                              </p>
+                            </button>
+                          </div>
+
+                          {wantsPdfUpload ? (
+                            <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-3 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-medium text-blue-800">
+                                  {pdfFiles.length
+                                    ? translate(
+                                        "filePicker.selectedPdfs",
+                                        "{{count}} file(s) selected",
+                                        { count: pdfFiles.length },
+                                      )
+                                    : translate(
+                                        "filePicker.choosePdfFiles",
+                                        "Choose PDF files",
+                                      )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={openPdfPicker}
+                                  className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                                >
+                                  {translate(
+                                    "validationModal.step2.pdfSection.chooseButton",
+                                    "Choose PDFs",
+                                  )}
+                                </button>
+                              </div>
+                              {pdfFiles.length > 0 && (
+                                <div className="rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-[10px] text-slate-700">
+                                  {pdfFiles
+                                    .slice(0, 4)
+                                    .map((file) => file.name)
+                                    .join(", ")}
+                                  {pdfFiles.length > 4
+                                    ? translate(
+                                        "validationModal.step2.pdfSection.moreFiles",
+                                        "+{{count}} more",
+                                        { count: pdfFiles.length - 4 },
+                                      )
+                                    : ""}
+                                </div>
+                              )}
+                              {pdfMatchInfo.excelsMissingPdf.length > 0 ||
+                              pdfMatchInfo.unmatchedPdfs.length > 0 ? (
+                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] text-rose-700">
+                                  {translate(
+                                    "validationModal.step2.pdfSection.matchWarning",
+                                    "Some PDF filenames do not match Excel filenames.",
+                                  )}
+                                </div>
+                              ) : pdfFiles.length > 0 ? (
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700">
+                                  {translate(
+                                    "validationModal.step2.pdfSection.matchSuccess",
+                                    "All selected PDFs match Excel filenames.",
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-700">
+                              {translate(
+                                "filePicker.willUseDummyPdf",
+                                "Will use {{placeholder}}",
+                                { placeholder: DUMMY_PDF_NAME },
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {!isReadyToUpload && (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs text-amber-700">
+                            {translate(
+                              "validationModal.step2.fixValidationFirst",
+                              "Fix validation issues first, then choose one of the action buttons below.",
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-200 bg-white/90 px-5 py-3 text-[10px] text-slate-500">
-                  <span>
-                    {translate(
-                      "validationModal.footerHint",
-                      "Close this panel after reviewing the issues.",
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowValidationModal(false)}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    {translate("validationModal.closeButton", "Close")}
-                  </button>
+                  {validating ? (
+                    <>
+                      <span>
+                        {translate(
+                          "validationModal.loadingHint",
+                          "Please wait while we validate the Excel sheet. Results will appear in this same modal.",
+                        )}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {translate(
+                          "validation.status.validating",
+                          "Validating...",
+                        )}
+                      </span>
+                    </>
+                  ) : validationModalStep === "validation" ? (
+                    <>
+                      <span>
+                        {translate(
+                          "validationModal.footerContinueHint",
+                          "Continue to edit report info and choose the upload action.",
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleValidationContinue}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                        {translate("validationModal.continueButton", "Continue")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {translate(
+                          "validationModal.step2.actionHint",
+                          "Choose how to continue with the uploaded reports.",
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setValidationModalStep("validation")}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
+                        >
+                          {translate(
+                            "validationModal.step2.back",
+                            "Back to validation",
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => executeUploadModalAction("later")}
+                          disabled={storeOnlyLoading || !isReadyToUpload}
+                          className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {storeOnlyLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <FileIcon className="w-3.5 h-3.5" />
+                          )}
+                          {storeOnlyLoading
+                            ? translate("actions.uploading", "Uploading...")
+                            : translate(
+                                "actions.storeAndSubmitLater",
+                                "Store and Submit Later",
+                              )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => executeUploadModalAction("now")}
+                          disabled={
+                            storeAndSubmitLoading || submitting || !isReadyToUpload
+                          }
+                          className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {storeAndSubmitLoading || submitting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          {storeAndSubmitLoading
+                            ? translate("actions.uploading", "Uploading...")
+                            : submitting
+                              ? translate("actions.submitting", "Submitting...")
+                              : translate(
+                                  "actions.storeAndSubmitNow",
+                                  "Store and Submit Now",
+                                )}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -479,6 +479,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
     const shouldShowUpdateNotice = isAuthenticated && !isAdmin && latestUpdate && userUpdateState?.status !== 'applied' && !hideUpdateNotice;
 
     const taqeemLoggedIn = taqeemStatus?.state === 'success';
+    const taqeemLoginClickable = !taqeemLoggedIn && reconnectState !== 'opening';
     const reconnectMessage = useMemo(() => {
         if (reconnectState === 'opening') {
             return t('taqeemReconnect.connecting', { defaultValue: 'Opening Taqeem login...' });
@@ -1185,15 +1186,26 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <div
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-semibold shadow-[0_6px_14px_rgba(2,6,23,0.35)] ${taqeemLoggedIn
-                                    ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100'
-                                    : 'border-rose-400/40 bg-rose-500/20 text-rose-100'
+                            <button
+                                type="button"
+                                onClick={taqeemLoginClickable ? handleReconnectToTaqeem : undefined}
+                                disabled={!taqeemLoginClickable}
+                                title={!taqeemLoggedIn
+                                    ? t('taqeemReconnect.action', { defaultValue: 'Connect to Taqeem' })
+                                    : t('taqeemReconnect.success', { defaultValue: 'Reconnected to Taqeem successfully.' })}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-semibold shadow-[0_6px_14px_rgba(2,6,23,0.35)] transition-colors ${taqeemLoggedIn
+                                    ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100 cursor-not-allowed opacity-90'
+                                    : taqeemLoginClickable
+                                        ? 'border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30'
+                                        : 'border-rose-400/40 bg-rose-500/20 text-rose-100 cursor-not-allowed opacity-90'
                                     }`}
                             >
+                                {!taqeemLoggedIn && reconnectState === 'opening' ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : null}
                                 <span>Taqeem login:</span>
                                 <span className="uppercase">{taqeemLoggedIn ? 'On' : 'Off'}</span>
-                            </div>
+                            </button>
 
                             <div
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-semibold shadow-[0_6px_14px_rgba(2,6,23,0.35)] ${selectedCompany

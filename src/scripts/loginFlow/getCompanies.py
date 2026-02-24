@@ -33,7 +33,7 @@ def _normalize_valuers(items):
             continue
         if lower_name in ("", "select", "choose"):
             continue
-        if valuer_name == "ÃËÃÂªÃËÃÂ­ÃËÃÂ¯Ãâ¢ÃÅ ÃËÃÂ¯":
+        if valuer_name == "تحديد":
             continue
         if valuer_id in seen:
             continue

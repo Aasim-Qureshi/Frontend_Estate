@@ -16,8 +16,8 @@ async def wait_for_element(page, selector, timeout=30, check_interval=0.2):
 
 def log(msg: str, level: str = "INFO"):
     stamp = datetime.now().strftime("%H:%M:%S")
-    icons = {"INFO":"â¹ï¸", "OK":"â", "ERR":"â", "STEP":"ð"}
-    print(f"{icons.get(level,'â¹ï¸')} [{stamp}] {msg}", flush=True)
+    icons = {"INFO":"ℹ️", "OK":"✅", "ERR":"❌", "STEP":"👉"}
+    print(f"{icons.get(level,'ℹ️')} [{stamp}] {msg}", flush=True)
 
 async def safe_query_selector_all(page, selector, timeout=100, interval=0.5):
     start = time.time()
