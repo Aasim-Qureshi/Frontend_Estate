@@ -947,7 +947,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         const bytes = Uint8Array.from(result.arrayBuffer);
         if (!bytes.length) return;
 
-        objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+        objectUrl = URL.createObjectURL(
+          new Blob([bytes], { type: "image/png" }),
+        );
         if (!disposed) {
           setExcelIconSrc(objectUrl);
         }
@@ -1092,7 +1094,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
   const syncUploadFormFromValidation = useCallback((items = []) => {
     const snapshot =
-      items.find((item) => item?.snapshot)?.snapshot || DEFAULT_REPORT_INFO_FORM;
+      items.find((item) => item?.snapshot)?.snapshot ||
+      DEFAULT_REPORT_INFO_FORM;
     setUploadFormData({
       title: String(snapshot?.title || ""),
       client_name: String(snapshot?.client_name || ""),
@@ -3560,7 +3563,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       }
       return;
     }
-
   };
 
   const handleReportAction = async (report, action) => {
@@ -3905,7 +3907,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <span className="block truncate text-[10px] font-semibold text-slate-800">
                   {excelFiles.length ? (
                     excelFiles.length === 1 ? (
-                      <span title={excelFiles[0].name}>{excelFiles[0].name}</span>
+                      <span title={excelFiles[0].name}>
+                        {excelFiles[0].name}
+                      </span>
                     ) : (
                       translate(
                         "filePicker.selectedFiles",
@@ -3993,7 +3997,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 </span>
               )}
               <span className="text-[10px] font-semibold leading-tight">
-                {translate("filePicker.exportTemplate", "Export Excel Template")}
+                {translate(
+                  "filePicker.exportTemplate",
+                  "Export Excel Template",
+                )}
               </span>
             </button>
           </div>
@@ -4023,10 +4030,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-amber-900">
-                {translate(
-                  "temporarySection.title",
-                  "Temporary Reports",
-                )}
+                {translate("temporarySection.title", "Temporary Reports")}
               </h3>
               <p className="text-[10px] text-amber-700">
                 {translate(
@@ -4041,10 +4045,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-50"
             >
               <Table className="w-3 h-3" />
-              {translate(
-                "temporarySection.open",
-                "Show Temporary Reports",
-              )}
+              {translate("temporarySection.open", "Show Temporary Reports")}
             </button>
           </div>
         </div>
@@ -4062,10 +4063,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-amber-100">
               <div>
                 <h3 className="text-base font-semibold text-amber-900">
-                  {translate(
-                    "temporaryModal.title",
-                    "Temporary Reports",
-                  )}
+                  {translate("temporaryModal.title", "Temporary Reports")}
                 </h3>
                 <p className="text-[11px] text-amber-700">
                   {translate(
@@ -4131,7 +4129,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     <thead className="bg-amber-100/70 text-amber-900">
                       <tr>
                         <th className="px-2 py-1.5 text-left">
-                          {translate("temporaryModal.table.reportId", "Report ID")}
+                          {translate(
+                            "temporaryModal.table.reportId",
+                            "Report ID",
+                          )}
                         </th>
                         <th className="px-2 py-1.5 text-left">
                           {translate("temporaryModal.table.client", "Client")}
@@ -4168,12 +4169,18 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           >
                             <td className="px-2 py-1.5 text-[11px] text-slate-800">
                               {report.report_id ||
-                                translate("reports.notSubmitted", "Not Submitted")}
+                                translate(
+                                  "reports.notSubmitted",
+                                  "Not Submitted",
+                                )}
                             </td>
                             <td className="px-2 py-1.5 text-[11px] text-slate-700">
                               {report.client_name ||
                                 report.title ||
-                                translate("temporaryModal.unknownClient", "Unknown")}
+                                translate(
+                                  "temporaryModal.unknownClient",
+                                  "Unknown",
+                                )}
                             </td>
                             <td className="px-2 py-1.5 text-[11px] text-slate-700">
                               {assetCount}
@@ -4785,7 +4792,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <td colSpan={8} className="bg-blue-50/20 border-t border-blue-200">
+                              <td
+                                colSpan={8}
+                                className="bg-blue-50/20 border-t border-blue-200"
+                              >
                                 <div className="p-2 space-y-2">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div
@@ -4820,7 +4830,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                           <tr>
                                             <th
                                               className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                isArabicUi ? "text-right" : "text-left"
+                                                isArabicUi
+                                                  ? "text-right"
+                                                  : "text-left"
                                               }`}
                                             >
                                               {translate(
@@ -4830,7 +4842,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             </th>
                                             <th
                                               className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                isArabicUi ? "text-right" : "text-left"
+                                                isArabicUi
+                                                  ? "text-right"
+                                                  : "text-left"
                                               }`}
                                             >
                                               {translate(
@@ -4840,7 +4854,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             </th>
                                             <th
                                               className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                isArabicUi ? "text-right" : "text-left"
+                                                isArabicUi
+                                                  ? "text-right"
+                                                  : "text-left"
                                               }`}
                                             >
                                               {translate(
@@ -4850,7 +4866,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             </th>
                                             <th
                                               className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                isArabicUi ? "text-right" : "text-left"
+                                                isArabicUi
+                                                  ? "text-right"
+                                                  : "text-left"
                                               }`}
                                             >
                                               {translate(
@@ -4860,7 +4878,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                             </th>
                                             <th
                                               className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                isArabicUi ? "text-right" : "text-left"
+                                                isArabicUi
+                                                  ? "text-right"
+                                                  : "text-left"
                                               }`}
                                             >
                                               {translate(
@@ -4910,7 +4930,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                 >
                                                   <td
                                                     className={`px-2 py-1.5 text-slate-700 text-xs font-mono ${
-                                                      isArabicUi ? "text-right" : "text-left"
+                                                      isArabicUi
+                                                        ? "text-right"
+                                                        : "text-left"
                                                     }`}
                                                   >
                                                     {asset.id ||
@@ -4919,28 +4941,36 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                   </td>
                                                   <td
                                                     className={`px-2 py-1.5 text-slate-700 text-xs font-medium ${
-                                                      isArabicUi ? "text-right" : "text-left"
+                                                      isArabicUi
+                                                        ? "text-right"
+                                                        : "text-left"
                                                     }`}
                                                   >
                                                     {asset.asset_name || "-"}
                                                   </td>
                                                   <td
                                                     className={`px-2 py-1.5 text-slate-700 text-xs ${
-                                                      isArabicUi ? "text-right" : "text-left"
+                                                      isArabicUi
+                                                        ? "text-right"
+                                                        : "text-left"
                                                     }`}
                                                   >
                                                     {asset.final_value || "-"}
                                                   </td>
                                                   <td
                                                     className={`px-2 py-1.5 text-slate-600 text-xs ${
-                                                      isArabicUi ? "text-right" : "text-left"
+                                                      isArabicUi
+                                                        ? "text-right"
+                                                        : "text-left"
                                                     }`}
                                                   >
                                                     {asset.source_sheet || "-"}
                                                   </td>
                                                   <td
                                                     className={`px-2 py-1.5 ${
-                                                      isArabicUi ? "text-right" : "text-left"
+                                                      isArabicUi
+                                                        ? "text-right"
+                                                        : "text-left"
                                                     }`}
                                                   >
                                                     <span
@@ -5337,9 +5367,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         <X className="w-3.5 h-3.5" />
                       )}
                       {validating
-                        ? translate("validation.status.validating", "Validating...")
+                        ? translate(
+                            "validation.status.validating",
+                            "Validating...",
+                          )
                         : validationModalStep === "validation"
-                          ? translate("validationModal.continueButton", "Continue")
+                          ? translate(
+                              "validationModal.continueButton",
+                              "Continue",
+                            )
                           : translate("validationModal.closeButton", "Close")}
                     </button>
                   </div>
@@ -5370,264 +5406,267 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                       </div>
                     ) : validationModalStep === "validation" ? (
                       <>
-                    {!validationItems.length && !validationMessage && (
-                      <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-xs text-slate-600">
-                        {translate(
-                          "validationModal.emptyMessage",
-                          "Upload Excel files to generate validation results.",
+                        {!validationItems.length && !validationMessage && (
+                          <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-xs text-slate-600">
+                            {translate(
+                              "validationModal.emptyMessage",
+                              "Upload Excel files to generate validation results.",
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
 
-                    {!hasValidationIssues && validationItems.length > 0 && (
-                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-4 text-emerald-700 shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
-                        <div className="flex items-center gap-3">
-                          <CheckCircle2 className="w-6 h-6" />
-                          <div>
-                            <div className="text-sm font-semibold">
-                              {translate(
-                                "validationModal.noIssues",
-                                "No issues detected",
-                              )}
-                            </div>
-                            <p className="text-xs text-emerald-700/90">
-                              {translate(
-                                "validationModal.noIssuesDetails",
-                                "Your Excel files look clean. You can proceed with uploading and submission.",
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {hasValidationIssues && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-rose-700 shadow-[0_10px_30px_rgba(248,113,113,0.12)]">
-                          <div className="text-sm font-semibold">
-                            {translate(
-                              "validationModal.actionRequired",
-                              "Action required",
-                            )}
-                          </div>
-                          <p className="text-xs text-rose-700/90">
-                            {translate(
-                              "validationModal.actionHint",
-                              "Fix the items below and re-validate before uploading. Ensure required fields are filled, inspection dates are valid, and asset usage IDs match the allowed list.",
-                            )}
-                          </p>
-                        </div>
-
-                        <div className="inline-flex rounded-full bg-slate-100/80 p-1 text-xs font-semibold text-slate-600 shadow-sm">
-                          <button
-                            type="button"
-                            onClick={() => setValidationTableTab("report-info")}
-                            className={`px-4 py-1.5 rounded-full transition ${
-                              validationTableTab === "report-info"
-                                ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
-                            }`}
-                          >
-                            {translate(
-                              "validationModal.tabs.reportInfo",
-                              "Report Info",
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setValidationTableTab("assets")}
-                            className={`px-4 py-1.5 rounded-full transition ${
-                              validationTableTab === "assets"
-                                ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
-                            }`}
-                          >
-                            {translate(
-                              "validationModal.tabs.assetsAndPdfs",
-                              "Assets & PDFs",
-                            )}
-                          </button>
-                        </div>
-
-                        {validationTableTab === "report-info" ? (
-                          reportInfoIssues.length > 0 ? (
-                            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                              <div className="max-h-[260px] overflow-y-auto">
-                                <table className="min-w-full text-xs text-slate-700">
-                                  <thead className="bg-slate-900 text-slate-100 sticky top-0">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                        {translate(
-                                          "validationModal.table.headers.excel",
-                                          "Excel",
-                                        )}
-                                      </th>
-                                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                        {translate(
-                                          "validationModal.table.headers.field",
-                                          "Field",
-                                        )}
-                                      </th>
-                                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                        {translate(
-                                          "validationModal.table.headers.location",
-                                          "Location",
-                                        )}
-                                      </th>
-                                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                        {translate(
-                                          "validationModal.table.headers.details",
-                                          "Details",
-                                        )}
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {reportInfoIssues.map((issue, idx) => (
-                                      <tr
-                                        key={`report-info-${idx}`}
-                                        className="border-b border-slate-200"
-                                      >
-                                        <td className="px-3 py-2 font-medium text-slate-800">
-                                          {issue.fileName}
-                                        </td>
-                                        <td className="px-3 py-2 font-semibold text-slate-800">
-                                          {issue.field}
-                                        </td>
-                                        <td className="px-3 py-2 text-slate-600">
-                                          {issue.location || "-"}
-                                        </td>
-                                        <td className="px-3 py-2 text-slate-700">
-                                          {issue.message}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                        {!hasValidationIssues && validationItems.length > 0 && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-4 text-emerald-700 shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
+                            <div className="flex items-center gap-3">
+                              <CheckCircle2 className="w-6 h-6" />
+                              <div>
+                                <div className="text-sm font-semibold">
+                                  {translate(
+                                    "validationModal.noIssues",
+                                    "No issues detected",
+                                  )}
+                                </div>
+                                <p className="text-xs text-emerald-700/90">
+                                  {translate(
+                                    "validationModal.noIssuesDetails",
+                                    "Your Excel files look clean. You can proceed with uploading and submission.",
+                                  )}
+                                </p>
                               </div>
                             </div>
-                          ) : (
-                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-                              {translate(
-                                "validationModal.reportInfo.noIssues",
-                                "No report info issues detected.",
-                              )}
-                            </div>
-                          )
-                        ) : (
-                          <div className="space-y-3">
-                            {wantsPdfUpload &&
-                              (pdfMatchInfo.excelsMissingPdf.length ||
-                                pdfMatchInfo.unmatchedPdfs.length) && (
-                                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-700 text-xs">
-                                  <div className="font-semibold">
-                                    {translate(
-                                      "validationModal.pdfMatchingIssues.title",
-                                      "PDF matching issues",
-                                    )}
-                                  </div>
-                                  <div className="mt-1 space-y-1">
-                                    {pdfMatchInfo.excelsMissingPdf.length >
-                                      0 && (
-                                      <div>
-                                        {translate(
-                                          "validationModal.pdfMatchingIssues.missing",
-                                          "Excel files missing PDF: {{files}}",
-                                          {
-                                            files:
-                                              pdfMatchInfo.excelsMissingPdf.join(
-                                                ", ",
-                                              ),
-                                          },
-                                        )}
-                                      </div>
-                                    )}
-                                    {pdfMatchInfo.unmatchedPdfs.length > 0 && (
-                                      <div>
-                                        {translate(
-                                          "validationModal.pdfMatchingIssues.unmatched",
-                                          "Unmatched PDFs: {{files}}",
-                                          {
-                                            files:
-                                              pdfMatchInfo.unmatchedPdfs.join(
-                                                ", ",
-                                              ),
-                                          },
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                          </div>
+                        )}
 
-                            {assetIssues.length > 0 ? (
-                              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                                <div className="max-h-[260px] overflow-y-auto">
-                                  <table className="min-w-full text-xs text-slate-700">
-                                    <thead className="bg-slate-900 text-slate-100 sticky top-0">
-                                      <tr>
-                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                          {translate(
-                                            "validationModal.table.headers.excel",
-                                            "Excel",
-                                          )}
-                                        </th>
-                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                          {translate(
-                                            "validationModal.table.headers.field",
-                                            "Field",
-                                          )}
-                                        </th>
-                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                          {translate(
-                                            "validationModal.table.headers.location",
-                                            "Location",
-                                          )}
-                                        </th>
-                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                          {translate(
-                                            "validationModal.table.headers.details",
-                                            "Details",
-                                          )}
-                                        </th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {assetIssues.map((issue, idx) => (
-                                        <tr
-                                          key={`asset-issue-${idx}`}
-                                          className="border-b border-slate-200"
-                                        >
-                                          <td className="px-3 py-2 font-medium text-slate-800">
-                                            {issue.fileName}
-                                          </td>
-                                          <td className="px-3 py-2 font-semibold text-slate-800">
-                                            {issue.field}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-600">
-                                            {issue.location || "-"}
-                                          </td>
-                                          <td className="px-3 py-2 text-slate-700">
-                                            {issue.message}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+                        {hasValidationIssues && (
+                          <div className="space-y-4">
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-rose-700 shadow-[0_10px_30px_rgba(248,113,113,0.12)]">
+                              <div className="text-sm font-semibold">
                                 {translate(
-                                  "validationModal.assetIssues.noIssues",
-                                  "No asset issues detected.",
+                                  "validationModal.actionRequired",
+                                  "Action required",
+                                )}
+                              </div>
+                              <p className="text-xs text-rose-700/90">
+                                {translate(
+                                  "validationModal.actionHint",
+                                  "Fix the items below and re-validate before uploading. Ensure required fields are filled, inspection dates are valid, and asset usage IDs match the allowed list.",
+                                )}
+                              </p>
+                            </div>
+
+                            <div className="inline-flex rounded-full bg-slate-100/80 p-1 text-xs font-semibold text-slate-600 shadow-sm">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setValidationTableTab("report-info")
+                                }
+                                className={`px-4 py-1.5 rounded-full transition ${
+                                  validationTableTab === "report-info"
+                                    ? "bg-white text-slate-900 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                }`}
+                              >
+                                {translate(
+                                  "validationModal.tabs.reportInfo",
+                                  "Report Info",
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setValidationTableTab("assets")}
+                                className={`px-4 py-1.5 rounded-full transition ${
+                                  validationTableTab === "assets"
+                                    ? "bg-white text-slate-900 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                }`}
+                              >
+                                {translate(
+                                  "validationModal.tabs.assetsAndPdfs",
+                                  "Assets & PDFs",
+                                )}
+                              </button>
+                            </div>
+
+                            {validationTableTab === "report-info" ? (
+                              reportInfoIssues.length > 0 ? (
+                                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                  <div className="max-h-[260px] overflow-y-auto">
+                                    <table className="min-w-full text-xs text-slate-700">
+                                      <thead className="bg-slate-900 text-slate-100 sticky top-0">
+                                        <tr>
+                                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            {translate(
+                                              "validationModal.table.headers.excel",
+                                              "Excel",
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            {translate(
+                                              "validationModal.table.headers.field",
+                                              "Field",
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            {translate(
+                                              "validationModal.table.headers.location",
+                                              "Location",
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                            {translate(
+                                              "validationModal.table.headers.details",
+                                              "Details",
+                                            )}
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {reportInfoIssues.map((issue, idx) => (
+                                          <tr
+                                            key={`report-info-${idx}`}
+                                            className="border-b border-slate-200"
+                                          >
+                                            <td className="px-3 py-2 font-medium text-slate-800">
+                                              {issue.fileName}
+                                            </td>
+                                            <td className="px-3 py-2 font-semibold text-slate-800">
+                                              {issue.field}
+                                            </td>
+                                            <td className="px-3 py-2 text-slate-600">
+                                              {issue.location || "-"}
+                                            </td>
+                                            <td className="px-3 py-2 text-slate-700">
+                                              {issue.message}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+                                  {translate(
+                                    "validationModal.reportInfo.noIssues",
+                                    "No report info issues detected.",
+                                  )}
+                                </div>
+                              )
+                            ) : (
+                              <div className="space-y-3">
+                                {wantsPdfUpload &&
+                                  (pdfMatchInfo.excelsMissingPdf.length ||
+                                    pdfMatchInfo.unmatchedPdfs.length) && (
+                                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-700 text-xs">
+                                      <div className="font-semibold">
+                                        {translate(
+                                          "validationModal.pdfMatchingIssues.title",
+                                          "PDF matching issues",
+                                        )}
+                                      </div>
+                                      <div className="mt-1 space-y-1">
+                                        {pdfMatchInfo.excelsMissingPdf.length >
+                                          0 && (
+                                          <div>
+                                            {translate(
+                                              "validationModal.pdfMatchingIssues.missing",
+                                              "Excel files missing PDF: {{files}}",
+                                              {
+                                                files:
+                                                  pdfMatchInfo.excelsMissingPdf.join(
+                                                    ", ",
+                                                  ),
+                                              },
+                                            )}
+                                          </div>
+                                        )}
+                                        {pdfMatchInfo.unmatchedPdfs.length >
+                                          0 && (
+                                          <div>
+                                            {translate(
+                                              "validationModal.pdfMatchingIssues.unmatched",
+                                              "Unmatched PDFs: {{files}}",
+                                              {
+                                                files:
+                                                  pdfMatchInfo.unmatchedPdfs.join(
+                                                    ", ",
+                                                  ),
+                                              },
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                {assetIssues.length > 0 ? (
+                                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                    <div className="max-h-[260px] overflow-y-auto">
+                                      <table className="min-w-full text-xs text-slate-700">
+                                        <thead className="bg-slate-900 text-slate-100 sticky top-0">
+                                          <tr>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                              {translate(
+                                                "validationModal.table.headers.excel",
+                                                "Excel",
+                                              )}
+                                            </th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                              {translate(
+                                                "validationModal.table.headers.field",
+                                                "Field",
+                                              )}
+                                            </th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                              {translate(
+                                                "validationModal.table.headers.location",
+                                                "Location",
+                                              )}
+                                            </th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
+                                              {translate(
+                                                "validationModal.table.headers.details",
+                                                "Details",
+                                              )}
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {assetIssues.map((issue, idx) => (
+                                            <tr
+                                              key={`asset-issue-${idx}`}
+                                              className="border-b border-slate-200"
+                                            >
+                                              <td className="px-3 py-2 font-medium text-slate-800">
+                                                {issue.fileName}
+                                              </td>
+                                              <td className="px-3 py-2 font-semibold text-slate-800">
+                                                {issue.field}
+                                              </td>
+                                              <td className="px-3 py-2 text-slate-600">
+                                                {issue.location || "-"}
+                                              </td>
+                                              <td className="px-3 py-2 text-slate-700">
+                                                {issue.message}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+                                    {translate(
+                                      "validationModal.assetIssues.noIssues",
+                                      "No asset issues detected.",
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             )}
                           </div>
                         )}
-                      </div>
-                    )}
                       </>
                     ) : (
                       <div className="space-y-4">
@@ -5684,7 +5723,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {translate("editModal.field.telephone", "Telephone")}
+                              {translate(
+                                "editModal.field.telephone",
+                                "Telephone",
+                              )}
                             </label>
                             <input
                               type="text"
@@ -5911,7 +5953,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
                       >
                         <ChevronRight className="w-3.5 h-3.5" />
-                        {translate("validationModal.continueButton", "Continue")}
+                        {translate(
+                          "validationModal.continueButton",
+                          "Continue",
+                        )}
                       </button>
                     </>
                   ) : (
@@ -5955,7 +6000,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           type="button"
                           onClick={() => executeUploadModalAction("now")}
                           disabled={
-                            storeAndSubmitLoading || submitting || !isReadyToUpload
+                            storeAndSubmitLoading ||
+                            submitting ||
+                            !isReadyToUpload
                           }
                           className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
                         >

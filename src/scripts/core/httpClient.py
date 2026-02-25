@@ -39,7 +39,7 @@ class HttpClient:
         base_url: str = BASE_API_URL,
         default_headers: Optional[Dict[str, str]] = None,
         timeout: float = 15.0,
-        retries: int = 2,
+        retries: int = 10,
     ):
         self.base_url = base_url.rstrip("/")  # normalize
         self.default_headers = default_headers or {}
