@@ -988,6 +988,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const [valuerModalError, setValuerModalError] = useState("");
   const [useDefaultValuers, setUseDefaultValuers] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationModalStep, setValidationModalStep] =
+    useState("validation");
   const [overrideCompanyValuers, setOverrideCompanyValuers] = useState(null);
   const [fetchingCompanyValuers, setFetchingCompanyValuers] = useState(false);
   const [assetEdit, setAssetEdit] = useState(null);
@@ -1405,6 +1407,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setOverrideCompanyValuers(null);
     setUseDefaultValuers(false);
     setShowValidationModal(false);
+    setValidationModalStep("validation");
     if (valuerModalResolveRef.current) {
       valuerModalResolveRef.current(false);
       valuerModalResolveRef.current = null;
@@ -1434,6 +1437,18 @@ const MultiExcelUpload = ({ onViewChange }) => {
     });
   }, [selectedCompanyKey, valuerOptionValues]);
 
+  const openPdfPicker = useCallback(() => {
+    if (pdfInputRef?.current) {
+      pdfInputRef.current.value = null;
+      pdfInputRef.current.click();
+    }
+  }, []);
+
+  const openValidationModal = useCallback(() => {
+    setValidationModalStep("validation");
+    setShowValidationModal(true);
+  }, []);
+
   // Update handleExcelChange to use the ref
   const handleExcelChange = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1441,6 +1456,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     resetMessages();
     resetValidation();
     setShowValidationModal(false);
+    setValidationModalStep("validation");
     setUseDefaultValuers(false);
     if (files.length) {
       const ok = await ensureCompanyValuersLoaded();
@@ -1457,19 +1473,21 @@ const MultiExcelUpload = ({ onViewChange }) => {
     resetMessages();
     if (files.length && excelFiles.length) {
       setValidationTableTab("pdf-assets");
-      setShowValidationModal(true);
+      if (!showValidationModal) {
+        setShowValidationModal(true);
+      }
     }
   };
 
-  const handlePdfToggle = (checked) => {
+  const handlePdfToggle = (checked, options = {}) => {
+    const { openPicker = false } = options;
     setWantsPdfUpload(checked);
     if (!checked) {
       setPdfFiles([]);
-    } else {
-      if (pdfInputRef?.current) {
-        pdfInputRef.current.value = null;
-        pdfInputRef.current.click();
-      }
+    } else if (openPicker && (!wantsPdfUpload || pdfFiles.length === 0)) {
+      setTimeout(() => {
+        openPdfPicker();
+      }, 0);
     }
     resetMessages();
     resetValidation();
@@ -1502,6 +1520,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setOverrideCompanyValuers(null);
     setUseDefaultValuers(false);
     setShowValidationModal(false);
+    setValidationModalStep("validation");
     resetPendingSubmit();
     resetPendingBatch();
     resetReturnView();
@@ -2758,6 +2777,24 @@ const MultiExcelUpload = ({ onViewChange }) => {
     }
   };
 
+  const closeValidationModal = () => {
+    setShowValidationModal(false);
+    setValidationModalStep("validation");
+  };
+
+  const handleValidationContinue = () => {
+    setValidationModalStep("pdf-upload");
+  };
+
+  const executeUploadModalAction = async (mode) => {
+    closeValidationModal();
+    if (mode === "now") {
+      await handleUploadAndCreate();
+      return;
+    }
+    await handleStoreOnly();
+  };
+
   const requiredFields = useMemo(
     () => [
       "title",
@@ -3253,7 +3290,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(true);
     setValuerModalError("");
     closeValuerModal(true);
-    setShowValidationModal(true);
+    openValidationModal();
   };
 
   const applyValuerDraft = () => {
@@ -3276,7 +3313,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(false);
     setValuerModalError("");
     closeValuerModal(true);
-    setShowValidationModal(true);
+    openValidationModal();
   };
 
   const buildValuersPayload = () => {
@@ -4673,54 +4710,236 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const validationModal = (
     <Modal
       open={showValidationModal}
-      onClose={() => setShowValidationModal(false)}
-      title="Validation Console"
+      onClose={closeValidationModal}
+      title={
+        validationModalStep === "validation"
+          ? "Validation Console"
+          : "Step 2: PDF upload and actions"
+      }
       maxWidth="max-w-6xl"
     >
-      {validationConsole}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-        <span className="text-xs text-slate-600">
-          Run validation, then choose how to continue with the reports.
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowValidationModal(false)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={handleStoreOnly}
-            disabled={loading || validating || !isReadyToUpload}
-            className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <FileIcon className="w-3.5 h-3.5" />
-            )}
-            {loading ? "Storing..." : "Store and Send Later"}
-          </button>
-          <button
-            type="button"
-            onClick={handleUploadAndCreate}
-            disabled={loading || creatingReports || validating || !isReadyToUpload}
-            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading || creatingReports ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Send className="w-3.5 h-3.5" />
-            )}
-            {creatingReports
-              ? "Creating Reports..."
-              : loading
-                ? "Uploading..."
-                : "Upload & Send To Taqeem"}
-          </button>
+      <div className="space-y-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span
+              className={`rounded-full border px-2 py-0.5 ${
+                validationModalStep === "validation"
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Step 1: Validation
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <span
+              className={`rounded-full border px-2 py-0.5 ${
+                validationModalStep === "pdf-upload"
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Step 2: PDF & Actions
+            </span>
+          </div>
         </div>
+
+        {validationModalStep === "validation" ? (
+          <>
+            {validationConsole}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-600">
+                Review validation results, then continue to Step 2 for PDF upload
+                and action selection.
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeValidationModal}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleValidationContinue}
+                  disabled={validating || !excelFiles.length}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                  Continue to Step 2
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Files className="w-4 h-4 text-blue-600" />
+                    PDF attachment (optional)
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-600">
+                    Choose to upload matching PDFs now, or skip and use the
+                    placeholder automatically.
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                    wantsPdfUpload
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {wantsPdfUpload ? "Upload mode" : "Placeholder mode"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePdfToggle(false)}
+                  className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                    !wantsPdfUpload
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="text-xs font-semibold text-slate-800">
+                    Use placeholder PDF
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    Skip manual PDF upload and use the built-in placeholder
+                    file.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePdfToggle(true, { openPicker: true })}
+                  className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                    wantsPdfUpload
+                      ? "border-blue-300 bg-blue-50"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="text-xs font-semibold text-slate-800">
+                    Upload PDFs
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    Upload PDF files with names matching each Excel filename.
+                  </p>
+                </button>
+              </div>
+
+              {wantsPdfUpload ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium text-blue-800">
+                      {pdfFiles.length
+                        ? `${pdfFiles.length} file(s) selected`
+                        : "Choose PDF files"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={openPdfPicker}
+                      className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Choose PDFs
+                    </button>
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={handlePdfChange}
+                    />
+                  </div>
+                  {pdfFiles.length > 0 && (
+                    <div className="rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-[10px] text-slate-700">
+                      {pdfFiles
+                        .slice(0, 4)
+                        .map((file) => file.name)
+                        .join(", ")}
+                      {pdfFiles.length > 4
+                        ? ` +${pdfFiles.length - 4} more`
+                        : ""}
+                    </div>
+                  )}
+                  {pdfMatchInfo.excelsMissingPdf.length > 0 ||
+                  pdfMatchInfo.unmatchedPdfs.length > 0 ? (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] text-rose-700">
+                      Some PDF filenames do not match Excel filenames.
+                    </div>
+                  ) : pdfFiles.length > 0 ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700">
+                      All selected PDFs match Excel filenames.
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-700">
+                  Will use {DUMMY_PDF_NAME}
+                </div>
+              )}
+            </div>
+
+            {!isReadyToUpload && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Fix validation issues first, then choose one of the action
+                buttons below.
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-600">
+                Choose how to continue with the reports.
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setValidationModalStep("validation")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+                >
+                  Back to validation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeUploadModalAction("later")}
+                  disabled={loading || validating || !isReadyToUpload}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {loading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <FileIcon className="w-3.5 h-3.5" />
+                  )}
+                  {loading ? "Storing..." : "Store and Send Later"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeUploadModalAction("now")}
+                  disabled={
+                    loading || creatingReports || validating || !isReadyToUpload
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {loading || creatingReports ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  {creatingReports
+                    ? "Creating Reports..."
+                    : loading
+                      ? "Uploading..."
+                      : "Upload & Send To Taqeem"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -4776,44 +4995,6 @@ const MultiExcelUpload = ({ onViewChange }) => {
               </span>
             </label>
 
-            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border-2 border-dashed border-slate-300 bg-slate-50 transition-all hover:bg-blue-50 hover:border-blue-400 min-w-[220px] flex-[1.35] group">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                  checked={wantsPdfUpload}
-                  onChange={(e) => handlePdfToggle(e.target.checked)}
-                />
-                <Files className="w-4 h-4 text-blue-600" />
-                <span className="font-semibold">Upload PDFs</span>
-                <span className="text-xs text-slate-600">
-                  {pdfFiles.length
-                    ? `${pdfFiles.length} file(s) selected`
-                    : "Choose PDF files"}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (pdfInputRef?.current) {
-                    pdfInputRef.current.value = null;
-                    pdfInputRef.current.click();
-                  }
-                }}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700 whitespace-nowrap"
-              >
-                Browse
-              </button>
-              <input
-                ref={pdfInputRef}
-                type="file"
-                multiple
-                accept=".pdf"
-                className="hidden"
-                onChange={handlePdfChange}
-              />
-            </div>
-
             <button
               type="button"
               onClick={downloadExcelTemplate}
@@ -4841,7 +5022,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
-            onClick={() => setShowValidationModal(true)}
+            onClick={openValidationModal}
             disabled={!excelFiles.length}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-md
                                 bg-slate-900 hover:bg-slate-800

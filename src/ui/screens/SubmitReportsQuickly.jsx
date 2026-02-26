@@ -2474,6 +2474,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     setValidationModalStep("validation");
   }, []);
 
+  const openValidationModal = useCallback(() => {
+    if (!excelFiles.length) return;
+    setValidationModalStep("validation");
+    setShowValidationModal(true);
+  }, [excelFiles.length]);
+
   const handleValidationContinue = useCallback(() => {
     setValidationModalStep("edit");
   }, []);
@@ -4115,6 +4121,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <FileSpreadsheet className="h-4 w-4 text-blue-700" />
               </span>
               <span className="min-w-0 flex-1">
+                <span className="mb-0.5 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700">
+                  Step 1
+                </span>
                 <span className="block truncate text-[10px] font-semibold text-slate-800">
                   {excelFiles.length ? (
                     excelFiles.length === 1 ? (
@@ -4213,6 +4222,28 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                   "Export Excel Template",
                 )}
               </span>
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/80 px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold text-slate-700">
+              <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                Step 1: Upload Excel
+              </span>
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                Step 2: Upload PDF (Optional)
+              </span>
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                Step 3: Store & Submit Action
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={openValidationModal}
+              disabled={!excelFiles.length}
+              className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Table className="h-3.5 w-3.5" />
+              Open Validation Modal
             </button>
           </div>
         </div>
@@ -5939,6 +5970,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     ) : (
                       <div className="space-y-4">
                         <div className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-blue-900 shadow-[0_10px_30px_rgba(59,130,246,0.12)]">
+                          <span className="inline-flex items-center rounded-full border border-blue-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                            Step 2
+                          </span>
                           <div className="text-sm font-semibold">
                             {translate(
                               "validationModal.step2.title",
@@ -6029,6 +6063,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm space-y-3">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div>
+                              <span className="mb-1 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                Step 2 (Optional)
+                              </span>
                               <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                                 <Files className="w-3.5 h-3.5 text-blue-600" />
                                 {translate(
@@ -6231,11 +6268,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     </>
                   ) : (
                     <>
-                      <span>
-                        {translate(
-                          "validationModal.step2.actionHint",
-                          "Choose how to continue with the uploaded reports.",
-                        )}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Step 3
+                        </span>
+                        <span>
+                          {translate(
+                            "validationModal.step2.actionHint",
+                            "Choose how to continue with the uploaded reports.",
+                          )}
+                        </span>
                       </span>
                       <div className="flex items-center gap-2">
                         <button
