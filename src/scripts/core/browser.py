@@ -38,11 +38,16 @@ def get_profile_dir():
 async def spawn_new_browser(
     old_browser,
     user_data_dir=None,
-    headless=False,
+    headless=True,
 ):
 
     profile_dir = get_profile_dir()
     session_file = profile_dir + "/.session.dat"
+
+    user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+    )
 
     try:
         if old_browser:
@@ -52,7 +57,19 @@ async def spawn_new_browser(
         pass
 
     new_browser = await uc.start(
-        user_data_dir=None, headless=headless, browser_args=["--no_sandbox"]
+        user_data_dir=None,
+        headless=headless,
+        browser_args=[
+            f"--user-agent={user_agent}",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no_sandbox",
+            "--disable-popup-blocking",
+            "--disable-features=VizDisplayCompositor",
+            "--lang=en-US",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ],
     )
 
     try:
@@ -93,7 +110,7 @@ async def switch_to_headless():
         )
 
         headless_browser = await uc.start(
-            headless=False,
+            headless=True,
             user_data_dir=None,
             browser_args=[
                 f"--user-agent={user_agent}",

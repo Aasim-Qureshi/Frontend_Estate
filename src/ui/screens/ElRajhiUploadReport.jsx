@@ -2475,7 +2475,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             formData.append(key, value);
           });
           const response = await axios.post(
-            "http://localhost:3000/api/upload",
+            "http://167.71.231.64:3000/api/upload",
             formData,
             {
               headers: {

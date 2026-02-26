@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setRefreshToken: (token, opts = {}) => {
     const payload = Object.assign(
       {
-        baseUrl: opts.baseUrl || "http://localhost:3000",
+        baseUrl: opts.baseUrl || "http://167.71.231.64:3000",
         token,
         name: opts.name || "refreshToken",
         path: opts.path || "/",
@@ -76,7 +76,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   clearRefreshToken: (opts = {}) => {
     const payload = {
-      baseUrl: opts.baseUrl || "http://localhost:3000",
+      baseUrl: opts.baseUrl || "http://167.71.231.64:3000",
       name: opts.name || "refreshToken",
     };
     return safeInvoke("auth-clear-refresh-token", payload);

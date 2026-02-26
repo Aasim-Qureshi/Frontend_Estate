@@ -1,45 +1,55 @@
 import asyncio
 import json
-import traceback
-import aiohttp
 import os
+import traceback
+
+import aiohttp
+
 
 async def register_user(user_data):
     try:
         # Allow multiple backend candidates. Prefer explicit BACKEND_URL, then localhost.
-        env_url = os.getenv('BACKEND_URL')
+        env_url = os.getenv("BACKEND_URL")
         candidates = []
         if env_url:
-            candidates.append(env_url.rstrip('/'))
+            candidates.append(env_url.rstrip("/"))
         # common local dev addresses
-        candidates.extend([
-            'http://localhost:3000',
-            'http://127.0.0.1:3000',
-            'https://future-electron-backend.onrender.com'
-        ])
+        candidates.extend(
+            [
+                "http://167.71.231.64:300http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "https://future-electron-backend.onrender.com",
+            ]
+        )
 
         async with aiohttp.ClientSession() as session:
             last_error = None
             for base in candidates:
                 url = f"{base}/api/users/register"
                 try:
-                    async with session.post(url, json=user_data, timeout=aiohttp.ClientTimeout(total=50)) as response:
+                    async with session.post(
+                        url, json=user_data, timeout=aiohttp.ClientTimeout(total=50)
+                    ) as response:
                         # Successful creation
                         if response.status in (200, 201):
                             data = await response.json()
                             return {
                                 "status": "SUCCESS",
                                 "message": "User registered successfully",
-                                "data": data
+                                "data": data,
                             }
 
                         # Known client errors
                         if response.status == 400:
                             try:
                                 data = await response.json()
-                                err_msg = data.get('message') or data.get('error') or 'Invalid registration data'
+                                err_msg = (
+                                    data.get("message")
+                                    or data.get("error")
+                                    or "Invalid registration data"
+                                )
                             except Exception:
-                                err_msg = 'Invalid registration data'
+                                err_msg = "Invalid registration data"
                             return {"status": "ERROR", "error": err_msg}
 
                         if response.status == 409:
@@ -53,10 +63,17 @@ async def register_user(user_data):
                         # Other server errors: return the message
                         try:
                             data = await response.json()
-                            msg = data.get('message') or data.get('error') or f'Status {response.status}'
+                            msg = (
+                                data.get("message")
+                                or data.get("error")
+                                or f"Status {response.status}"
+                            )
                         except Exception:
-                            msg = f'Status {response.status}'
-                        return {"status": "ERROR", "error": f"Registration failed: {msg}"}
+                            msg = f"Status {response.status}"
+                        return {
+                            "status": "ERROR",
+                            "error": f"Registration failed: {msg}",
+                        }
 
                 except asyncio.TimeoutError:
                     last_error = f"Timeout while contacting {url}"
@@ -66,16 +83,12 @@ async def register_user(user_data):
                     continue
 
             # If we exhausted candidates
-            return {"status": "ERROR", "error": f"Registration failed; no reachable backend. Last error: {last_error}"}
+            return {
+                "status": "ERROR",
+                "error": f"Registration failed; no reachable backend. Last error: {last_error}",
+            }
     except asyncio.TimeoutError:
-        return {
-            "status": "ERROR",
-            "error": "Registration request timed out"
-        }
+        return {"status": "ERROR", "error": "Registration request timed out"}
     except Exception as e:
         tb = traceback.format_exc()
-        return {
-            "status": "ERROR",
-            "error": str(e),
-            "traceback": tb
-        }
+        return {"status": "ERROR", "error": str(e), "traceback": tb}
