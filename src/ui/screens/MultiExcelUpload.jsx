@@ -151,20 +151,23 @@ const Section = ({ title, children }) => (
 const Modal = ({ open, onClose, title, children, maxWidth = "max-w-6xl" }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 backdrop-blur-sm px-4 py-4 overflow-auto">
-      <div className={`w-full ${maxWidth}`}>
-        <div className="rounded-xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5 bg-slate-50/50">
-            <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs font-medium text-slate-600 hover:text-slate-900 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors"
-            >
-              Close
-            </button>
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+      <div className="relative flex h-full w-full items-start justify-center overflow-y-auto px-4 py-4">
+        <div className={`w-full ${maxWidth}`}>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5 bg-slate-50/50">
+              <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-medium text-slate-600 hover:text-slate-900 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4">{children}</div>
           </div>
-          <div className="p-4">{children}</div>
         </div>
       </div>
     </div>
@@ -197,6 +200,7 @@ const stripExtension = (filename = "") => filename.replace(/\.[^.]+$/, "");
 const DUMMY_PDF_NAME = "dummy_placeholder.pdf";
 
 const reportStatusLabels = {
+  new: "New",
   approved: "Approved",
   complete: "Complete",
   sent: "Sent",
@@ -209,6 +213,7 @@ const assetStatusLabels = {
 };
 
 const reportStatusClasses = {
+  new: "border-slate-200 bg-slate-50 text-slate-700",
   approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
   complete: "border-blue-200 bg-blue-50 text-blue-700",
   sent: "border-amber-200 bg-amber-50 text-amber-700",
@@ -252,7 +257,15 @@ const buildDefaultValuers = () => [
   },
 ];
 
+const hasTaqeemReportId = (report) =>
+  Boolean(String(report?.report_id || report?.reportId || "").trim());
+
 const getReportStatus = (report) => {
+  const rawStatus = String(report?.report_status || report?.status || "")
+    .trim()
+    .toLowerCase();
+  if (!hasTaqeemReportId(report)) return "new";
+  if (rawStatus === "sent") return "sent";
   if (report?.checked) return "approved";
 
   // Check if all assets are complete
@@ -4665,6 +4678,50 @@ const MultiExcelUpload = ({ onViewChange }) => {
       maxWidth="max-w-6xl"
     >
       {validationConsole}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <span className="text-xs text-slate-600">
+          Run validation, then choose how to continue with the reports.
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowValidationModal(false)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleStoreOnly}
+            disabled={loading || validating || !isReadyToUpload}
+            className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileIcon className="w-3.5 h-3.5" />
+            )}
+            {loading ? "Storing..." : "Store and Send Later"}
+          </button>
+          <button
+            type="button"
+            onClick={handleUploadAndCreate}
+            disabled={loading || creatingReports || validating || !isReadyToUpload}
+            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading || creatingReports ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+            {creatingReports
+              ? "Creating Reports..."
+              : loading
+                ? "Uploading..."
+                : "Upload & Send To Taqeem"}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 
@@ -4784,44 +4841,17 @@ const MultiExcelUpload = ({ onViewChange }) => {
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
-            onClick={handleUploadAndCreate}
-            disabled={loading || creatingReports || !isReadyToUpload}
+            onClick={() => setShowValidationModal(true)}
+            disabled={!excelFiles.length}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-green-600 hover:bg-green-700
+                                bg-slate-900 hover:bg-slate-800
                                 text-white text-xs font-semibold
                                 shadow-md hover:shadow-lg hover:scale-[1.01]
                                 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
                                 transition-all"
           >
-            {loading || creatingReports ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            {creatingReports
-              ? "Creating Reports..."
-              : loading
-                ? "Uploading..."
-                : "Upload & Send To Taqeem"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleStoreOnly}
-            disabled={loading || !isReadyToUpload}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-blue-600 hover:bg-blue-700
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileIcon className="w-4 h-4" />
-            )}
-            {loading ? "Storing..." : "Store and Send Later"}
+            <Table className="w-4 h-4" />
+            Open Validation & Actions
           </button>
         </div>
       </div>
@@ -5039,6 +5069,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
               >
                 <option value="all">All statuses</option>
+                <option value="new">New</option>
                 <option value="complete">Complete</option>
                 <option value="incomplete">Incomplete</option>
                 <option value="sent">Sent</option>
@@ -5265,12 +5296,6 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               title={report.report_id || "Not sent"}
                             >
                               {report.report_id || "Not sent"}
-                            </div>
-                            <div
-                              className="text-[10px] text-slate-500 truncate"
-                              title={recordId || "-"}
-                            >
-                              {recordId || "-"}
                             </div>
                           </td>
                           <td

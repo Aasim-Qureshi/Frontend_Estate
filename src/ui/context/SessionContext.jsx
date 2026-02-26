@@ -16,6 +16,28 @@ export const SessionProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isGuest, setIsGuest] = useState(false);
 
+    const clearPersistedRefreshToken = async () => {
+        if (!window?.electronAPI?.clearRefreshToken) return;
+
+        const candidateBaseUrls = [
+            process.env.BACKEND_URL,
+            process.env.REACT_APP_BACKEND_URL,
+            'http://localhost:3000',
+            'http://127.0.0.1:3000',
+            'https://future-electron-backend.onrender.com',
+        ].filter(Boolean);
+
+        const uniqueBaseUrls = Array.from(new Set(candidateBaseUrls));
+        await Promise.allSettled(
+            uniqueBaseUrls.map((baseUrl) =>
+                window.electronAPI.clearRefreshToken({
+                    baseUrl,
+                    name: 'refreshToken',
+                })
+            )
+        );
+    };
+
     // Initialize session from localStorage on mount
     useEffect(() => {
         const savedUser = localStorage.getItem('user');
@@ -68,6 +90,7 @@ export const SessionProvider = ({ children }) => {
         setIsGuest(false);
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        void clearPersistedRefreshToken();
     };
 
     const updateUser = (userData) => {

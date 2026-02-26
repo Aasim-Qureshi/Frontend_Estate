@@ -44,6 +44,21 @@ def is_asset_complete(asset):
     return val == 1 or val == "1" or val is True
 
 
+async def wait_for_process_state(process_manager, process_id, retries=6, delay=0.2):
+    """Wait briefly for process creation to avoid command race conditions."""
+    state = process_manager.get_process(process_id)
+    if state:
+        return state
+
+    for _ in range(retries):
+        await asyncio.sleep(delay)
+        state = process_manager.get_process(process_id)
+        if state:
+            return state
+
+    return None
+
+
 async def update_report_completion_status(record_id):
     """
     Update report completion status based on asset submitState values using API
@@ -117,7 +132,15 @@ async def fill_macro_form(page, macro_id, macro_data, field_map, field_types):
 
 
 async def handle_macro_edits(
-    browser, record, tabs_num=3, record_id=None, progress_callback=None, collection=None
+    browser,
+    record,
+    tabs_num=3,
+    record_id=None,
+    progress_callback=None,
+    collection=None,
+    initialize_process=True,
+    clear_process_on_exit=True,
+    emit_internal_progress=True,
 ):
     asset_data = record.get("asset_data", [])
     if not asset_data:
@@ -137,13 +160,17 @@ async def handle_macro_edits(
 
     # Create process state using modular system
     process_manager = get_process_manager()
-    create_process(
-        process_id=record_id,
-        process_type="macro-edit",
-        total=total_assets,
-        report_id=record_id,
-        tabs_num=tabs_num,
-    )
+    existing_state = process_manager.get_process(record_id)
+    if initialize_process or existing_state is None:
+        create_process(
+            process_id=record_id,
+            process_type="macro-edit",
+            total=total_assets,
+            report_id=record_id,
+            tabs_num=tabs_num,
+        )
+    elif not existing_state.total:
+        existing_state.total = total_assets
 
     # Create pages for parallel processing
     main_page = browser.tabs[0]
@@ -182,7 +209,10 @@ async def handle_macro_edits(
                 if lock:
                     async with lock:
                         failed += 1
-                await update_progress(record_id, completed=completed, failed=failed)
+                if emit_internal_progress:
+                    await update_progress(
+                        record_id, completed=completed, failed=failed
+                    )
                 continue
 
             try:
@@ -250,19 +280,20 @@ async def handle_macro_edits(
                     current_failed = failed
 
                 # Batch progress update (emit once per asset instead of multiple times)
-                await update_progress(
-                    record_id,
-                    completed=current_completed,
-                    failed=current_failed,
-                    emit=True,
-                )
+                if emit_internal_progress:
+                    await update_progress(
+                        record_id,
+                        completed=current_completed,
+                        failed=current_failed,
+                        emit=True,
+                    )
 
-                # Emit progress message after completion
-                emit_progress(
-                    record_id,
-                    current_item=str(macro_id),
-                    message=f"Completed macro {macro_id} ({current_completed}/{total_assets})",
-                )
+                    # Emit progress message after completion
+                    emit_progress(
+                        record_id,
+                        current_item=str(macro_id),
+                        message=f"Completed macro {macro_id} ({current_completed}/{total_assets})",
+                    )
 
                 # Call custom progress callback if provided
                 if progress_callback:
@@ -284,14 +315,15 @@ async def handle_macro_edits(
                     current_failed = failed
 
                 # Emit error progress
-                await update_progress(
-                    record_id, completed=current_completed, failed=current_failed
-                )
-                emit_progress(
-                    record_id,
-                    current_item=str(macro_id),
-                    message=f"Error processing macro {macro_id}: {str(e)}",
-                )
+                if emit_internal_progress:
+                    await update_progress(
+                        record_id, completed=current_completed, failed=current_failed
+                    )
+                    emit_progress(
+                        record_id,
+                        current_item=str(macro_id),
+                        message=f"Error processing macro {macro_id}: {str(e)}",
+                    )
 
         return {"status": "SUCCESS"}
 
@@ -307,8 +339,9 @@ async def handle_macro_edits(
     for page in pages[1:]:
         await page.close()
 
-    # Clear process state after completion
-    clear_process(record_id)
+    # Clear process state after completion unless caller is managing lifecycle.
+    if clear_process_on_exit:
+        clear_process(record_id)
 
     # Check if any chunk was stopped
     was_stopped = any(
@@ -468,13 +501,28 @@ async def pause_macro_edit(report_id):
     """Pause macro editing for a report"""
     try:
         process_manager = get_process_manager()
-        state = process_manager.pause_process(report_id)
+        state = await wait_for_process_state(process_manager, report_id)
 
         if not state:
             return {
                 "status": "FAILED",
                 "error": f"No active process found for report {report_id}",
             }
+
+        if state.paused:
+            return {
+                "status": "SUCCESS",
+                "message": f"Report {report_id} is already paused",
+                "paused": True,
+            }
+
+        if state.stopped:
+            return {
+                "status": "FAILED",
+                "error": f"Process for report {report_id} is already stopped",
+            }
+
+        state = process_manager.pause_process(report_id)
 
         # Emit progress update immediately to notify UI
         emit_progress(report_id, message=f"Paused macro editing for report {report_id}")
@@ -492,13 +540,28 @@ async def resume_macro_edit(report_id):
     """Resume macro editing for a report"""
     try:
         process_manager = get_process_manager()
-        state = process_manager.resume_process(report_id)
+        state = await wait_for_process_state(process_manager, report_id)
 
         if not state:
             return {
                 "status": "FAILED",
                 "error": f"No active process found for report {report_id}",
             }
+
+        if state.stopped:
+            return {
+                "status": "FAILED",
+                "error": f"Cannot resume report {report_id} because it has been stopped",
+            }
+
+        if not state.paused:
+            return {
+                "status": "SUCCESS",
+                "message": f"Report {report_id} is already running",
+                "paused": False,
+            }
+
+        state = process_manager.resume_process(report_id)
 
         # Emit progress update immediately to notify UI
         emit_progress(
@@ -518,13 +581,22 @@ async def stop_macro_edit(report_id):
     """Stop macro editing for a report"""
     try:
         process_manager = get_process_manager()
-        state = process_manager.stop_process(report_id)
+        state = await wait_for_process_state(process_manager, report_id)
 
         if not state:
             return {
                 "status": "FAILED",
                 "error": f"No active process found for report {report_id}",
             }
+
+        if state.stopped:
+            return {
+                "status": "SUCCESS",
+                "message": f"Report {report_id} is already stopped",
+                "stopped": True,
+            }
+
+        state = process_manager.stop_process(report_id)
 
         return {
             "status": "SUCCESS",

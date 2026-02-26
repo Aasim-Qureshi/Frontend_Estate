@@ -11,8 +11,8 @@ import { io } from "socket.io-client";
 import { useSession } from "./SessionContext";
 
 const NotificationContext = createContext(null);
-const SOCKET_URL = "http://167.71.231.64:3000";
-// const SOCKET_URL = 'http://localhost:3000';
+// const SOCKET_URL = "http://167.71.231.64:3000";
+const SOCKET_URL = 'http://localhost:3000';
 const DEFAULT_LIMIT = 12;
 const MAX_BUFFER = 50;
 const POLL_INTERVAL_MS = 15000;
@@ -28,7 +28,7 @@ export const useNotifications = () => {
 };
 
 export const NotificationProvider = ({ children }) => {
-  const { user, token, isAuthenticated } = useSession();
+  const { user, token, isAuthenticated, isGuest } = useSession();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -42,7 +42,7 @@ export const NotificationProvider = ({ children }) => {
 
   const refreshNotifications = useCallback(
     async (limit = DEFAULT_LIMIT) => {
-      if (!window?.electronAPI?.apiRequest || !token) return;
+      if (isGuest || !window?.electronAPI?.apiRequest || !token) return;
       setLoading(true);
       try {
         const data = await window.electronAPI.apiRequest(
@@ -66,12 +66,12 @@ export const NotificationProvider = ({ children }) => {
         setLoading(false);
       }
     },
-    [headers, token],
+    [headers, isGuest, token],
   );
 
   const markNotificationRead = useCallback(
     async (id) => {
-      if (!window?.electronAPI?.apiRequest || !token || !id) return;
+      if (isGuest || !window?.electronAPI?.apiRequest || !token || !id) return;
       try {
         const data = await window.electronAPI.apiRequest(
           "PATCH",
@@ -96,11 +96,11 @@ export const NotificationProvider = ({ children }) => {
         console.error("Failed to mark notification read", err);
       }
     },
-    [headers, token],
+    [headers, isGuest, token],
   );
 
   const markAllRead = useCallback(async () => {
-    if (!window?.electronAPI?.apiRequest || !token) return;
+    if (isGuest || !window?.electronAPI?.apiRequest || !token) return;
     try {
       await window.electronAPI.apiRequest(
         "POST",
@@ -118,7 +118,7 @@ export const NotificationProvider = ({ children }) => {
     } catch (err) {
       console.error("Failed to mark notifications read", err);
     }
-  }, [headers, token]);
+  }, [headers, isGuest, token]);
 
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
@@ -134,16 +134,20 @@ export const NotificationProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || isGuest) {
       setNotifications([]);
       setUnreadCount(0);
       stopPolling();
       return;
     }
     refreshNotifications();
-  }, [isAuthenticated, refreshNotifications]);
+  }, [isAuthenticated, isGuest, refreshNotifications, stopPolling]);
 
   useEffect(() => {
+    if (isGuest) {
+      setSocketToken("");
+      return;
+    }
     if (token) {
       setSocketToken(token);
       return;
@@ -154,10 +158,10 @@ export const NotificationProvider = ({ children }) => {
         setSocketToken(res.token);
       }
     });
-  }, [token]);
+  }, [isGuest, token]);
 
   useEffect(() => {
-    if (!socketToken || !user) return;
+    if (isGuest || !socketToken || !user) return;
     const socket = io(SOCKET_URL, {
       auth: { token: socketToken },
     });
@@ -187,16 +191,16 @@ export const NotificationProvider = ({ children }) => {
       socket.off("notification:new");
       socket.disconnect();
     };
-  }, [socketToken, user, refreshNotifications]);
+  }, [isGuest, socketToken, user, refreshNotifications]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || isGuest) return;
     if (socketStatus === "connected") {
       stopPolling();
     } else {
       startPolling();
     }
-  }, [isAuthenticated, socketStatus, startPolling, stopPolling]);
+  }, [isAuthenticated, isGuest, socketStatus, startPolling, stopPolling]);
 
   useEffect(() => {
     return () => stopPolling();

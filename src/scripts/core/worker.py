@@ -9,6 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from scripts.core.company_context import set_selected_company
 from scripts.core.httpClient import http_get, http_post
+from scripts.core.processControl import clear_process, create_process, emit_progress
 from scripts.delete.cancelledReportHandler import handle_cancelled_report
 from scripts.delete.deleteIncompleteAssets import (
     delete_incomplete_assets_flow,
@@ -979,23 +980,59 @@ async def handle_command(cmd):
     elif action == "create-report-by-id":
         # Spawn a new browser for each report submission (like create-reports-by-batch)
         new_browser = None
+        process_id = None
+        result = None
 
         try:
             record_id = cmd.get("recordId") or cmd.get("record_id")
             tabs_num = int(cmd.get("tabsNum", 3))
+            process_id = str(record_id).strip() if record_id is not None else None
+
+            if process_id:
+                create_process(
+                    process_id=process_id,
+                    process_type="submit-report-quickly",
+                    total=100,
+                    report_id=process_id,
+                    tabs_num=tabs_num,
+                )
+                emit_progress(
+                    process_id,
+                    current_item="bootstrap",
+                    message="Preparing browser session for report submission...",
+                )
 
             # Get the existing browser first, then spawn a new one from it
             browser = await get_browser()
             new_browser = await spawn_new_browser(browser)
+            if process_id:
+                emit_progress(
+                    process_id,
+                    current_item="browser_ready",
+                    message="Browser ready. Starting report submission workflow...",
+                )
 
             result = await create_new_report(new_browser, record_id, tabs_num)
-            result["commandId"] = cmd.get("commandId")
-
-            print(json.dumps(result), flush=True)
+        except Exception as e:
+            result = {
+                "status": "FAILED",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
         finally:
             # Close the browser after completion
             if new_browser:
                 new_browser.stop()
+            if process_id:
+                clear_process(process_id)
+
+        if not isinstance(result, dict):
+            result = {
+                "status": "FAILED",
+                "error": "Invalid response from create_new_report",
+            }
+        result["commandId"] = cmd.get("commandId")
+        print(json.dumps(result), flush=True)
 
     elif action == "retry-create-report-by-id":
         browser = await get_browser()

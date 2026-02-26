@@ -529,13 +529,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 >
                   <button
                     onClick={async () => {
-                      await setSelectedCompany(company, {
-                        setAsDefault: true,
-                        onlyIfUnset: false,
-                        persistDefault: true,
-                      });
-                      setActiveGroup(null);
-                      delayViewChange("apps");
+                      await setSelectedCompany(company);
                     }}
                     className={`group relative w-full text-left px-2.5 py-1.5 rounded-md flex flex-col gap-0.5 ${
                       isActive
@@ -553,13 +547,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     <div className="text-[11px] font-semibold truncate">
                       {company.name || t("sidebar.company.fallback")}
                     </div>
-                    {company.officeId && (
-                      <div className="text-[9px] text-slate-400">
-                        {t("sidebar.company.office", {
-                          officeId: company.officeId,
-                        })}
-                      </div>
-                    )}
                   </button>
                 </li>
               );

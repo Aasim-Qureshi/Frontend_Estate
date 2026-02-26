@@ -84,42 +84,57 @@ const isAssetComplete = (asset) => {
   return value === 1 || value === "1" || value === true;
 };
 
-const getReportStatus = (report) => {
+const hasTaqeemReportId = (report) =>
+  Boolean(String(report?.report_id || "").trim());
+
+const computeQuickReportStatus = (report) => {
+  const rawStatus = String(report?.report_status || "").trim().toLowerCase();
+  if (!hasTaqeemReportId(report)) return "new";
+  if (rawStatus === "sent") return "sent";
+  if (rawStatus === "confirmed" || rawStatus === "approved") return "confirmed";
+
   const assetList = Array.isArray(report?.asset_data) ? report.asset_data : [];
   const hasAssets = assetList.length > 0;
-  const anyIncomplete = hasAssets
-    ? assetList.some((asset) => !isAssetComplete(asset))
-    : false;
   const allComplete = hasAssets
     ? assetList.every((asset) => isAssetComplete(asset))
     : false;
-  const rawStatus = (report?.report_status || "").toString().toLowerCase();
 
-  if (anyIncomplete) return "incomplete";
-  if (report?.checked || rawStatus === "approved") return "approved";
-  if (rawStatus === "sent") return "sent";
   if (allComplete) return "complete";
-  if (report?.endSubmitTime) return "complete";
-  if (rawStatus) return rawStatus;
-  if (report?.report_id) return "incomplete";
-  return "new";
+  return "incomplete";
+};
+
+const getReportStatus = (report) => computeQuickReportStatus(report);
+
+const getAllowedRowActions = (report) => {
+  if (hasTaqeemReportId(report)) {
+    return ["check-status", "retry", "delete"];
+  }
+  return ["submit-taqeem"];
 };
 
 const reportStatusLabels = {
-  approved: "Approved",
+  sent: "Sent",
+  confirmed: "Confirmed",
   complete: "Complete",
   incomplete: "Incomplete",
-  sent: "Sent",
   new: "New",
 };
 
 const reportStatusClasses = {
-  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  sent: "border-sky-200 bg-sky-50 text-sky-700",
+  confirmed: "border-emerald-200 bg-emerald-50 text-emerald-700",
   complete: "border-blue-200 bg-blue-50 text-blue-700",
   incomplete: "border-amber-200 bg-amber-50 text-amber-700",
-  sent: "border-purple-200 bg-purple-50 text-purple-700",
   new: "border-slate-200 bg-slate-50 text-slate-700",
 };
+const ALLOWED_REPORT_FILTERS = new Set([
+  "all",
+  "new",
+  "incomplete",
+  "complete",
+  "sent",
+  "confirmed",
+]);
 const QUICK_PAGE_NAME = "Submit Reports Quickly";
 const QUICK_PAGE_SOURCE = "submit-reports-quickly";
 const DEFAULT_REPORT_INFO_FORM = {
@@ -926,12 +941,23 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
   });
   const [excelIconSrc, setExcelIconSrc] = useState(excelIconFallback);
 
+  useEffect(() => {
+    if (!isGuestUser && showTemporaryModal) {
+      setShowTemporaryModal(false);
+    }
+  }, [isGuestUser, showTemporaryModal]);
+
   const excelInputRef = useRef(null);
   const pdfInputRef = useRef(null);
   const reportCreationWaitersRef = useRef(new Map());
   const reportCreatedCacheRef = useRef(new Map());
   const pendingCompanySelectionRef = useRef(null);
   const isTaqeemLoggedIn = taqeemStatus?.state === "success";
+
+  useEffect(() => {
+    if (ALLOWED_REPORT_FILTERS.has(reportSelectFilter)) return;
+    setReportSelectFilter("all");
+  }, [reportSelectFilter]);
 
   useEffect(() => {
     let objectUrl = null;
@@ -1356,11 +1382,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
   }, []);
 
-  const handlePdfToggle = (checked) => {
+  const handlePdfToggle = (checked, options = {}) => {
+    const { openPicker = false } = options;
     setWantsPdfUpload(checked);
     if (!checked) {
       setPdfFiles([]);
       setPdfPathMap({});
+    } else if (openPicker && (!wantsPdfUpload || pdfFiles.length === 0)) {
+      setTimeout(() => {
+        openPdfPicker();
+      }, 0);
     }
     resetMessages();
   };
@@ -1433,7 +1464,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           page: currentPage.toString(),
           limit: itemsPerPage.toString(),
         });
-        if (selectedCompanyOfficeId) {
+        if (!isGuestUser && selectedCompanyOfficeId) {
           params.append("companyOfficeId", selectedCompanyOfficeId);
         }
 
@@ -1460,10 +1491,34 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
         const reportList = Array.isArray(result.reports) ? result.reports : [];
         const paginationInfo = result.pagination || {};
+        const statusSyncQueue = [];
+        const normalizedReportList = reportList.map((report) => {
+          const recordId = getReportRecordId(report);
+          const expectedStatus = computeQuickReportStatus(report);
+          const currentStatus = String(report?.report_status || "")
+            .trim()
+            .toLowerCase();
+          if (recordId && currentStatus !== expectedStatus) {
+            statusSyncQueue.push({ recordId, report_status: expectedStatus });
+          }
+          return {
+            ...report,
+            report_status: expectedStatus,
+          };
+        });
 
-        setReports(reportList);
+        setReports(normalizedReportList);
         setReportsPagination(paginationInfo);
-        return reportList;
+        if (statusSyncQueue.length > 0) {
+          Promise.allSettled(
+            statusSyncQueue.map((entry) =>
+              updateSubmitReportsQuickly(entry.recordId, {
+                report_status: entry.report_status,
+              }),
+            ),
+          ).catch(() => {});
+        }
+        return normalizedReportList;
       } catch (err) {
         setError(
           err?.message ||
@@ -1522,8 +1577,29 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         }
 
         const reportList = Array.isArray(result.reports) ? result.reports : [];
-        setUnassignedReports(reportList);
-        return reportList;
+        const statusSyncQueue = [];
+        const normalizedReportList = reportList.map((report) => {
+          const recordId = getReportRecordId(report);
+          const expectedStatus = computeQuickReportStatus(report);
+          const currentStatus = String(report?.report_status || "")
+            .trim()
+            .toLowerCase();
+          if (recordId && currentStatus !== expectedStatus) {
+            statusSyncQueue.push({ recordId, report_status: expectedStatus });
+          }
+          return { ...report, report_status: expectedStatus };
+        });
+        setUnassignedReports(normalizedReportList);
+        if (statusSyncQueue.length > 0) {
+          Promise.allSettled(
+            statusSyncQueue.map((entry) =>
+              updateSubmitReportsQuickly(entry.recordId, {
+                report_status: entry.report_status,
+              }),
+            ),
+          ).catch(() => {});
+        }
+        return normalizedReportList;
       } catch (err) {
         console.warn(
           "[SubmitReportsQuickly] Failed to load unassigned reports:",
@@ -1595,7 +1671,11 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         prevReports.map((report) => {
           const rId = report?._id || report?.id || report?.recordId;
           if (rId === recordId) {
-            return { ...report, report_id: createdReportId };
+            const updatedReport = { ...report, report_id: createdReportId };
+            return {
+              ...updatedReport,
+              report_status: computeQuickReportStatus(updatedReport),
+            };
           }
           return report;
         }),
@@ -1842,6 +1922,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     if (!wantsPdfUpload) {
       return { unmatchedPdfs: [], excelsMissingPdf: [], pdfMap: {} };
     }
+    if (pdfFiles.length === 0) {
+      return { unmatchedPdfs: [], excelsMissingPdf: [], pdfMap: {} };
+    }
     const excelBaseNames = new Set(
       excelFiles.map((f) => normalizeKey(stripExtension(f.name))),
     );
@@ -1930,7 +2013,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       setValidationModalStep("validation");
     }
 
-    const shouldValidatePdf = wantsPdfUpload;
+    const shouldValidatePdf = wantsPdfUpload && pdfFiles.length > 0;
 
     const performValidation = async () => {
       const results = [];
@@ -2221,7 +2304,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       resetValidation();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excelFiles, pdfFiles, wantsPdfUpload]);
+  }, [excelFiles, pdfFiles]);
 
   const isReadyToUpload = useMemo(() => {
     if (excelFiles.length === 0) return false;
@@ -2418,6 +2501,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
   // Pause/Resume/Stop helpers for long-running macro fill processes (per report)
   // These control the browser processes directly via process control system
+  const isNoActiveProcessError = (value) =>
+    /No active process found for report/i.test(String(value || ""));
+
   const pauseReportProcess = useCallback(async (recordId) => {
     if (!recordId) {
       setError(
@@ -2494,6 +2580,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         throw new Error(result?.error || "Failed to pause process.");
       }
     } catch (err) {
+      if (isNoActiveProcessError(err?.message || err?.error)) {
+        setSuccess(
+          translate(
+            "messages.info.processNotActive",
+            "This report process is not active right now (it may have already finished).",
+          ),
+        );
+        return;
+      }
+
       // Revert optimistic update on error
       setReportProgress((prev) => {
         const current = prev[recordId] || {
@@ -2592,6 +2688,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         throw new Error(result?.error || "Failed to resume process.");
       }
     } catch (err) {
+      if (isNoActiveProcessError(err?.message || err?.error)) {
+        setSuccess(
+          translate(
+            "messages.info.processNotActive",
+            "This report process is not active right now (it may have already finished).",
+          ),
+        );
+        return;
+      }
+
       // Revert optimistic update on error
       setReportProgress((prev) => {
         const current = prev[recordId] || {
@@ -2681,6 +2787,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         throw new Error(result?.error || "Failed to stop process.");
       }
     } catch (err) {
+      if (isNoActiveProcessError(err?.message || err?.error)) {
+        setSuccess(
+          translate(
+            "messages.info.processNotActive",
+            "This report process is not active right now (it may have already finished).",
+          ),
+        );
+        return;
+      }
+
       setError(
         err?.message ||
           translate("messages.error.stopProcess", "Failed to stop process."),
@@ -2952,13 +3068,20 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             result?.report_id ||
             report?.report_id ||
             recordId;
+          const reportWithCreatedId = {
+            ...(report || {}),
+            report_id: createdReportId,
+          };
+          const nextReportStatus = computeQuickReportStatus(reportWithCreatedId);
           if (createdReportId && report) {
             report.report_id = createdReportId;
+            report.report_status = nextReportStatus;
           }
           if (createdReportId) {
             try {
               await updateSubmitReportsQuickly(recordId, {
                 report_id: createdReportId,
+                report_status: nextReportStatus,
                 ...(assignedOfficeId
                   ? { company_office_id: assignedOfficeId }
                   : {}),
@@ -2995,6 +3118,26 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             success: true,
             reportId: createdReportId || recordId,
             recordId,
+          };
+        }
+
+        if (result?.status === "STOPPED") {
+          const stopMessage =
+            result?.message || "Report submission stopped by user.";
+          setReportProgress((prev) => ({
+            ...prev,
+            [recordId]: {
+              ...(prev[recordId] || { percentage: 0 }),
+              status: "stopped",
+              message: stopMessage,
+            },
+          }));
+          setSuccess(stopMessage);
+          return {
+            success: false,
+            reason: "STOPPED",
+            stopped: true,
+            error: stopMessage,
           };
         }
 
@@ -3106,6 +3249,17 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             paused = true;
             break;
           }
+
+          if (reason === "STOPPED") {
+            setPendingSubmit({
+              ...basePayload,
+              currentIndex: index,
+              resumeOnLoad: false,
+              updatedAt: Date.now(),
+            });
+            paused = true;
+            break;
+          }
         }
 
         if (!paused) {
@@ -3157,10 +3311,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     () => user?._id || user?.id || user?.userId || user?.user?._id || null,
     [user],
   );
-  const temporaryReports = isGuestUser ? reports : unassignedReports;
-  const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
-  const showTemporarySection =
-    isGuestUser || unassignedLoading || unassignedReports.length > 0;
+  const temporaryReports = useMemo(
+    () => reports.filter((report) => !hasTaqeemReportId(report)),
+    [reports],
+  );
+  const temporaryLoading = reportsLoading;
+  const showTemporarySection = isGuestUser;
 
   const getReportByRecordId = useCallback(
     (recordId) =>
@@ -3326,6 +3482,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     if (!bulkAction) return;
 
     const selectedIds = selectedReportIds.filter(Boolean);
+    const selectedReports = selectedIds
+      .map((id) => getReportByRecordId(id))
+      .filter(Boolean);
     if (selectedIds.length === 0) {
       setError(
         translate(
@@ -3337,21 +3496,30 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
 
     if (bulkAction === "delete") {
+      const deletableReports = selectedReports.filter((report) =>
+        hasTaqeemReportId(report),
+      );
+      if (deletableReports.length === 0) {
+        setError(
+          translate(
+            "messages.error.submitFirst",
+            "You must submit this report to Taqeem first.",
+          ),
+        );
+        return;
+      }
       if (
         !window.confirm(
           translate(
             "confirm.deleteMultipleReports",
             "Are you sure you want to delete {{count}} report(s)?",
-            { count: selectedIds.length },
+            { count: deletableReports.length },
           ),
         )
       )
         return;
-      const selectedReports = selectedIds
-        .map((id) => getReportByRecordId(id))
-        .filter(Boolean);
 
-      for (const report of selectedReports) {
+      for (const report of deletableReports) {
         await handleDeleteReport(report, { confirm: false });
       }
       setSelectedReportIds([]);
@@ -3360,6 +3528,30 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     }
 
     if (bulkAction === "upload-submit" || bulkAction === "retry-submit") {
+      const actionableReports = selectedReports.filter((report) =>
+        bulkAction === "upload-submit"
+          ? !hasTaqeemReportId(report)
+          : hasTaqeemReportId(report),
+      );
+      const actionableIds = actionableReports
+        .map((report) => getReportRecordId(report))
+        .filter(Boolean);
+
+      if (actionableIds.length === 0) {
+        setError(
+          bulkAction === "upload-submit"
+            ? translate(
+                "messages.error.submitAlreadyDone",
+                "This report is already submitted to Taqeem.",
+              )
+            : translate(
+                "messages.error.submitFirst",
+                "You must submit this report to Taqeem first.",
+              ),
+        );
+        return;
+      }
+
       // Ensure login and company selection before any submission/retry
       const authStatus = await ensureTaqeemAuthorized(
         token,
@@ -3394,13 +3586,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               "Taqeem login required. Finish login and choose a company to continue.",
             ),
           ),
-        );
+          );
         return;
       }
-      const selectedReports = selectedIds
-        .map((id) => getReportByRecordId(id))
-        .filter(Boolean);
-      const requiresManualCompany = selectedReports.some(
+      const requiresManualCompany = actionableReports.some(
         (report) => !report?.company_office_id,
       );
       const chosen = await ensureCompanySelected({
@@ -3413,7 +3602,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         try {
           const nextOfficeId = String(officeId);
           await Promise.all(
-            selectedReports.map((report) => {
+            actionableReports.map((report) => {
               if (report?.company_office_id) return Promise.resolve();
               const id = getReportRecordId(report);
               if (!id) return Promise.resolve();
@@ -3435,13 +3624,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
       // Calculate initial tabs per browser (distribute evenly)
       const totalTabs = Math.max(1, Number(recommendedTabs) || 3);
-      const numReports = selectedIds.length;
+      const numReports = actionableIds.length;
       const initialTabsPerBrowser = Math.floor(totalTabs / numReports);
       const remainderTabs = totalTabs % numReports;
 
       // Initialize progress for all reports
       const initialProgress = {};
-      selectedIds.forEach((id) => {
+      actionableIds.forEach((id) => {
         initialProgress[id] = {
           percentage: 0,
           status: "pending",
@@ -3453,8 +3642,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
       const submissionPromises = [];
       let queueError = null;
 
-      for (let index = 0; index < selectedIds.length; index += 1) {
-        const id = selectedIds[index];
+      for (let index = 0; index < actionableIds.length; index += 1) {
+        const id = actionableIds[index];
 
         // Calculate tabs for this browser (distribute evenly, remainder goes to first browsers)
         let tabsNum = initialTabsPerBrowser;
@@ -3557,7 +3746,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           translate(
             "messages.success.reportsSubmittedStatus",
             "All {{count}} report(s) submitted. Check progress bars for status.",
-            { count: selectedIds.length },
+            { count: actionableIds.length },
           ),
         );
       }
@@ -3569,6 +3758,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
     const recordId = getReportRecordId(report);
     if (!recordId) return;
     const assetList = report?.asset_data || [];
+    const allowedActions = getAllowedRowActions(report);
+    if (!allowedActions.includes(action)) {
+      setError(
+        hasTaqeemReportId(report)
+          ? translate(
+              "messages.error.submitAlreadyDone",
+              "This report is already submitted to Taqeem.",
+            )
+          : translate(
+              "messages.error.submitFirst",
+              "You must submit this report to Taqeem first.",
+            ),
+      );
+      return;
+    }
 
     if (action === "submit-taqeem") {
       const assetCount = Array.isArray(assetList) ? assetList.length : 0;
@@ -3714,15 +3918,22 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         const createdReportId =
           result?.reportId || result?.report_id || report?.report_id;
         if (createdReportId) {
+          const reportWithCreatedId = {
+            ...(report || {}),
+            report_id: createdReportId,
+          };
+          const nextReportStatus = computeQuickReportStatus(reportWithCreatedId);
           try {
             await updateSubmitReportsQuickly(recordId, {
               report_id: createdReportId,
+              report_status: nextReportStatus,
               ...(assignedOfficeId
                 ? { company_office_id: assignedOfficeId }
                 : {}),
             });
             if (report) {
               report.report_id = createdReportId;
+              report.report_status = nextReportStatus;
             }
           } catch (err) {
             console.warn("Failed to update report_id after retry", err);
@@ -4035,7 +4246,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               <p className="text-[10px] text-amber-700">
                 {translate(
                   "temporarySection.subtitle",
-                  "Reports without company assignment.",
+                  "Guest reports saved temporarily until linked with Taqeem.",
                 )}
               </p>
             </div>
@@ -4068,7 +4279,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <p className="text-[11px] text-amber-700">
                   {translate(
                     "temporaryModal.subtitle",
-                    "Reports without company assignment.",
+                    "Guest reports saved temporarily until linked with Taqeem.",
                   )}
                 </p>
               </div>
@@ -4082,21 +4293,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
             </div>
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="text-[11px] text-amber-700">
-                {isGuestUser
-                  ? translate(
-                      "temporaryModal.guestSession",
-                      "Guest session reports.",
-                    )
-                  : translate(
-                      "temporaryModal.unassigned",
-                      "Unassigned reports.",
-                    )}
+                {translate(
+                  "temporaryModal.guestSession",
+                  "Guest temporary reports.",
+                )}
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  isGuestUser ? loadReports() : loadUnassignedReports()
-                }
+                onClick={() => loadReports()}
                 disabled={temporaryLoading}
                 className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
               >
@@ -4120,7 +4324,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <div className="text-[11px] text-amber-700">
                   {translate(
                     "temporaryModal.empty",
-                    "No temporary reports found.",
+                    "No guest temporary reports found.",
                   )}
                 </div>
               ) : (
@@ -4263,7 +4467,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               type="button"
               onClick={handleBulkAction}
               disabled={!bulkAction || selectedReportIds.length === 0}
-              className="h-7 rounded-md bg-blue-600 px-2.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-7 rounded-md bg-cyan-600 px-2.5 text-[11px] font-semibold text-white hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {translate("reports.goButton", "Go")}
             </button>
@@ -4287,14 +4491,14 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 <option value="incomplete">
                   {translate("reports.filter.incomplete", "Incomplete")}
                 </option>
-                <option value="sent">
-                  {translate("reports.filter.sent", "Sent")}
-                </option>
                 <option value="complete">
                   {translate("reports.filter.complete", "Complete")}
                 </option>
-                <option value="approved">
-                  {translate("reports.filter.approved", "Approved")}
+                <option value="sent">
+                  {translate("reports.filter.sent", "Sent")}
+                </option>
+                <option value="confirmed">
+                  {translate("reports.filter.confirmed", "Confirmed")}
                 </option>
               </select>
             </label>
@@ -4389,7 +4593,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               <button
                 type="button"
                 onClick={handleToggleSelectAll}
-                className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:border-blue-300"
+                className="inline-flex h-7 items-center rounded-md border border-cyan-200 bg-cyan-50 px-2 text-[11px] font-semibold text-cyan-700 hover:border-cyan-300 hover:bg-cyan-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
               >
                 {allFilteredSelected
                   ? translate("reports.clearAll", "Clear all")
@@ -4428,7 +4632,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           <>
             <div className="w-full overflow-x-auto">
               <div className="min-w-full" dir={isArabicUi ? "rtl" : "ltr"}>
-                <table className="w-full table-fixed text-xs text-slate-700">
+                <table className="w-full min-w-[980px] table-fixed text-xs text-slate-700">
                   <colgroup>
                     <col className="w-12" />
                     <col className="w-10" />
@@ -4436,8 +4640,8 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     <col />
                     <col className="w-28" />
                     <col className="w-36" />
-                    <col className="w-56" />
-                    <col className="w-16" />
+                    <col className="w-64" />
+                    <col className="w-20" />
                   </colgroup>
                   <thead className="bg-gradient-to-r from-blue-50 to-indigo-50 text-slate-800 border-b-2 border-blue-200">
                     <tr>
@@ -4504,6 +4708,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                       const reportBusy = recordId
                         ? reportActionBusy[recordId]
                         : null;
+                      const allowedActions = getAllowedRowActions(report);
+                      const selectedAction = actionDropdown[recordId] || "";
+                      const normalizedSelectedAction =
+                        allowedActions.includes(selectedAction)
+                          ? selectedAction
+                          : "";
 
                       return (
                         <React.Fragment key={recordId || `report-${idx}`}>
@@ -4558,12 +4768,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                     "reports.notSubmitted",
                                     "Not submit",
                                   )}
-                              </div>
-                              <div
-                                className="text-[10px] text-slate-500 truncate"
-                                title={recordId || "-"}
-                              >
-                                {recordId || "-"}
                               </div>
                             </td>
                             <td
@@ -4655,7 +4859,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                 onClick={() =>
                                                   pauseReportProcess(recordId)
                                                 }
-                                                className="px-1.5 py-0.5 text-[9px] rounded border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+                                                className="rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 shadow-sm transition-colors hover:bg-amber-200"
                                               >
                                                 Pause
                                               </button>
@@ -4666,7 +4870,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                 onClick={() =>
                                                   resumeReportProcess(recordId)
                                                 }
-                                                className="px-1.5 py-0.5 text-[9px] rounded border border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                                                className="rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-200"
                                               >
                                                 Resume
                                               </button>
@@ -4677,7 +4881,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                                 onClick={() =>
                                                   stopReportProcess(recordId)
                                                 }
-                                                className="px-1.5 py-0.5 text-[9px] rounded border border-rose-400 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors"
+                                                className="rounded-md border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold text-rose-800 shadow-sm transition-colors hover:bg-rose-200"
                                               >
                                                 Stop
                                               </button>
@@ -4696,9 +4900,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                               }`}
                             >
                               <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-1">
+                                <div className="flex min-w-0 items-center gap-1">
                                   <select
-                                    value={actionDropdown[recordId] || ""}
+                                    value={normalizedSelectedAction}
                                     disabled={
                                       !recordId || submitting || !!reportBusy
                                     }
@@ -4709,43 +4913,95 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                         [recordId]: action,
                                       }));
                                     }}
-                                    className="flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+                                    className={`min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer ${
+                                      normalizedSelectedAction
+                                        ? "font-bold text-black"
+                                        : "font-medium text-slate-500"
+                                    }`}
                                   >
-                                    <option value="">
+                                    <option value="" className="font-medium text-slate-500">
                                       {translate(
                                         "reports.row.actions",
                                         "Actions",
                                       )}
                                     </option>
-                                    <option value="submit-taqeem">
+                                    <option
+                                      value="submit-taqeem"
+                                      disabled={
+                                        !allowedActions.includes("submit-taqeem")
+                                      }
+                                      className={
+                                        allowedActions.includes("submit-taqeem")
+                                          ? "font-bold text-black"
+                                          : "font-medium text-slate-400"
+                                      }
+                                    >
                                       {translate(
                                         "reports.row.submitToTaqeem",
                                         "Submit to Taqeem",
                                       )}
+                                      {!allowedActions.includes("submit-taqeem")
+                                        ? ` (${translate("reports.row.unavailable", "Unavailable now")})`
+                                        : ""}
                                     </option>
-                                    <option value="check-status">
+                                    <option
+                                      value="check-status"
+                                      disabled={
+                                        !allowedActions.includes("check-status")
+                                      }
+                                      className={
+                                        allowedActions.includes("check-status")
+                                          ? "font-bold text-black"
+                                          : "font-medium text-slate-400"
+                                      }
+                                    >
                                       {translate(
                                         "reports.row.checkStatus",
                                         "Check status",
                                       )}
+                                      {!allowedActions.includes("check-status")
+                                        ? ` (${translate("reports.row.unavailable", "Unavailable now")})`
+                                        : ""}
                                     </option>
-                                    <option value="retry">
+                                    <option
+                                      value="retry"
+                                      disabled={!allowedActions.includes("retry")}
+                                      className={
+                                        allowedActions.includes("retry")
+                                          ? "font-bold text-black"
+                                          : "font-medium text-slate-400"
+                                      }
+                                    >
                                       {translate(
                                         "reports.row.retryIncomplete",
                                         "retry incomplete assets",
                                       )}
+                                      {!allowedActions.includes("retry")
+                                        ? ` (${translate("reports.row.unavailable", "Unavailable now")})`
+                                        : ""}
                                     </option>
-                                    <option value="delete">
+                                    <option
+                                      value="delete"
+                                      disabled={!allowedActions.includes("delete")}
+                                      className={
+                                        allowedActions.includes("delete")
+                                          ? "font-bold text-black"
+                                          : "font-medium text-slate-400"
+                                      }
+                                    >
                                       {translate(
                                         "reports.row.delete",
                                         "Delete",
                                       )}
+                                      {!allowedActions.includes("delete")
+                                        ? ` (${translate("reports.row.unavailable", "Unavailable now")})`
+                                        : ""}
                                     </option>
                                   </select>
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const action = actionDropdown[recordId];
+                                      const action = normalizedSelectedAction;
                                       if (action) {
                                         handleReportAction(report, action);
                                         setActionDropdown((prev) => {
@@ -4759,9 +5015,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                                       !recordId ||
                                       submitting ||
                                       !!reportBusy ||
-                                      !actionDropdown[recordId]
+                                      !normalizedSelectedAction
                                     }
-                                    className="px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-semibold transition-colors"
+                                    className="shrink-0 rounded-md bg-cyan-600 px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     {translate("reports.row.go", "Go")}
                                   </button>
@@ -4777,17 +5033,29 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                               )}
                             </td>
                             <td className="px-2 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                disabled={!recordId}
-                                checked={
-                                  !!recordId && selectedReportSet.has(recordId)
-                                }
-                                onChange={() =>
-                                  recordId && toggleReportSelection(recordId)
-                                }
-                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                              />
+                              <div className="flex items-center justify-center">
+                                <label
+                                  className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+                                    recordId
+                                      ? "cursor-pointer border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50"
+                                      : "cursor-not-allowed border-slate-200 bg-slate-100"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled={!recordId}
+                                    checked={
+                                      !!recordId &&
+                                      selectedReportSet.has(recordId)
+                                    }
+                                    onChange={() =>
+                                      recordId &&
+                                      toggleReportSelection(recordId)
+                                    }
+                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 accent-blue-600 focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-0 disabled:cursor-not-allowed"
+                                  />
+                                </label>
+                              </div>
                             </td>
                           </tr>
                           {isExpanded && (
@@ -5264,7 +5532,7 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
 
       {showValidationModal && (
         <div
-          className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto px-4 py-6"
+          className="fixed inset-0 z-[9999] flex h-screen items-center justify-center overflow-y-auto px-4 py-6"
           onClick={() => {
             if (!validating) {
               closeValidationModal();
@@ -5273,13 +5541,13 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
         >
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" />
           <div
-            className="relative w-full max-w-5xl max-h-[70vh]"
+            className="relative w-full max-w-5xl max-h-[92vh]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="pointer-events-none absolute -top-12 right-6 h-28 w-28 rounded-full bg-cyan-400/30 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-10 left-4 h-32 w-32 rounded-full bg-blue-500/20 blur-3xl" />
             <div className="relative rounded-[32px] bg-gradient-to-br from-cyan-200/70 via-white to-blue-200/70 p-[1px] shadow-[0_40px_120px_rgba(15,23,42,0.35)]">
-              <div className="relative flex max-h-[70vh] flex-col overflow-hidden rounded-[32px] bg-white/95 backdrop-blur-xl">
+              <div className="relative flex max-h-[92vh] flex-col overflow-hidden rounded-[32px] bg-white/95 backdrop-blur-xl">
                 <div className="relative sticky top-0 z-10 overflow-hidden bg-gradient-to-r from-slate-950 via-blue-900 to-slate-900 px-5 py-4 text-white">
                   <div className="pointer-events-none absolute -right-10 top-0 h-20 w-20 rounded-full bg-cyan-400/25 blur-2xl" />
                   <div className="pointer-events-none absolute left-6 top-6 h-16 w-16 rounded-full bg-indigo-500/20 blur-2xl" />
@@ -5819,7 +6087,9 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handlePdfToggle(true)}
+                              onClick={() =>
+                                handlePdfToggle(true, { openPicker: true })
+                              }
                               className={`rounded-xl border px-3 py-2 text-left transition-colors ${
                                 wantsPdfUpload
                                   ? "border-blue-300 bg-blue-50"

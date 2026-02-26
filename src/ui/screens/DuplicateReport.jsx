@@ -230,20 +230,23 @@ const Section = ({ title, children }) => (
 const Modal = ({ open, onClose, title, children, maxWidth = "max-w-6xl" }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 px-4 py-6 overflow-auto">
-      <div className={`w-full ${maxWidth}`}>
-        <div className="rounded-2xl border border-blue-900/15 bg-white shadow-lg">
-          <div className="flex items-center justify-between border-b border-blue-900/10 px-4 py-3">
-            <h3 className="text-[14px] font-semibold text-blue-950">{title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-[12px] font-semibold text-blue-700 hover:text-blue-900"
-            >
-              Close
-            </button>
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+      <div className="relative flex h-full w-full items-start justify-center overflow-y-auto px-4 py-6">
+        <div className={`w-full ${maxWidth}`}>
+          <div className="rounded-2xl border border-blue-900/15 bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-blue-900/10 px-4 py-3">
+              <h3 className="text-[14px] font-semibold text-blue-950">{title}</h3>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-[12px] font-semibold text-blue-700 hover:text-blue-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4">{children}</div>
           </div>
-          <div className="p-4">{children}</div>
         </div>
       </div>
     </div>
@@ -538,6 +541,7 @@ const buildDefaultValuers = () => [
 ];
 
 const reportStatusLabels = {
+  new: "New",
   approved: "Approved",
   complete: "Complete",
   sent: "Sent",
@@ -550,6 +554,7 @@ const assetStatusLabels = {
 };
 
 const reportStatusClasses = {
+  new: "border-slate-200 bg-slate-50 text-slate-700",
   approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
   complete: "border-blue-200 bg-blue-50 text-blue-700",
   sent: "border-amber-200 bg-amber-50 text-amber-700",
@@ -562,10 +567,19 @@ const assetStatusClasses = {
 };
 
 const getReportStatus = (report) => {
-  if (report?.checked) return "approved";
-  if (report?.endSubmitTime) return "complete";
-  if (report?.report_id) return "sent";
-  return "incomplete";
+  const rawStatus = String(report?.report_status || report?.status || "")
+    .trim()
+    .toLowerCase();
+  const hasTaqeemId = Boolean(
+    String(report?.report_id || report?.reportId || "").trim(),
+  );
+  if (!hasTaqeemId) return "new";
+  if (report?.checked || rawStatus === "approved" || rawStatus === "confirmed") {
+    return "approved";
+  }
+  if (report?.endSubmitTime || rawStatus === "complete") return "complete";
+  if (rawStatus === "incomplete") return "incomplete";
+  return "sent";
 };
 
 const getReportSortTimestamp = (report) => {
@@ -1909,6 +1923,7 @@ const DuplicateReport = ({ onViewChange }) => {
       "formData",
       JSON.stringify({
         ...formData,
+        report_status: "new",
         report_users: reportUsers || [],
         valuers,
       }),
@@ -2024,6 +2039,7 @@ const DuplicateReport = ({ onViewChange }) => {
           const payload = new FormData();
           const draftSnapshot = {
             ...formData,
+            report_status: "new",
             report_users: reportUsers || [],
             valuers,
           };
@@ -3347,9 +3363,6 @@ const DuplicateReport = ({ onViewChange }) => {
                         <td className="px-2 py-1">
                           <div className="text-[11px] font-semibold text-blue-950">
                             {report.report_id || "Not sent"}
-                          </div>
-                          <div className="text-[10px] text-blue-900/50">
-                            {recordId || "-"}
                           </div>
                         </td>
                         <td className="px-2 py-1">

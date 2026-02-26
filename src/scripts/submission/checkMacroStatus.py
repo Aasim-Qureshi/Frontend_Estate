@@ -7,6 +7,7 @@ from scripts.core.httpClient import (
     find_report_by_id,
     update_assets_by_index,
     update_macro_submit_state,
+    update_multiple_macros,
     update_report_status_by_report_id,
 )
 from scripts.core.processControl import (
@@ -25,11 +26,43 @@ from scripts.core.utils import (
 # Status detection markers (similar to ElRajhi checker)
 SENT_BUTTON_MARKER = 'id="reject"'
 CONFIRMED_BUTTON_TEXT = "شهادة"  # Certificate button text
+INCOMPLETE_STATUS_MARKERS = (
+    "\u063a\u064a\u0631 \u0645\u0643\u062a\u0645\u0644\u0629",
+    "incomplete",
+)
+
+MAIN_PAGE_LOAD_WAIT_SECONDS = 0.35
+PAGE_NAVIGATION_WAIT_SECONDS = 0.65
+SUBPAGE_NEXT_WAIT_SECONDS = 0.35
 
 
 def is_asset_complete(asset):
     val = asset.get("submitState")
     return val == 1 or val == "1" or val is True
+
+
+def parse_submit_state(status_text):
+    normalized = str(status_text or "").strip().lower()
+    for marker in INCOMPLETE_STATUS_MARKERS:
+        if marker.lower() in normalized:
+            return 0
+    return 1
+
+
+def build_asset_maps(report):
+    macro_index_map = {}
+    macro_state_map = {}
+    for idx, asset in enumerate(report.get("asset_data", []) or []):
+        macro_id = asset.get("id")
+        if macro_id is None:
+            continue
+        try:
+            macro_id_int = int(str(macro_id).strip())
+        except (TypeError, ValueError):
+            continue
+        macro_index_map[macro_id_int] = idx
+        macro_state_map[macro_id_int] = 1 if is_asset_complete(asset) else 0
+    return macro_index_map, macro_state_map
 
 
 async def update_report_completion_status(report_id):
@@ -121,10 +154,11 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
             }
 
         record_id = report["_id"]
+        macro_index_map, macro_state_map = build_asset_maps(report)
 
         base_url = f"https://qima.taqeem.sa/report/{report_id}"
         main_page = await browser.get(base_url)
-        await asyncio.sleep(1)
+        await asyncio.sleep(MAIN_PAGE_LOAD_WAIT_SECONDS)
 
         # Enhanced status detection
         status_info = await detect_report_status(main_page)
@@ -209,10 +243,10 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
             f"[CHECK] Page distribution: {[len(chunk) for chunk in page_chunks]} pages per tab"
         )
 
-        incomplete_ids = []
+        incomplete_ids = set()
         incomplete_ids_lock = asyncio.Lock()
 
-        # Track all processed macros to handle missing ones
+        # Track all processed macros to avoid duplicate work across tabs/sub-pages
         all_processed_macros = set()
         processed_macros_lock = asyncio.Lock()
 
@@ -230,7 +264,7 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
         )
 
         async def process_pages_chunk(page, page_numbers_chunk, tab_id):
-            local_incomplete = []
+            local_incomplete = set()
             local_processed = set()
 
             print(f"[TAB-{tab_id}] Processing pages: {page_numbers_chunk}")
@@ -250,7 +284,7 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                         f"{base_url}?page={page_num}" if page_num > 1 else base_url
                     )
                     await page.get(page_url)
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(PAGE_NAVIGATION_WAIT_SECONDS)
 
                     # Update progress
                     await update_progress(process_id, completed=page_num, emit=True)
@@ -271,7 +305,6 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                             )
                             break
 
-                        await asyncio.sleep(3)
                         macro_cells = await safe_query_selector_all(
                             page, "#m-table tbody tr td:nth-child(1) a"
                         )
@@ -279,12 +312,12 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                             page, "#m-table tbody tr td:nth-child(6)"
                         )
 
-                        start_index = 0
-
                         processed_count = 0
                         incomplete_count = 0
+                        index_updates = {}
+                        macro_updates = []
 
-                        for i in range(start_index, len(macro_cells)):
+                        for i in range(len(macro_cells)):
                             try:
                                 # Check pause/stop state
                                 action = await check_and_wait(process_id)
@@ -307,52 +340,44 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                                     continue
 
                                 macro_id = int(macro_id_text.strip())
+                                async with processed_macros_lock:
+                                    if macro_id in all_processed_macros:
+                                        continue
+                                    all_processed_macros.add(macro_id)
+
                                 local_processed.add(macro_id)
 
-                                submit_state = 0 if "غير مكتملة" in status_text else 1
+                                submit_state = parse_submit_state(status_text)
 
-                                # Update database via HTTP client
-                                success = await update_macro_submit_state(
-                                    record_id, macro_id, submit_state
-                                )
+                                previous_state = macro_state_map.get(macro_id)
+                                if (
+                                    previous_state is not None
+                                    and previous_state == submit_state
+                                ):
+                                    processed_count += 1
+                                    if submit_state == 0:
+                                        local_incomplete.add(macro_id)
+                                        incomplete_count += 1
+                                    continue
 
-                                # If no document was matched, try to update using array inde x
-                                if not success:
-                                    # Fetch fresh report data
-                                    report_after, _, _ = await find_report_by_id(
-                                        record_id
+                                macro_state_map[macro_id] = submit_state
+                                asset_index = macro_index_map.get(macro_id)
+                                if asset_index is not None:
+                                    index_updates[asset_index] = {
+                                        "submitState": submit_state
+                                    }
+                                else:
+                                    macro_updates.append(
+                                        {
+                                            "macro_id": macro_id,
+                                            "submitState": submit_state,
+                                        }
                                     )
-                                    if report_after:
-                                        asset_data = report_after.get("asset_data", [])
-                                        for idx, asset in enumerate(asset_data):
-                                            if asset.get("id") == macro_id or asset.get(
-                                                "id"
-                                            ) == str(macro_id):
-                                                # Use update_assets_by_index
-                                                await update_assets_by_index(
-                                                    record_id,
-                                                    {
-                                                        idx: {
-                                                            "submitState": submit_state
-                                                        }
-                                                    },
-                                                )
-                                                print(
-                                                    f"[TAB-{tab_id}] Updated Macro {macro_id} using index {idx}"
-                                                )
-                                                break
-
-                                print(
-                                    f"[TAB-{tab_id}] Processed Macro {macro_id} on page {page_num}, submitState={submit_state}"
-                                )
 
                                 processed_count += 1
 
                                 if submit_state == 0:
-                                    print(
-                                        f"[TAB-{tab_id}] INCOMPLETE Macro {macro_id} on page {page_num}"
-                                    )
-                                    local_incomplete.append(macro_id)
+                                    local_incomplete.add(macro_id)
                                     incomplete_count += 1
 
                             except (ValueError, TypeError) as e:
@@ -364,6 +389,12 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                                 print(f"[TAB-{tab_id}] ERROR processing row {i}: {e}")
                                 continue
 
+                        if index_updates:
+                            await update_assets_by_index(record_id, index_updates)
+
+                        if macro_updates:
+                            await update_multiple_macros(report_id, macro_updates)
+
                         print(
                             f"[TAB-{tab_id}] Page {page_num}: Processed {processed_count} macros, {incomplete_count} incomplete"
                         )
@@ -374,13 +405,13 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                         )
                         if next_btn:
                             attributes = next_btn.attrs
-                            classes = attributes.get("class_")
+                            classes = str(attributes.get("class_") or "")
                             if "disabled" not in classes:
                                 print(
                                     f"[TAB-{tab_id}] Clicking next sub-page button on page {page_num}"
                                 )
                                 await next_btn.click()
-                                await asyncio.sleep(2)
+                                await asyncio.sleep(SUBPAGE_NEXT_WAIT_SECONDS)
                                 continue
 
                         # No more sub-pages, break inner loop
@@ -392,10 +423,7 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
                     continue
 
             async with incomplete_ids_lock:
-                incomplete_ids.extend(local_incomplete)
-
-            async with processed_macros_lock:
-                all_processed_macros.update(local_processed)
+                incomplete_ids.update(local_incomplete)
 
             print(
                 f"[TAB-{tab_id}] Completed processing, found {len(local_incomplete)} incomplete macros, processed {len(local_processed)} total macros"
@@ -417,11 +445,12 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
         # Clear process state
         clear_process(process_id)
         await update_report_completion_status(report_id)
+        unique_incomplete_ids = sorted(incomplete_ids)
 
         return {
             "status": "SUCCESS",
-            "incomplete_ids": incomplete_ids,
-            "macro_count": len(incomplete_ids),
+            "incomplete_ids": unique_incomplete_ids,
+            "macro_count": len(unique_incomplete_ids),
             "total_pages_processed": total_pages,
             "tabs_used": len(pages),
             "total_macros_processed": len(all_processed_macros),
@@ -718,7 +747,7 @@ async def half_check_incomplete_macros(browser, report_id, browsers_num=3):
                                     continue
 
                                 local_processed.add(macro_id)
-                                submit_state = 0 if "غير مكتملة" in status_text else 1
+                                submit_state = parse_submit_state(status_text)
 
                                 # Update via HTTP client
                                 success = await update_macro_submit_state(

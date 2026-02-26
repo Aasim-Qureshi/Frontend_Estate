@@ -12,6 +12,11 @@ from scripts.core.company_context import (
     require_selected_company,
 )
 from scripts.core.httpClient import http_get, http_patch
+from scripts.core.processControl import (
+    check_and_wait,
+    create_process,
+    get_process_manager,
+)
 from scripts.core.utils import wait_for_element
 from scripts.submission.validateReport import validate_for_retry
 
@@ -164,10 +169,86 @@ async def find_record_in_collections(id, collection_names):
     return None, None
 
 
+def normalize_process_id(value):
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def ensure_submission_process(process_id, tabs_num=3):
+    normalized_id = normalize_process_id(process_id)
+    if not normalized_id:
+        return None
+
+    process_manager = get_process_manager()
+    state = process_manager.get_process(normalized_id)
+    if state is None:
+        state = create_process(
+            process_id=normalized_id,
+            process_type="submit-report-quickly",
+            total=100,
+            report_id=normalized_id,
+            tabs_num=tabs_num,
+        )
+    elif not state.total:
+        state.total = 100
+    return state
+
+
+def sync_process_percentage(process_id, percentage):
+    normalized_id = normalize_process_id(process_id)
+    if not normalized_id:
+        return
+
+    process_manager = get_process_manager()
+    state = process_manager.get_process(normalized_id)
+    if not state:
+        return
+
+    clamped_percentage = max(0.0, min(100.0, float(percentage or 0)))
+    state.total = 100
+    state.completed = int(round(clamped_percentage))
+    state.updated_at = datetime.utcnow()
+
+
+def get_process_percentage(process_id, fallback=0):
+    normalized_id = normalize_process_id(process_id)
+    if not normalized_id:
+        return fallback
+
+    process_manager = get_process_manager()
+    state = process_manager.get_process(normalized_id)
+    if not state:
+        return fallback
+
+    return state.get_percentage()
+
+
+async def check_submission_control(process_id, message, step=None):
+    normalized_id = normalize_process_id(process_id)
+    if not normalized_id:
+        return None
+
+    action = await check_and_wait(normalized_id)
+    if action != "stop":
+        return None
+
+    result = {
+        "status": "STOPPED",
+        "message": message,
+    }
+    if step:
+        result["step"] = step
+    return result
+
+
 def emit_progress_update(
     record_id, percentage, message, status="processing", created_report_id=None
 ):
     """Emit progress update to stdout for frontend to receive"""
+    sync_process_percentage(record_id, percentage)
+
     progress_data = {
         "type": "progress",
         "processId": str(record_id),
@@ -182,12 +263,18 @@ def emit_progress_update(
     print(json.dumps(progress_data), flush=True)
 
 
-async def create_report_for_record(browser, record, tabs_num=3, collection=None):
+async def create_report_for_record(
+    browser, record, tabs_num=3, collection=None, process_id=None
+):
     try:
         if not record or "_id" not in record:
             return {"status": "FAILED", "error": "Invalid record object (missing _id)"}
 
         record_id = str(record["_id"])
+        control_process_id = normalize_process_id(process_id)
+        if control_process_id:
+            ensure_submission_process(control_process_id, tabs_num=tabs_num)
+
         asset_count = len(record.get("asset_data", []))
         form_id = None
 
@@ -225,6 +312,24 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
             record_id, 0, "Starting report submission...", "processing"
         )
 
+        stop_result = await check_submission_control(
+            control_process_id,
+            "Report submission stopped by user before filling the form.",
+            step="start",
+        )
+        if stop_result:
+            emit_progress_update(
+                record_id,
+                get_process_percentage(control_process_id, 0),
+                stop_result["message"],
+                "stopped",
+            )
+            await http_patch(
+                f"new-scripts/update-report-timestamp/{record['_id']}",
+                json={"type": "endSubmitTime"},
+            )
+            return stop_result
+
         results = []
         record["number_of_macros"] = str(asset_count)
 
@@ -246,6 +351,24 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
 
         for step_num, step_config in enumerate(form_steps, 1):
             is_last = step_num == len(form_steps)
+
+            stop_result = await check_submission_control(
+                control_process_id,
+                f"Report submission stopped by user before step {step_num}.",
+                step=f"step_{step_num}",
+            )
+            if stop_result:
+                emit_progress_update(
+                    record_id,
+                    get_process_percentage(control_process_id, 0),
+                    stop_result["message"],
+                    "stopped",
+                )
+                await http_patch(
+                    f"new-scripts/update-report-timestamp/{record['_id']}",
+                    json={"type": "endSubmitTime"},
+                )
+                return stop_result
 
             results.append(
                 {
@@ -366,6 +489,25 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     "processing",
                 )
 
+                stop_result = await check_submission_control(
+                    control_process_id,
+                    "Report submission stopped by user before grabbing macro IDs.",
+                    step="macro_ids",
+                )
+                if stop_result:
+                    emit_progress_update(
+                        record_id,
+                        current_progress_before_macro_ids,
+                        stop_result["message"],
+                        "stopped",
+                        created_report_id=form_id,
+                    )
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
+                    )
+                    return stop_result
+
                 macro_ids_result = await get_all_macro_ids_parallel(
                     browser, form_id, tabs_num=tabs_num, collection_name=coll_name
                 )
@@ -420,6 +562,25 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     "processing",
                 )
 
+                stop_result = await check_submission_control(
+                    control_process_id,
+                    "Report submission stopped by user before filling assets.",
+                    step="macro_edit",
+                )
+                if stop_result:
+                    emit_progress_update(
+                        record_id,
+                        current_progress_before_macro_ids,
+                        stop_result["message"],
+                        "stopped",
+                        created_report_id=form_id,
+                    )
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
+                    )
+                    return stop_result
+
                 # Handle macro edits with progress tracking
                 # Calculate base progress (report + assets = 15% if assets created, otherwise 10%)
                 base_progress = (
@@ -449,6 +610,9 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                     tabs_num=tabs_num,
                     record_id=record_id,
                     progress_callback=progress_callback,
+                    initialize_process=not bool(control_process_id),
+                    clear_process_on_exit=not bool(control_process_id),
+                    emit_internal_progress=not bool(control_process_id),
                 )
                 if (
                     isinstance(macro_result, dict)
@@ -468,6 +632,35 @@ async def create_report_for_record(browser, record, tabs_num=3, collection=None)
                         json={"type": "endSubmitTime"},
                     )
                     return {"status": "FAILED", "results": results}
+
+                if (
+                    isinstance(macro_result, dict)
+                    and macro_result.get("status") == "STOPPED"
+                ):
+                    await http_patch(
+                        f"new-scripts/update-report-timestamp/{record['_id']}",
+                        json={"type": "endSubmitTime"},
+                    )
+                    emit_progress_update(
+                        record_id,
+                        max(
+                            current_progress_before_macro_ids,
+                            base_progress,
+                        ),
+                        macro_result.get(
+                            "message", "Report submission stopped by user."
+                        ),
+                        "stopped",
+                        created_report_id=form_id,
+                    )
+                    return {
+                        "status": "STOPPED",
+                        "message": macro_result.get(
+                            "message", "Report submission stopped by user."
+                        ),
+                        "reportId": form_id,
+                        "results": results,
+                    }
 
                 results.append(
                     {
@@ -515,6 +708,27 @@ async def create_new_report(browser, record_id, tabs_num=3):
     try:
         # Convert record_id to string if needed
         record_id_str = str(record_id).strip()
+        ensure_submission_process(record_id_str, tabs_num=tabs_num)
+        emit_progress_update(
+            record_id_str,
+            0,
+            "Preparing report submission session...",
+            "starting",
+        )
+
+        stop_result = await check_submission_control(
+            record_id_str,
+            "Report submission stopped by user before initialization.",
+            step="initialize",
+        )
+        if stop_result:
+            emit_progress_update(
+                record_id_str,
+                get_process_percentage(record_id_str, 0),
+                stop_result["message"],
+                "stopped",
+            )
+            return stop_result
 
         if not ObjectId.is_valid(record_id_str):
             return {
@@ -537,7 +751,11 @@ async def create_new_report(browser, record_id, tabs_num=3):
         )
 
         return await create_report_for_record(
-            browser, record, tabs_num=tabs_num, collection=collection
+            browser,
+            record,
+            tabs_num=tabs_num,
+            collection=collection,
+            process_id=record_id_str,
         )
 
     except Exception as e:

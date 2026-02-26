@@ -589,6 +589,46 @@
             "storeAndSubmitNow": "Store and Submit Now",
             "storeAndSubmitLater": "Store and Submit Later"
         },
+        "editModal": {
+            "title": "Edit Report",
+            "close": "Close",
+            "cancel": "Cancel",
+            "update": "Update",
+            "updating": "Updating...",
+            "field": {
+                "title": "Title",
+                "clientName": "Client Name",
+                "telephone": "Telephone",
+                "email": "Email"
+            }
+        },
+        "temporarySection": {
+            "title": "Guest Temporary Reports",
+            "subtitle": "Guest reports saved temporarily until linked with Taqeem.",
+            "open": "Show Temporary Reports"
+        },
+        "temporaryModal": {
+            "title": "Guest Temporary Reports",
+            "subtitle": "Guest reports saved temporarily until linked with Taqeem.",
+            "close": "Close",
+            "guestSession": "Guest temporary reports.",
+            "unassigned": "Unassigned reports.",
+            "refreshing": "Refreshing...",
+            "refresh": "Refresh",
+            "loading": "Loading guest temporary reports...",
+            "empty": "No guest temporary reports found.",
+            "unknownClient": "Unknown",
+            "assignAndSubmit": "Assign & Submit",
+            "registerHint": "Register your account to keep these reports linked to your phone.",
+            "register": "Register",
+            "table": {
+                "reportId": "Report ID",
+                "client": "Client",
+                "assets": "Assets",
+                "status": "Status",
+                "action": "Action"
+            }
+        },
         "reports": {
             "title": "Reports",
             "bulkActions": "Bulk Actions",
@@ -603,6 +643,7 @@
                 "new": "New",
                 "incomplete": "Incomplete",
                 "sent": "Sent",
+                "confirmed": "Confirmed",
                 "complete": "Complete",
                 "approved": "Approved"
             },
@@ -623,6 +664,14 @@
                 "action": "Action",
                 "select": "Select"
             },
+            "status": {
+                "new": "New",
+                "incomplete": "Incomplete",
+                "complete": "Complete",
+                "sent": "Sent",
+                "approved": "Approved",
+                "confirmed": "Confirmed"
+            },
             "actions": {
                 "hideAssets": "Hide assets",
                 "showAssets": "Show assets"
@@ -630,12 +679,14 @@
             "notSubmitted": "Not submit",
             "row": {
                 "actions": "Actions",
+                "submitToTaqeem": "Submit to Taqeem",
                 "checkStatus": "Check status",
                 "retryIncomplete": "Retry incomplete assets",
                 "delete": "Delete",
                 "edit": "Edit",
                 "go": "Go",
-                "working": "Working..."
+                "working": "Working...",
+                "unavailable": "Unavailable now"
             },
             "assets": {
                 "label": "Assets",
@@ -667,6 +718,7 @@
             "pdfsLabel": "PDFs: {{count}}",
             "closeButton": "Close",
             "continueButton": "Continue",
+            "loadingHint": "Please wait while we validate the Excel file. Results will appear in this window.",
             "emptyMessage": "Upload Excel files to generate validation results.",
             "noIssues": "No issues detected",
             "noIssuesDetails": "Your Excel files look clean. You can proceed with uploading and submission.",
@@ -703,7 +755,21 @@
                 "subtitle": "Update important report fields before choosing how to continue.",
                 "fixValidationFirst": "Fix validation issues first, then choose one of the action buttons below.",
                 "actionHint": "Choose how to continue with the uploaded reports.",
-                "back": "Back to validation"
+                "back": "Back to validation",
+                "pdfSection": {
+                    "title": "Attach PDF files (optional)",
+                    "subtitle": "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
+                    "modeUpload": "Upload mode",
+                    "modePlaceholder": "Placeholder mode",
+                    "usePlaceholder": "Use placeholder PDF",
+                    "usePlaceholderHint": "Skip manual PDF upload and use the bundled placeholder file.",
+                    "uploadPdfs": "Upload PDF files",
+                    "uploadPdfsHint": "Upload PDF files with names matching the Excel filenames.",
+                    "chooseButton": "Choose PDF files",
+                    "matchWarning": "Some PDF filenames do not match Excel filenames.",
+                    "matchSuccess": "All selected PDF files match Excel filenames.",
+                    "moreFiles": "+{{count}} more file(s)"
+                }
             }
         },
         "validation": {
@@ -781,12 +847,21 @@
                 "sendReportToApprover": "Failed to send report to approver.",
                 "approveReport": "Failed to approve report.",
                 "desktopIntegration": "Desktop integration unavailable. Restart the app.",
+                "submitFirst": "You must submit this report to Taqeem first.",
+                "submitAlreadyDone": "This report is already submitted to Taqeem.",
+                "insufficientPoints": "You do not have enough points to submit this report.",
                 "missingReportId": "Missing report record id."
+            },
+            "info": {
+                "processNotActive": "This report process is not active right now (it may have already finished)."
             },
             "success": {
                 "uploadingFiles": "Uploading files to server...",
                 "filesUploadedSubmitting": "Files uploaded successfully. Inserted {{count}} report(s). Now submitting to Taqeem...",
                 "filesUploaded": "Files uploaded successfully. Inserted {{count}} report(s).",
+                "successfulUploads": "{{count}} report(s) uploaded successfully.",
+                "reportsStoredResumeAfterLogin": "Reports stored successfully. Complete Taqeem login, then resume submission.",
+                "waitingCompanies": "Waiting for companies list from Taqeem...",
                 "templateDownloaded": "Excel template downloaded successfully.",
                 "selectCompany": "Select a company to continue.",
                 "resumingTaqeem": "Resuming Taqeem submission...",

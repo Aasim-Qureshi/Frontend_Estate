@@ -391,7 +391,7 @@ export const ValueNavProvider = ({ children }) => {
             quiet = false,
             setAsDefault = false,
             onlyIfUnset = false,
-            persistDefault = setAsDefault
+            persistDefault = false
         } = options;
         if (!company) {
             setSelectedCompanyState(null);
@@ -446,7 +446,7 @@ export const ValueNavProvider = ({ children }) => {
             applySelection = true,
             skipNavigation = true,
             quiet = false,
-            persistDefault = true
+            persistDefault = false
         } = options;
         const normalized = company ? normalizeCompany(company) : null;
         setPreferredCompanyKey(getCompanyKey(normalized));

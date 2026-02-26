@@ -94,7 +94,11 @@ const Profile = ({ onViewChange }) => {
         if (!chosen) return;
         setSavingDefaultCompany(true);
         try {
-            await setPreferredCompany(chosen, { applySelection: true, skipNavigation: true });
+            await setPreferredCompany(chosen, {
+                applySelection: true,
+                skipNavigation: true,
+                persistDefault: true
+            });
         } finally {
             setSavingDefaultCompany(false);
         }

@@ -14,6 +14,23 @@ class PythonWorkerService {
         this.progressCallbacks = new Map(); // Store progress callbacks by reportId
     }
 
+    isResolvedStatus(status) {
+        return [
+            'SUCCESS',
+            'STOPPED',
+            'PAUSED',
+            'RESUMED',
+            'PARTIAL_SUCCESS',
+            'OTP_REQUIRED',
+            'LOGIN_SUCCESS',
+            'NOT_LOGGED_IN',
+            'MACROS_EXIST',
+            'NOT_FOUND',
+            'CHECK',
+            'CANCELLED',
+        ].includes(String(status || '').toUpperCase());
+    }
+
     // Register a progress callback for a specific report
     registerProgressCallback(reportId, callback) {
         this.progressCallbacks.set(reportId, callback);
@@ -284,20 +301,39 @@ class PythonWorkerService {
         return this._normalizeSpawnPath(spawnPath, cwd);
     }
 
+    _looksLikeJsonPayload(line) {
+        const trimmed = String(line || '').trim();
+        if (!trimmed) return false;
+        if (trimmed.startsWith('{')) return true;
+        if (!trimmed.startsWith('[')) return false;
+
+        // Avoid false positives like "[TAB-0] ..." that are plain logs, not JSON.
+        const afterBracket = trimmed.slice(1).trimStart();
+        if (!afterBracket) return false;
+        const first = afterBracket[0];
+        if (first === '{' || first === '[' || first === '"' || first === '-') return true;
+        if (first >= '0' && first <= '9') return true;
+        return (
+            afterBracket.startsWith('true') ||
+            afterBracket.startsWith('false') ||
+            afterBracket.startsWith('null')
+        );
+    }
+
     handleWorkerOutput(line) {
         // Skip empty lines
         if (!line || !line.trim()) return;
 
-        // Check if line starts with JSON-like content (starts with '{' or '[')
         const trimmedLine = line.trim();
-        if (!trimmedLine.startsWith('{') && !trimmedLine.startsWith('[')) {
-            // This is likely a log message, not JSON
-            console.log('[PY] Log output:', trimmedLine);
+        if (!this._looksLikeJsonPayload(trimmedLine)) {
+            if (process.env.PY_VERBOSE_LOGS === '1') {
+                console.log('[PY] Log output:', trimmedLine);
+            }
             return;
         }
 
         try {
-            const response = JSON.parse(line);
+            const response = JSON.parse(trimmedLine);
             console.log('[PY] Response:', response);
 
             // Handle progress updates
@@ -342,14 +378,7 @@ class PythonWorkerService {
             if (response.commandId !== undefined) {
                 const handler = this.pendingCommands.get(response.commandId);
                 if (handler) {
-                    if (response.status === 'SUCCESS' ||
-                        response.status === 'OTP_REQUIRED' ||
-                        response.status === 'LOGIN_SUCCESS' ||
-                        response.status === 'NOT_LOGGED_IN' ||
-                        response.status === 'MACROS_EXIST' ||
-                        response.status === 'NOT_FOUND' ||
-                        response.status === 'CHECK' ||
-                        response.status === 'CANCELLED') {
+                    if (this.isResolvedStatus(response.status)) {
                         handler.resolve(response);
                     } else {
                         handler.reject(new Error(response.error || 'Command failed'));
@@ -358,8 +387,9 @@ class PythonWorkerService {
                 }
             }
         } catch (error) {
-            // Handle non-JSON output (log messages, etc.) gracefully
-            console.log('[PY] Failed to parse worker output:', trimmedLine, 'Error:', error.message);
+            if (process.env.PY_VERBOSE_LOGS === '1') {
+                console.log('[PY] Failed to parse worker output:', trimmedLine, 'Error:', error.message);
+            }
         }
     }
 

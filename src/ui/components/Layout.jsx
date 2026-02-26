@@ -502,11 +502,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         }
         const company = companies?.find((c) => getCompanySelectionKey(c) === value);
         if (company) {
-            await setSelectedCompany(company, {
-                setAsDefault: true,
-                onlyIfUnset: false,
-                persistDefault: true
-            });
+            await setSelectedCompany(company, { skipNavigation: true });
         }
     };
 
@@ -516,11 +512,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         if (!company) return;
         setCompanyModalBusy(true);
         try {
-            await setSelectedCompany(company, {
-                setAsDefault: true,
-                onlyIfUnset: false,
-                persistDefault: true
-            });
+            await setSelectedCompany(company, { skipNavigation: true });
             setForceCompanyModal(false);
         } finally {
             setCompanyModalBusy(false);
@@ -891,11 +883,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 chooseCard('uploading-reports');
                 chooseDomain('equipments');
                 if (item.value) {
-                    setSelectedCompany(item.value, {
-                        setAsDefault: true,
-                        onlyIfUnset: false,
-                        persistDefault: true
-                    });
+                    setSelectedCompany(item.value, { skipNavigation: true });
                 }
                 onViewChange('apps');
                 break;
@@ -1096,7 +1084,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             <div className="flex-1">
                                 <h3 className="text-sm font-semibold text-slate-900">Select a company to continue</h3>
                                 <p className="text-[11px] text-slate-600">
-                                    Choose your default company for this Taqeem account. You can change it later from settings.
+                                    This selects the active company for now. Change your default company from Settings when needed.
                                 </p>
                             </div>
                         </div>
