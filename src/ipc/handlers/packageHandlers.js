@@ -114,7 +114,7 @@ const packageHandlers = {
     if (envUrl) candidates.push(envUrl.replace(/\/$/, ""));
 
     candidates.push(
-      "http://167.71.231.64:3000",
+      // "http://167.71.231.64:3000",
       "http://localhost:3000",
       "http://127.0.0.1:3000",
       "https://future-electron-backend.onrender.com",

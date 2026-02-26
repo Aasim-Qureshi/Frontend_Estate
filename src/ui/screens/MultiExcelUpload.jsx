@@ -187,9 +187,10 @@ const normalizeCellValue = (value) => {
 const normalizeKey = (value) =>
   (value || "")
     .toString()
+    .normalize("NFC")
     .trim()
     .toLowerCase()
-    .replace(/[\W_]+/g, "");
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 
 const stripExtension = (filename = "") => filename.replace(/\.[^.]+$/, "");
 
@@ -2515,7 +2516,32 @@ const MultiExcelUpload = ({ onViewChange }) => {
     validationItems,
     pdfMatchInfo,
   ]);
+  const buildPdfPathMap = (files, absolutePaths) => {
+    const map = {};
 
+    // Normalize the absolutePaths keys so lookups work regardless of raw vs normalized
+    const normalizedAbsolutePaths = {};
+    Object.entries(absolutePaths).forEach(([key, value]) => {
+      normalizedAbsolutePaths[normalizeKey(stripExtension(key))] = value;
+    });
+
+    files.forEach((file) => {
+      const baseName = normalizeKey(stripExtension(file.name));
+      if (!baseName) {
+        console.error("Invalid filename for PDF:", file);
+        return;
+      }
+
+      const absPath = normalizedAbsolutePaths[baseName]; // ← always normalized lookup
+
+      if (absPath) {
+        map[baseName] = absPath;
+      }
+    });
+
+    console.log("FINAL PDF MAP:", map);
+    return map;
+  };
   const handleUploadAndCreate = async () => {
     if (excelFiles.length === 0) {
       setError("Please select at least one Excel file");
@@ -2543,10 +2569,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
         let pdfPaths = {};
         if (wantsPdfUpload && pdfFiles.length > 0) {
-          pdfPaths = await getAbsolutePaths(pdfFiles, false);
+          const absolutePaths = await getAbsolutePaths(pdfFiles, false);
+          pdfPaths = buildPdfPathMap(pdfFiles, absolutePaths);
         } else {
-          // No PDF upload - use dummy PDFs
-          pdfPaths = await getAbsolutePaths([], true, excelFiles);
+          const absolutePaths = await getAbsolutePaths([], true, excelFiles);
+          pdfPaths = buildPdfPathMap(excelFiles, absolutePaths);
         }
 
         // Step 1: Upload files to backend
@@ -2650,10 +2677,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
         // Get PDF absolute paths - pass skip flag
         let pdfPaths = {};
         if (wantsPdfUpload && pdfFiles.length > 0) {
-          pdfPaths = await getAbsolutePaths(pdfFiles, false);
+          const absolutePaths = await getAbsolutePaths(pdfFiles, false);
+          pdfPaths = buildPdfPathMap(pdfFiles, absolutePaths);
         } else {
-          // No PDF upload - use dummy PDFs
-          pdfPaths = await getAbsolutePaths([], true, excelFiles);
+          const absolutePaths = await getAbsolutePaths([], true, excelFiles);
+          pdfPaths = buildPdfPathMap(excelFiles, absolutePaths);
         }
 
         setSuccess(

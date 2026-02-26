@@ -1,5 +1,13 @@
 const httpClient = require("./httpClient");
 
+const normalizeKey = (value) =>
+  (value || "")
+    .toString()
+    .normalize("NFC")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+
 const uploadAssetDataToDatabase = async (
   reportId,
   reportData,
@@ -184,9 +192,13 @@ const multiExcelUpload = async (
   }
 
   // Add PDF path mappings (NEW)
+  const normalizedPdfPathMap = {};
+
   Object.entries(pdfPathMap).forEach(([key, value]) => {
-    formData.append(key, value);
+    normalizedPdfPathMap[normalizeKey(key)] = value;
   });
+
+  formData.append("pdfPathMap", JSON.stringify(normalizedPdfPathMap));
 
   // Add skipPdfUpload and dummy path if no PDFs
   const skipPdfUpload = validationPdfFiles.length === 0;
@@ -446,9 +458,7 @@ const submitReportsQuicklyUpload = async (
   }
 
   // Add PDF path mappings
-  Object.entries(pdfPathMap).forEach(([key, value]) => {
-    formData.append(key, value);
-  });
+  formData.append("pdfPathMap", JSON.stringify(pdfPathMap));
 
   // Add dummy PDF path if needed
   if (skipPdfUpload) {
