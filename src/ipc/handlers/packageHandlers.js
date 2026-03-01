@@ -194,9 +194,9 @@ const packageHandlers = {
         // Retry once on ECONNREFUSED with a short delay
         if (error.code === "ECONNREFUSED") {
           console.log(
-            `[API] ECONNREFUSED on ${baseUrl}${url} — retrying in 1s...`,
+            `[API] ECONNREFUSED on ${baseUrl}${url} — retrying in 2s...`,
           );
-          await sleep(1000);
+          await sleep(2000);
           try {
             return await attemptRequest(baseUrl);
           } catch (retryError) {
