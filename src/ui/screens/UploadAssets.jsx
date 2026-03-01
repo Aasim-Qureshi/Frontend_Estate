@@ -53,6 +53,10 @@ const UploadAssets = ({ onViewChange }) => {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [validationModalStep, setValidationModalStep] = useState("validation");
+  const [reportIdExistsCheck, setReportIdExistsCheck] = useState({
+    status: "idle", // "idle" | "checking" | "exists" | "available" | "error"
+    message: "",
+  });
   const [excelIconSrc, setExcelIconSrc] = useState(excelIconFallback);
   const [hasAutoOpenedValidationModal, setHasAutoOpenedValidationModal] =
     useState(false);
@@ -90,6 +94,84 @@ const UploadAssets = ({ onViewChange }) => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  const reportIdValidation = useMemo(() => {
+    const id = reportId;
+    if (!id)
+      return {
+        valid: false,
+        error: translate("messages.reportIdRequired", "Report ID is required."),
+      };
+    if (!/^\d+$/.test(id))
+      return {
+        valid: false,
+        error: translate(
+          "messages.reportIdNumbersOnly",
+          "Report ID must contain numbers only.",
+        ),
+      };
+    if (id.length < 6)
+      return {
+        valid: false,
+        error: translate(
+          "messages.reportIdTooShort",
+          "Report ID must be at least 6 digits long.",
+        ),
+      };
+    return { valid: true, error: null };
+  }, [reportId, t]);
+
+  useEffect(() => {
+    // Only check DB if basic validation passes
+    if (!reportIdValidation.valid) {
+      setReportIdExistsCheck({ status: "idle", message: "" });
+      return;
+    }
+
+    setReportIdExistsCheck({ status: "checking", message: "" });
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const result = await window.electronAPI.apiRequest(
+          "GET",
+          `/api/report/reportExistenceCheck/${reportId.trim()}${selectedCompanyOfficeId ? `?companyOfficeId=${selectedCompanyOfficeId}` : ""}`,
+          {},
+        );
+
+        console.log("result", result);
+
+        if (controller.signal.aborted) return;
+
+        if (result?.success) {
+          // success: true means report EXISTS
+          setReportIdExistsCheck({
+            status: "exists",
+            message: translate(
+              "messages.reportIdAlreadyExists",
+              "A report with this ID already exists.",
+            ),
+          });
+        } else if (result?.message === "Report does not exist") {
+          setReportIdExistsCheck({ status: "available", message: "" });
+        } else {
+          setReportIdExistsCheck({
+            status: "error",
+            message: result?.message || "",
+          });
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setReportIdExistsCheck({ status: "error", message: "" });
+        }
+      }
+    }, 600); // debounce 600ms
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [reportId, reportIdValidation.valid, selectedCompanyOfficeId]);
 
   const openFileDialogAndExtract = async () => {
     try {
@@ -220,12 +302,25 @@ const UploadAssets = ({ onViewChange }) => {
   }, [inspectionDate, region, city, ownerName, t]);
 
   const hasPreviewRecords = !!(previewData && previewData.length > 0);
-  const hasExcelStepReady = !!(excelFileName && reportId.trim() && hasPreviewRecords);
+
+  // Whether we have enough to show the modal at all
+  const hasExcelStepReady = !!(
+    excelFileName &&
+    reportId.trim() &&
+    hasPreviewRecords
+  );
+  // Whether everything passes validation to allow proceeding
+  const hasExcelStepValid =
+    hasExcelStepReady &&
+    reportIdValidation.valid &&
+    reportIdExistsCheck.status === "available";
   const hasCommonFieldsStepReady = missingCommonFields.length === 0;
-  const isValidationReady = hasExcelStepReady && hasCommonFieldsStepReady;
+  const isValidationReady = hasExcelStepValid && hasCommonFieldsStepReady;
+  // Can open modal as soon as a file is loaded
+  const canOpenModal = hasExcelStepReady;
 
   useEffect(() => {
-    if (!hasExcelStepReady || !hasCommonFieldsStepReady) {
+    if (!hasExcelStepReady) {
       setHasAutoOpenedValidationModal(false);
       return;
     }
@@ -239,7 +334,6 @@ const UploadAssets = ({ onViewChange }) => {
     setHasAutoOpenedValidationModal(true);
   }, [
     hasExcelStepReady,
-    hasCommonFieldsStepReady,
     showValidationModal,
     hasAutoOpenedValidationModal,
     uploadLoading,
@@ -652,21 +746,24 @@ const UploadAssets = ({ onViewChange }) => {
         // Auth options
         {
           requiredPoints: previewData.length || 0,
-              deductPoints: (result) => {
-                const completed = Number(result?.completedAssets) || previewData.length || 0;
-                const ids = result?.reportId ? [result.reportId].filter(Boolean) : [];
-                return {
-                  amount: completed,
-                  reportIds: ids,
-                  reportId: result?.reportId,
-                  recordId: result?.recordId || null,
-                  batchId: result?.batchId || null,
-                  source: "upload-assets",
-                  pageName: UPLOAD_ASSETS_PAGE_NAME,
-                  pageSource: UPLOAD_ASSETS_PAGE_SOURCE,
-                  assetCount: completed,
-                };
-              },
+          deductPoints: (result) => {
+            const completed =
+              Number(result?.completedAssets) || previewData.length || 0;
+            const ids = result?.reportId
+              ? [result.reportId].filter(Boolean)
+              : [];
+            return {
+              amount: completed,
+              reportIds: ids,
+              reportId: result?.reportId,
+              recordId: result?.recordId || null,
+              batchId: result?.batchId || null,
+              source: "upload-assets",
+              pageName: UPLOAD_ASSETS_PAGE_NAME,
+              pageSource: UPLOAD_ASSETS_PAGE_SOURCE,
+              assetCount: completed,
+            };
+          },
           showInsufficientPointsModal: () =>
             setShowInsufficientPointsModal(true),
           onViewChange,
@@ -745,7 +842,10 @@ const UploadAssets = ({ onViewChange }) => {
     } catch (error) {
       console.error("[UploadAssets] Error pausing flow:", error);
       setError(
-        quickTranslate("messages.error.pauseProcess", "Failed to pause process."),
+        quickTranslate(
+          "messages.error.pauseProcess",
+          "Failed to pause process.",
+        ),
       );
     }
   };
@@ -893,7 +993,10 @@ const UploadAssets = ({ onViewChange }) => {
       if (!uploadResult.success) {
         throw new Error(
           uploadResult.message ||
-            translate("messages.failedToCreateReport", "Failed to create report"),
+            translate(
+              "messages.failedToCreateReport",
+              "Failed to create report",
+            ),
         );
       }
 
@@ -981,7 +1084,10 @@ const UploadAssets = ({ onViewChange }) => {
       } else {
         setError(
           error?.message ||
-            translate("messages.unexpectedError", "An unexpected error occurred"),
+            translate(
+              "messages.unexpectedError",
+              "An unexpected error occurred",
+            ),
         );
       }
     } finally {
@@ -990,21 +1096,21 @@ const UploadAssets = ({ onViewChange }) => {
   };
 
   const openValidationModal = () => {
-    if (!isValidationReady) return;
+    if (!canOpenModal) return;
     setValidationModalStep("validation");
     setShowValidationModal(true);
     setHasAutoOpenedValidationModal(true);
+  };
+
+  const continueValidationModal = () => {
+    if (!hasExcelStepValid || uploadLoading) return;
+    setValidationModalStep("commonFields");
   };
 
   const closeValidationModal = () => {
     if (uploadLoading) return;
     setShowValidationModal(false);
     setValidationModalStep("validation");
-  };
-
-  const continueValidationModal = () => {
-    if (!isValidationReady || uploadLoading) return;
-    setValidationModalStep("action");
   };
 
   const removeFile = () => {
@@ -1085,7 +1191,10 @@ const UploadAssets = ({ onViewChange }) => {
           >
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 text-[9px] font-semibold text-blue-700 whitespace-nowrap">
-                {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
+                {quickTranslate(
+                  "workflow.step1UploadExcel",
+                  "Step 1: Upload Excel",
+                )}
               </span>
               <label
                 className={`group relative flex min-h-[42px] flex-1 items-center gap-2 rounded-xl border border-slate-300/90 bg-white/90 px-2 py-1.5 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
@@ -1100,7 +1209,10 @@ const UploadAssets = ({ onViewChange }) => {
                     {excelFileName ? (
                       <span title={excelFileName}>{excelFileName}</span>
                     ) : (
-                      quickTranslate("filePicker.chooseExcel", "Choose Excel file")
+                      quickTranslate(
+                        "filePicker.chooseExcel",
+                        "Choose Excel file",
+                      )
                     )}
                   </span>
                   <span className="block text-[8px] font-medium text-slate-500">
@@ -1126,7 +1238,7 @@ const UploadAssets = ({ onViewChange }) => {
             <button
               type="button"
               onClick={openValidationModal}
-              disabled={!isValidationReady || uploadLoading}
+              disabled={!canOpenModal || uploadLoading}
               className="inline-flex min-h-[42px] min-w-[142px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Table className="h-3.5 w-3.5" />
@@ -1151,8 +1263,14 @@ const UploadAssets = ({ onViewChange }) => {
               type="button"
               onClick={handleDownloadTemplate}
               disabled={downloadingTemplate}
-              title={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
-              aria-label={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              title={quickTranslate(
+                "filePicker.exportTemplate",
+                "Export Excel Template",
+              )}
+              aria-label={quickTranslate(
+                "filePicker.exportTemplate",
+                "Export Excel Template",
+              )}
               className="group inline-flex min-h-[42px] min-w-[122px] w-auto items-center justify-center gap-1.5 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-2 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {downloadingTemplate ? (
@@ -1170,14 +1288,20 @@ const UploadAssets = ({ onViewChange }) => {
               <span className="text-[10px] font-semibold leading-tight">
                 {downloadingTemplate
                   ? quickTranslate("filePicker.downloading", "Downloading...")
-                  : quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+                  : quickTranslate(
+                      "filePicker.exportTemplate",
+                      "Export Excel Template",
+                    )}
               </span>
             </button>
           </div>
           {hasExcelStepReady && !hasCommonFieldsStepReady && (
             <div className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800">
               <div className="font-semibold">
-                {quickTranslate("validationModal.actionRequired", "Action required")}
+                {quickTranslate(
+                  "validationModal.actionRequired",
+                  "Action required",
+                )}
               </div>
               <div className="mt-0.5">
                 {translate(
@@ -1208,182 +1332,6 @@ const UploadAssets = ({ onViewChange }) => {
           </div>
         )}
       </div>
-
-      {previewData && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <span className="mb-1 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                {quickTranslate("validationModal.step2.badge", "Step 2")}
-              </span>
-              <h3 className="text-sm font-semibold text-slate-800">
-                {quickTranslate("validationModal.step2.badge", "Step 2")}:{" "}
-                {translate("commonFields.title", "Common Fields")}
-              </h3>
-              <p className="mt-1 text-[11px] text-slate-600">
-                {quickTranslate(
-                  "validationModal.step2.subtitle",
-                  "Update important report fields before choosing how to continue.",
-                )}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                  hasCommonFieldsStepReady
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-amber-200 bg-amber-50 text-amber-700"
-                }`}
-              >
-                {hasCommonFieldsStepReady
-                  ? quickTranslate("validationModal.noIssues", "No issues detected")
-                  : quickTranslate("validationModal.actionRequired", "Action required")}
-              </span>
-              <button
-                type="button"
-                onClick={openValidationModal}
-                disabled={!isValidationReady || uploadLoading}
-                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Table className="h-3.5 w-3.5" />
-                {translate(
-                  "commonFields.completeUploadSteps",
-                  "Complete Asset Upload Steps",
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {translate("commonFields.inspectionDate", "Inspection Date")}
-              </label>
-              <div className="relative">
-                <Calendar
-                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
-                    isArabicUi ? "right-3" : "left-3"
-                  }`}
-                />
-                <input
-                  type="date"
-                  value={inspectionDate}
-                  onChange={(e) =>
-                    handleCommonFieldChange("inspectionDate", e.target.value)
-                  }
-                  max={getTodayDate()}
-                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
-                    isArabicUi
-                      ? "pr-10 pl-3 text-right"
-                      : "pl-10 pr-3 text-left"
-                  }`}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {translate("commonFields.region", "Region")}
-              </label>
-              <div className="relative">
-                <MapPin
-                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
-                    isArabicUi ? "right-3" : "left-3"
-                  }`}
-                />
-                <select
-                  value={region}
-                  onChange={(e) =>
-                    handleCommonFieldChange("region", e.target.value)
-                  }
-                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white cursor-pointer ${
-                    isArabicUi
-                      ? "pr-10 pl-3 text-right"
-                      : "pl-10 pr-3 text-left"
-                  }`}
-                >
-                  <option value="">
-                    {translate("commonFields.selectRegion", "Select Region")}
-                  </option>
-                  {Object.keys(saudiRegions).map((regionName) => (
-                    <option key={regionName} value={regionName}>
-                      {regionName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {translate("commonFields.city", "City")}
-              </label>
-              <div className="relative">
-                <MapPin
-                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
-                    isArabicUi ? "right-3" : "left-3"
-                  }`}
-                />
-                <select
-                  value={city}
-                  onChange={(e) =>
-                    handleCommonFieldChange("city", e.target.value)
-                  }
-                  disabled={!region}
-                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed ${
-                    isArabicUi
-                      ? "pr-10 pl-3 text-right"
-                      : "pl-10 pr-3 text-left"
-                  }`}
-                >
-                  <option value="">
-                    {region
-                      ? translate("commonFields.selectCity", "Select City")
-                      : translate(
-                          "commonFields.selectRegionFirst",
-                          "Select region first",
-                        )}
-                  </option>
-                  {availableCities.map((cityName) => (
-                    <option key={cityName} value={cityName}>
-                      {cityName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {translate("commonFields.ownerName", "Owner Name")}
-              </label>
-              <div className="relative">
-                <User
-                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
-                    isArabicUi ? "right-3" : "left-3"
-                  }`}
-                />
-                <input
-                  type="text"
-                  value={ownerName}
-                  onChange={(e) =>
-                    handleCommonFieldChange("ownerName", e.target.value)
-                  }
-                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
-                    isArabicUi
-                      ? "pr-10 pl-3 text-right"
-                      : "pl-10 pr-3 text-left"
-                  }`}
-                  placeholder={translate(
-                    "commonFields.ownerPlaceholder",
-                    "Owner name",
-                  )}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Progress Bar with Controls - Show if there's active progress */}
       {submitProgress[reportId?.trim()] && uploadLoading && (
@@ -1506,7 +1454,10 @@ const UploadAssets = ({ onViewChange }) => {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-[9px] uppercase tracking-[0.3em] text-cyan-200 font-semibold">
-                        {quickTranslate("validationModal.title", "Excel Validation")}
+                        {quickTranslate(
+                          "validationModal.title",
+                          "Excel Validation",
+                        )}
                       </div>
                       <div className="mt-1 text-xs text-blue-100">
                         {quickTranslate(
@@ -1516,12 +1467,17 @@ const UploadAssets = ({ onViewChange }) => {
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold">
                         <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
-                          {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
+                          {quickTranslate(
+                            "workflow.step1UploadExcel",
+                            "Step 1: Upload Excel",
+                          )}
                         </span>
                         <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
-                          {quickTranslate("validationModal.step2.badge", "Step 2")}:
-                          {" "}
-                          {translate("commonFields.title", "Common Fields")}
+                          {quickTranslate(
+                            "validationModal.step2.badge",
+                            "Step 2",
+                          )}
+                          : {translate("commonFields.title", "Common Fields")}
                         </span>
                         <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
                           {quickTranslate(
@@ -1536,17 +1492,24 @@ const UploadAssets = ({ onViewChange }) => {
                       onClick={
                         validationModalStep === "validation"
                           ? continueValidationModal
-                          : closeValidationModal
+                          : validationModalStep === "commonFields"
+                            ? () => setValidationModalStep("action")
+                            : closeValidationModal
                       }
                       disabled={
                         uploadLoading ||
                         (validationModalStep === "validation" &&
-                          !isValidationReady)
+                          !hasExcelStepReady) ||
+                        (validationModalStep === "commonFields" &&
+                          !hasCommonFieldsStepReady)
                       }
                       className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <ChevronRight className="w-4 h-4" />
-                      {quickTranslate("validationModal.continueButton", "Continue")}
+                      {quickTranslate(
+                        "validationModal.continueButton",
+                        "Continue",
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1561,76 +1524,99 @@ const UploadAssets = ({ onViewChange }) => {
                       <>
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                           <span className="mb-1 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                            {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
+                            {quickTranslate(
+                              "workflow.step1UploadExcel",
+                              "Step 1: Upload Excel",
+                            )}
                           </span>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
                             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                               <div className="text-[10px] font-semibold text-slate-500">
-                                {quickTranslate("validationModal.table.headers.excel", "Excel")}
+                                {quickTranslate(
+                                  "validationModal.table.headers.excel",
+                                  "Excel",
+                                )}
                               </div>
                               <div className="text-xs font-semibold text-slate-800 truncate">
                                 {excelFileName || "-"}
                               </div>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div
+                              className={`rounded-xl border px-3 py-2 ${
+                                !reportIdValidation.valid ||
+                                reportIdExistsCheck.status === "exists"
+                                  ? "border-rose-300 bg-rose-50"
+                                  : reportIdExistsCheck.status === "checking"
+                                    ? "border-blue-200 bg-blue-50"
+                                    : reportIdExistsCheck.status === "available"
+                                      ? "border-emerald-200 bg-emerald-50"
+                                      : "border-slate-200 bg-slate-50"
+                              }`}
+                            >
                               <div className="text-[10px] font-semibold text-slate-500">
-                                {quickTranslate("reports.table.reportId", "Report ID")}
+                                {quickTranslate(
+                                  "reports.table.reportId",
+                                  "Report ID",
+                                )}
                               </div>
-                              <div className="text-xs font-semibold text-slate-800 truncate">
+                              <div
+                                className={`text-xs font-semibold truncate ${
+                                  !reportIdValidation.valid ||
+                                  reportIdExistsCheck.status === "exists"
+                                    ? "text-rose-700"
+                                    : reportIdExistsCheck.status === "available"
+                                      ? "text-emerald-700"
+                                      : "text-slate-800"
+                                }`}
+                              >
                                 {reportId || "-"}
                               </div>
+                              {!reportIdValidation.valid && reportId && (
+                                <div className="mt-1 flex items-center gap-1 text-[10px] text-rose-600 font-medium">
+                                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                  {reportIdValidation.error}
+                                </div>
+                              )}
+                              {reportIdValidation.valid &&
+                                reportIdExistsCheck.status === "checking" && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-600 font-medium">
+                                    <Loader2 className="w-3 h-3 flex-shrink-0 animate-spin" />
+                                    {translate(
+                                      "messages.reportIdChecking",
+                                      "Checking availability...",
+                                    )}
+                                  </div>
+                                )}
+                              {reportIdValidation.valid &&
+                                reportIdExistsCheck.status === "exists" && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-rose-600 font-medium">
+                                    <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                    {reportIdExistsCheck.message}
+                                  </div>
+                                )}
+                              {reportIdValidation.valid &&
+                                reportIdExistsCheck.status === "available" && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
+                                    <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                                    {translate(
+                                      "messages.reportIdAvailable",
+                                      "ID is available",
+                                    )}
+                                  </div>
+                                )}
                             </div>
                             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                               <div className="text-[10px] font-semibold text-slate-500">
                                 {translate("preview.title", "Data Preview")}
                               </div>
                               <div className="text-xs font-semibold text-slate-800">
-                                {translate("preview.records", "{{count}} records", {
-                                  count: previewData?.length || 0,
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                          <span className="mb-1 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
-                            {quickTranslate("validationModal.step2.badge", "Step 2")}
-                          </span>
-                          <div className="text-xs font-semibold text-slate-800">
-                            {translate("commonFields.title", "Common Fields")}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="text-[10px] font-semibold text-slate-500">
-                                {translate("commonFields.inspectionDate", "Inspection Date")}
-                              </div>
-                              <div className="text-xs font-semibold text-slate-800">
-                                {inspectionDate || "-"}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="text-[10px] font-semibold text-slate-500">
-                                {translate("commonFields.region", "Region")}
-                              </div>
-                              <div className="text-xs font-semibold text-slate-800">
-                                {region || "-"}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="text-[10px] font-semibold text-slate-500">
-                                {translate("commonFields.city", "City")}
-                              </div>
-                              <div className="text-xs font-semibold text-slate-800">
-                                {city || "-"}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="text-[10px] font-semibold text-slate-500">
-                                {translate("commonFields.ownerName", "Owner Name")}
-                              </div>
-                              <div className="text-xs font-semibold text-slate-800">
-                                {ownerName || "-"}
+                                {translate(
+                                  "preview.records",
+                                  "{{count}} records",
+                                  {
+                                    count: previewData?.length || 0,
+                                  },
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1659,35 +1645,234 @@ const UploadAssets = ({ onViewChange }) => {
                         ) : (
                           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-700 shadow-[0_10px_30px_rgba(245,158,11,0.12)]">
                             <div className="text-sm font-semibold">
-                              {quickTranslate("validationModal.actionRequired", "Action required")}
-                            </div>
-                            <p className="text-xs text-amber-700/90">
-                              {translate(
-                                "messages.fillCommonFields",
-                                "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+                              {quickTranslate(
+                                "validationModal.actionRequired",
+                                "Action required",
                               )}
-                            </p>
-                            {!!missingCommonFields.length && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {missingCommonFields.map((fieldName) => (
-                                  <span
-                                    key={fieldName}
-                                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700"
-                                  >
-                                    {fieldName}
-                                  </span>
-                                ))}
-                              </div>
+                            </div>
+                            {!reportIdValidation.valid && (
+                              <p className="text-xs text-amber-700/90 mt-1">
+                                {reportIdValidation.error}
+                              </p>
                             )}
                           </div>
                         )}
                       </>
+                    ) : validationModalStep === "commonFields" ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm space-y-4">
+                        <div>
+                          <span className="mb-1 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                            {quickTranslate(
+                              "validationModal.step2.badge",
+                              "Step 2",
+                            )}
+                          </span>
+                          <h3 className="mt-1 text-sm font-semibold text-slate-800">
+                            {translate("commonFields.title", "Common Fields")}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {quickTranslate(
+                              "validationModal.step2.subtitle",
+                              "Update important report fields before choosing how to continue.",
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                              {translate(
+                                "commonFields.inspectionDate",
+                                "Inspection Date",
+                              )}
+                            </label>
+                            <div className="relative">
+                              <Calendar
+                                className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                                  isArabicUi ? "right-3" : "left-3"
+                                }`}
+                              />
+                              <input
+                                type="date"
+                                value={inspectionDate}
+                                onChange={(e) =>
+                                  handleCommonFieldChange(
+                                    "inspectionDate",
+                                    e.target.value,
+                                  )
+                                }
+                                max={getTodayDate()}
+                                className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
+                                  isArabicUi
+                                    ? "pr-10 pl-3 text-right"
+                                    : "pl-10 pr-3 text-left"
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                              {translate("commonFields.region", "Region")}
+                            </label>
+                            <div className="relative">
+                              <MapPin
+                                className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                                  isArabicUi ? "right-3" : "left-3"
+                                }`}
+                              />
+                              <select
+                                value={region}
+                                onChange={(e) =>
+                                  handleCommonFieldChange(
+                                    "region",
+                                    e.target.value,
+                                  )
+                                }
+                                className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white cursor-pointer ${
+                                  isArabicUi
+                                    ? "pr-10 pl-3 text-right"
+                                    : "pl-10 pr-3 text-left"
+                                }`}
+                              >
+                                <option value="">
+                                  {translate(
+                                    "commonFields.selectRegion",
+                                    "Select Region",
+                                  )}
+                                </option>
+                                {Object.keys(saudiRegions).map((regionName) => (
+                                  <option key={regionName} value={regionName}>
+                                    {regionName}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                              {translate("commonFields.city", "City")}
+                            </label>
+                            <div className="relative">
+                              <MapPin
+                                className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                                  isArabicUi ? "right-3" : "left-3"
+                                }`}
+                              />
+                              <select
+                                value={city}
+                                onChange={(e) =>
+                                  handleCommonFieldChange(
+                                    "city",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={!region}
+                                className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed ${
+                                  isArabicUi
+                                    ? "pr-10 pl-3 text-right"
+                                    : "pl-10 pr-3 text-left"
+                                }`}
+                              >
+                                <option value="">
+                                  {region
+                                    ? translate(
+                                        "commonFields.selectCity",
+                                        "Select City",
+                                      )
+                                    : translate(
+                                        "commonFields.selectRegionFirst",
+                                        "Select region first",
+                                      )}
+                                </option>
+                                {availableCities.map((cityName) => (
+                                  <option key={cityName} value={cityName}>
+                                    {cityName}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                              {translate(
+                                "commonFields.ownerName",
+                                "Owner Name",
+                              )}
+                            </label>
+                            <div className="relative">
+                              <User
+                                className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                                  isArabicUi ? "right-3" : "left-3"
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                value={ownerName}
+                                onChange={(e) =>
+                                  handleCommonFieldChange(
+                                    "ownerName",
+                                    e.target.value,
+                                  )
+                                }
+                                className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
+                                  isArabicUi
+                                    ? "pr-10 pl-3 text-right"
+                                    : "pl-10 pr-3 text-left"
+                                }`}
+                                placeholder={translate(
+                                  "commonFields.ownerPlaceholder",
+                                  "Owner name",
+                                )}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {!hasCommonFieldsStepReady && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
+                            <div className="text-xs font-semibold">
+                              {quickTranslate(
+                                "validationModal.actionRequired",
+                                "Action required",
+                              )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {missingCommonFields.map((fieldName) => (
+                                <span
+                                  key={fieldName}
+                                  className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700"
+                                >
+                                  {fieldName}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {hasCommonFieldsStepReady && (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                            <span className="text-xs font-semibold">
+                              {quickTranslate(
+                                "validationModal.noIssues",
+                                "No issues detected",
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              {quickTranslate("validationModal.step3.badge", "Step 3")}
+                              {quickTranslate(
+                                "validationModal.step3.badge",
+                                "Step 3",
+                              )}
                             </span>
                             <h3 className="text-sm font-semibold text-slate-800">
                               {quickTranslate(
@@ -1720,21 +1905,52 @@ const UploadAssets = ({ onViewChange }) => {
                       <button
                         type="button"
                         onClick={continueValidationModal}
-                        disabled={!isValidationReady || uploadLoading}
+                        disabled={!hasExcelStepReady || uploadLoading}
                         className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <ChevronRight className="w-4 h-4" />
-                        {quickTranslate("validationModal.continueButton", "Continue")}
+                        {quickTranslate(
+                          "validationModal.continueButton",
+                          "Continue",
+                        )}
                       </button>
                     </>
-                  ) : (
+                  ) : validationModalStep === "commonFields" ? (
                     <>
                       <button
                         type="button"
                         onClick={() => setValidationModalStep("validation")}
                         className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
                       >
-                        {quickTranslate("validationModal.step2.back", "Back to validation")}
+                        {quickTranslate(
+                          "validationModal.step2.back",
+                          "Back to validation",
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setValidationModalStep("action")}
+                        disabled={!hasCommonFieldsStepReady || uploadLoading}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                        {quickTranslate(
+                          "validationModal.continueButton",
+                          "Continue",
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setValidationModalStep("commonFields")}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
+                      >
+                        {quickTranslate(
+                          "validationModal.step2.back",
+                          "Back to validation",
+                        )}
                       </button>
                       <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -1767,7 +1983,10 @@ const UploadAssets = ({ onViewChange }) => {
                             <Send className="w-4 h-4" />
                           )}
                           {uploadLoading
-                            ? quickTranslate("actions.uploading", "Uploading...")
+                            ? quickTranslate(
+                                "actions.uploading",
+                                "Uploading...",
+                              )
                             : quickTranslate(
                                 "actions.storeAndSubmitNow",
                                 "Store and Submit Now",
