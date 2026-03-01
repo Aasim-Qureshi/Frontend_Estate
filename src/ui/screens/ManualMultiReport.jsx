@@ -1178,7 +1178,7 @@ const validateAssets = (requireAssets = true) => {
 
       <Section title="جدول الأصول">
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <table className="upload-report-table min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
             <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
               <tr>
                 <th className="px-3 py-2 text-left">#</th>
@@ -1641,7 +1641,7 @@ const validateAssets = (requireAssets = true) => {
       )}
       {createdReports.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <table className="upload-report-table min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
             <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
               <tr>
                 <th className="px-3 py-2 text-left w-10"></th>
@@ -1720,7 +1720,7 @@ const validateAssets = (requireAssets = true) => {
                       <tr>
                         <td colSpan={5} className="bg-slate-50 border-t border-gray-200">
                           <div className="overflow-x-auto">
-                            <table className="min-w-full text-xs">
+                            <table className="upload-report-table min-w-full text-xs">
                               <thead className="bg-white text-gray-500 uppercase">
                                 <tr>
                                   <th className="px-3 py-2 text-left">Asset Name</th>

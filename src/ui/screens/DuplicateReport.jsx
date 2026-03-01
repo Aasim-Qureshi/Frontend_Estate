@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import ExcelJS from "exceljs/dist/exceljs.min.js";
 import { useAuthAction } from "../hooks/useAuthAction";
 import { deductPoints } from "../utils/points";
@@ -616,6 +617,21 @@ const getAssetApproach = (asset) => {
 };
 
 const DuplicateReport = ({ onViewChange }) => {
+  const { t, i18n } = useTranslation();
+  const quickTranslate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`submitReportsQuickly.${key}`, { defaultValue, ...options }),
+    [t],
+  );
+  const translate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`duplicateReport.${key}`, { defaultValue, ...options }),
+    [t],
+  );
+  const isArabicUi = useMemo(
+    () => i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) === "rtl",
+    [i18n, i18n?.language, i18n?.resolvedLanguage],
+  );
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -734,6 +750,21 @@ const DuplicateReport = ({ onViewChange }) => {
   const selectedReportSet = useMemo(
     () => new Set(selectedReportIds),
     [selectedReportIds],
+  );
+  const getReportStatusLabel = useCallback(
+    (statusKey) =>
+      quickTranslate(
+        `reports.status.${statusKey}`,
+        reportStatusLabels[statusKey] || statusKey || "New",
+      ),
+    [quickTranslate],
+  );
+  const getAssetStatusLabel = useCallback(
+    (statusKey) =>
+      statusKey === "complete"
+        ? quickTranslate("reports.status.complete", "Complete")
+        : quickTranslate("reports.status.incomplete", "Incomplete"),
+    [quickTranslate],
   );
   const temporaryReports = isGuestUser ? reports : unassignedReports;
   const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
@@ -2850,7 +2881,7 @@ const DuplicateReport = ({ onViewChange }) => {
   ) : null;
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 space-y-5" dir={isArabicUi ? "rtl" : "ltr"}>
       {/* Enhanced button bar with better presentation */}
       <div className="rounded-xl border border-blue-900/10 bg-gradient-to-r from-white to-blue-50/30 shadow-sm p-3 mb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2864,7 +2895,11 @@ const DuplicateReport = ({ onViewChange }) => {
               <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-white/20 backdrop-blur-sm">
                 <Plus className="w-3.5 h-3.5" />
               </div>
-              <span className="tracking-tight">Create New Report</span>
+              <span className="tracking-tight">
+                {t("navigation.tabs.duplicate-report.label", {
+                  defaultValue: "Create New Report",
+                })}
+              </span>
               <ChevronRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
@@ -2872,7 +2907,7 @@ const DuplicateReport = ({ onViewChange }) => {
           {/* Utility Actions Section */}
           <div className="space-y-1">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-blue-900/50">
-              Quick Actions
+              {translate("quickActions.title", "Quick Actions")}
             </h3>
             <div className="flex flex-wrap items-center gap-1.5">
               <button
@@ -2889,7 +2924,12 @@ const DuplicateReport = ({ onViewChange }) => {
                   )}
                 </div>
                 <span className="font-medium">
-                  {downloadingTemplate ? "Downloading..." : "Excel Template"}
+                  {downloadingTemplate
+                    ? quickTranslate("filePicker.downloading", "Downloading...")
+                    : quickTranslate(
+                        "filePicker.exportTemplate",
+                        "Excel Template",
+                      )}
                 </span>
               </button>
 
@@ -2901,7 +2941,9 @@ const DuplicateReport = ({ onViewChange }) => {
                 <div className="flex items-center justify-center w-5 h-5 rounded-md bg-gradient-to-br from-blue-50 to-blue-100 text-blue-700 group-hover:from-blue-100 group-hover:to-blue-200 transition-colors">
                   <RefreshCw className="w-3 h-3" />
                 </div>
-                <span className="font-medium">Refresh</span>
+                <span className="font-medium">
+                  {quickTranslate("reports.refresh.refresh", "Refresh")}
+                </span>
               </button>
             </div>
           </div>
@@ -2911,32 +2953,49 @@ const DuplicateReport = ({ onViewChange }) => {
       {!showCreateModal && headerAlert}
       <DeductionNotification
         source="duplicate-report"
-        defaultPageName={DUPLICATE_PAGE_NAME}
+        defaultPageName={t("navigation.tabs.duplicate-report.label", {
+          defaultValue: DUPLICATE_PAGE_NAME,
+        })}
         defaultPageSource={DUPLICATE_PAGE_SOURCE}
         onViewChange={onViewChange}
       />
 
-      <Section title="Excel validation (market & cost)">
+      <Section title={translate("validation.title", "Excel validation (market & cost)")}>
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-900/10 bg-blue-50/40 px-2.5 py-2">
             <div className="flex items-center gap-2 text-[10px] text-blue-900">
               <Table className="w-4 h-4" />
-              <span className="font-semibold">Market &amp; cost sheets</span>
+              <span className="font-semibold">
+                {translate("validation.sheets", "Market & cost sheets")}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-[10px] text-blue-900/70">
                 {excelValidationLoading
-                  ? "Reading Excel..."
+                  ? translate("validation.readingExcel", "Reading Excel...")
                   : excelValidation.counts.total
-                    ? `Assets: ${excelValidation.counts.total} (market ${excelValidation.counts.market}, cost ${excelValidation.counts.cost})`
-                    : "Upload an Excel file to validate"}
+                    ? translate(
+                        "validation.assetsCount",
+                        "Assets: {{total}} (market {{market}}, cost {{cost}})",
+                        {
+                          total: excelValidation.counts.total,
+                          market: excelValidation.counts.market,
+                          cost: excelValidation.counts.cost,
+                        },
+                      )
+                    : quickTranslate(
+                        "validation.status.uploadPrompt",
+                        "Upload an Excel file to validate.",
+                      )}
               </div>
               <button
                 type="button"
                 onClick={() => setIsValidationCollapsed((prev) => !prev)}
                 className="text-[10px] font-semibold text-blue-700 hover:text-blue-900"
               >
-                {isValidationCollapsed ? "Show table" : "Hide table"}
+                {isValidationCollapsed
+                  ? quickTranslate("reports.actions.showAssets", "Show assets")
+                  : quickTranslate("reports.actions.hideAssets", "Hide assets")}
               </button>
             </div>
           </div>
@@ -2944,13 +3003,15 @@ const DuplicateReport = ({ onViewChange }) => {
           {excelValidationLoading && (
             <div className="flex items-center gap-2 text-[10px] text-blue-900/70">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Validating Excel sheets...
+              {quickTranslate("validation.status.validating", "Validating...")}
             </div>
           )}
 
           {excelValidation.issues.length > 0 && (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-[10px] text-rose-700">
-              <div className="font-semibold">Validation issues</div>
+              <div className="font-semibold">
+                {translate("validation.issuesTitle", "Validation issues")}
+              </div>
               <div className="mt-1 space-y-1">
                 {excelValidation.issues.map((issue, idx) => (
                   <div key={`${issue.sheet || "issue"}-${idx}`}>
@@ -2965,26 +3026,26 @@ const DuplicateReport = ({ onViewChange }) => {
           {!isValidationCollapsed && excelValidation.assets.length > 0 && (
             <div className="rounded-xl border border-blue-900/10 overflow-hidden">
               <div className="max-h-64 overflow-auto">
-                <table className="min-w-full text-[10px] text-slate-700">
+                <table className="upload-report-table min-w-full text-[10px] text-slate-700">
                   <thead className="bg-blue-900/10 text-blue-900 sticky top-0">
                     <tr>
                       <th className="px-2 py-1 text-left font-semibold">
-                        Sheet
+                        {translate("validation.table.sheet", "Sheet")}
                       </th>
                       <th className="px-2 py-1 text-left font-semibold">
-                        Asset name
+                        {quickTranslate("reports.assets.table.assetName", "Asset name")}
                       </th>
                       <th className="px-2 py-1 text-left font-semibold">
-                        Asset usage id
+                        {translate("validation.table.assetUsage", "Asset usage id")}
                       </th>
                       <th className="px-2 py-1 text-left font-semibold">
-                        Region
+                        {translate("validation.table.region", "Region")}
                       </th>
                       <th className="px-2 py-1 text-left font-semibold">
-                        City
+                        {translate("validation.table.city", "City")}
                       </th>
                       <th className="px-2 py-1 text-left font-semibold">
-                        Final value
+                        {quickTranslate("reports.assets.table.finalValue", "Final value")}
                       </th>
                     </tr>
                   </thead>
@@ -3011,8 +3072,14 @@ const DuplicateReport = ({ onViewChange }) => {
               </div>
               {excelValidation.assets.length > previewLimit && (
                 <div className="px-2.5 py-1 text-[10px] text-blue-900/60 border-t border-blue-900/10">
-                  Showing first {previewLimit} of{" "}
-                  {excelValidation.assets.length} assets.
+                  {translate(
+                    "validation.showingFirst",
+                    "Showing first {{limit}} of {{total}} assets.",
+                    {
+                      limit: previewLimit,
+                      total: excelValidation.assets.length,
+                    },
+                  )}
                 </div>
               )}
             </div>
@@ -3025,10 +3092,13 @@ const DuplicateReport = ({ onViewChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">
-                Temporary Reports
+                {quickTranslate("temporarySection.title", "Temporary Reports")}
               </h3>
               <p className="text-[10px] text-slate-500">
-                Reports without company assignment.
+                {quickTranslate(
+                  "temporarySection.subtitle",
+                  "Reports without company assignment.",
+                )}
               </p>
             </div>
             <button
@@ -3037,7 +3107,7 @@ const DuplicateReport = ({ onViewChange }) => {
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
             >
               <Table className="w-3 h-3" />
-              Show Temporary Reports
+              {quickTranslate("temporarySection.open", "Show Temporary Reports")}
             </button>
           </div>
         </div>
@@ -3055,10 +3125,13 @@ const DuplicateReport = ({ onViewChange }) => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
               <div>
                 <h3 className="text-base font-semibold text-slate-800">
-                  Temporary Reports
+                  {quickTranslate("temporaryModal.title", "Temporary Reports")}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Reports without company assignment.
+                  {quickTranslate(
+                    "temporaryModal.subtitle",
+                    "Reports without company assignment.",
+                  )}
                 </p>
               </div>
               <button
@@ -3066,12 +3139,17 @@ const DuplicateReport = ({ onViewChange }) => {
                 onClick={() => setShowTemporaryModal(false)}
                 className="text-slate-600 hover:text-slate-900 text-sm font-semibold"
               >
-                Close
+                {quickTranslate("temporaryModal.close", "Close")}
               </button>
             </div>
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="text-[11px] text-slate-600">
-                {isGuestUser ? "Guest session reports." : "Unassigned reports."}
+                {isGuestUser
+                  ? quickTranslate(
+                      "temporaryModal.guestSession",
+                      "Guest session reports.",
+                    )
+                  : quickTranslate("temporaryModal.unassigned", "Unassigned reports.")}
               </div>
               <button
                 type="button"
@@ -3084,37 +3162,48 @@ const DuplicateReport = ({ onViewChange }) => {
                 <RefreshCw
                   className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`}
                 />
-                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                {temporaryLoading
+                  ? quickTranslate("temporaryModal.refreshing", "Refreshing...")
+                  : quickTranslate("temporaryModal.refresh", "Refresh")}
               </button>
             </div>
             <div className="px-4 pb-4">
               {temporaryLoading ? (
                 <div className="text-xs text-slate-600">
-                  Loading temporary reports...
+                  {quickTranslate(
+                    "temporaryModal.loading",
+                    "Loading temporary reports...",
+                  )}
                 </div>
               ) : temporaryReports.length === 0 ? (
                 <div className="text-xs text-slate-600">
-                  No temporary reports found.
+                  {quickTranslate(
+                    "temporaryModal.empty",
+                    "No temporary reports found.",
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs text-slate-700">
+                  <table className="upload-report-table min-w-full text-xs text-slate-700">
                     <thead className="bg-slate-100 text-slate-600 uppercase">
                       <tr>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Report ID
+                          {quickTranslate(
+                            "temporaryModal.table.reportId",
+                            "Report ID",
+                          )}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Client
+                          {quickTranslate("temporaryModal.table.client", "Client")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Assets
+                          {quickTranslate("temporaryModal.table.assets", "Assets")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Status
+                          {quickTranslate("temporaryModal.table.status", "Status")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Action
+                          {quickTranslate("temporaryModal.table.action", "Action")}
                         </th>
                       </tr>
                     </thead>
@@ -3125,8 +3214,7 @@ const DuplicateReport = ({ onViewChange }) => {
                           ? report.asset_data.length
                           : 0;
                         const statusKey = getReportStatus(report);
-                        const statusLabel =
-                          reportStatusLabels[statusKey] || statusKey || "New";
+                        const statusLabel = getReportStatusLabel(statusKey);
                         const statusClass =
                           reportStatusClasses[statusKey] ||
                           "border-slate-200 bg-slate-50 text-slate-700";
@@ -3136,7 +3224,8 @@ const DuplicateReport = ({ onViewChange }) => {
                             className="hover:bg-slate-50"
                           >
                             <td className="px-3 py-2 text-[11px] text-slate-800">
-                              {report.report_id || "Not Submitted"}
+                              {report.report_id ||
+                                quickTranslate("reports.notSubmitted", "Not submit")}
                             </td>
                             <td className="px-3 py-2 text-[11px] text-slate-700">
                               {report.client_name || report.title || "???"}
@@ -3163,7 +3252,10 @@ const DuplicateReport = ({ onViewChange }) => {
                                 }}
                                 className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700"
                               >
-                                Assign & Submit
+                                {quickTranslate(
+                                  "temporaryModal.assignAndSubmit",
+                                  "Assign & Submit",
+                                )}
                               </button>
                             </td>
                           </tr>
@@ -3176,15 +3268,17 @@ const DuplicateReport = ({ onViewChange }) => {
               {isGuestUser && (
                 <div className="mt-3 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700">
                   <span>
-                    Register your account to keep these reports linked to your
-                    phone.
+                    {quickTranslate(
+                      "temporaryModal.registerHint",
+                      "Register your account to keep these reports linked to your phone.",
+                    )}
                   </span>
                   <button
                     type="button"
                     onClick={() => onViewChange?.("registration")}
                     className="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-slate-900"
                   >
-                    Register
+                    {quickTranslate("temporaryModal.register", "Register")}
                   </button>
                 </div>
               )}
@@ -3193,25 +3287,37 @@ const DuplicateReport = ({ onViewChange }) => {
         </div>
       )}
 
-      <Section title="Reports">
+      <Section title={quickTranslate("reports.title", "Reports")}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="text-[11px] text-blue-900/70">
-            Total reports: {pagination?.total ?? reports.length}
+            {quickTranslate("reports.totalCount", "Total: {{count}} report(s)", {
+              count: pagination?.total ?? reports.length,
+            })}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-blue-900/60">
-              Filter status
+              {quickTranslate("reports.filter.label", "Filter:")}
             </span>
             <select
               value={reportSelectFilter}
               onChange={(e) => setReportSelectFilter(e.target.value)}
               className="rounded-md border border-blue-900/20 bg-white px-2 py-1 text-[10px] font-semibold text-blue-900"
             >
-              <option value="all">All statuses</option>
-              <option value="complete">Complete</option>
-              <option value="incomplete">Incomplete</option>
-              <option value="sent">Sent</option>
-              <option value="approved">Approved</option>
+              <option value="all">
+                {quickTranslate("reports.filter.all", "All statuses")}
+              </option>
+              <option value="complete">
+                {quickTranslate("reports.filter.complete", "Complete")}
+              </option>
+              <option value="incomplete">
+                {quickTranslate("reports.filter.incomplete", "Incomplete")}
+              </option>
+              <option value="sent">
+                {quickTranslate("reports.filter.sent", "Sent")}
+              </option>
+              <option value="approved">
+                {quickTranslate("reports.filter.approved", "Approved")}
+              </option>
             </select>
           </div>
         </div>
@@ -3219,7 +3325,7 @@ const DuplicateReport = ({ onViewChange }) => {
         {reportsLoading && (
           <div className="flex items-center gap-2 text-[10px] text-blue-900/70">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Loading reports...
+            {quickTranslate("reports.loading", "Loading reports...")}
           </div>
         )}
 
@@ -3231,28 +3337,33 @@ const DuplicateReport = ({ onViewChange }) => {
 
         {!reportsLoading && !reports.length && (
           <div className="text-[10px] text-blue-900/60">
-            No manual reports found yet.
+            {translate("reports.empty", "No manual reports found yet.")}
           </div>
         )}
 
         {!reportsLoading && reports.length > 0 && !orderedReports.length && (
           <div className="text-[10px] text-blue-900/60">
-            No reports match the selected status.
+            {quickTranslate(
+              "reports.noMatch",
+              "No reports match the selected status.",
+            )}
           </div>
         )}
 
         {orderedReports.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2 rounded-lg border border-blue-900/10 bg-blue-50/40 px-2.5 py-2">
             <div className="text-[10px] text-blue-900/70">
-              Showing <span className="font-semibold">{pageFrom}</span>–
-              <span className="font-semibold">{pageTo}</span> of{" "}
-              <span className="font-semibold">{totalReports}</span>
+              {quickTranslate(
+                "reports.pagination.summary",
+                "Showing {{from}} to {{to}} of {{total}} reports",
+                { from: pageFrom, to: pageTo, total: totalReports },
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-semibold text-blue-900/60">
-                  Rows
+                  {translate("reports.rows", "Rows")}
                 </span>
                 <select
                   value={pageSize}
@@ -3275,11 +3386,14 @@ const DuplicateReport = ({ onViewChange }) => {
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safeCurrentPage <= 1}
               >
-                Prev
+                {quickTranslate("reports.pagination.previous", "Previous")}
               </button>
 
               <div className="text-[10px] font-semibold text-blue-900/70">
-                Page {safeCurrentPage} / {totalPages}
+                {translate("reports.pageOf", "Page {{page}} / {{total}}", {
+                  page: safeCurrentPage,
+                  total: totalPages,
+                })}
               </div>
               <button
                 type="button"
@@ -3288,7 +3402,7 @@ const DuplicateReport = ({ onViewChange }) => {
                 }
                 disabled={safeCurrentPage >= totalPages}
               >
-                Next
+                {quickTranslate("reports.pagination.next", "Next")}
               </button>
             </div>
           </div>
@@ -3296,17 +3410,29 @@ const DuplicateReport = ({ onViewChange }) => {
 
         {orderedReports.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-[10px] text-slate-700">
+            <table className="upload-report-table min-w-full text-[10px] text-slate-700">
               <thead className="bg-blue-900/10 text-blue-900">
                 <tr>
                   <th className="px-2 py-1 text-left w-10">#</th>
                   <th className="px-2 py-1 text-left w-8"></th>
-                  <th className="px-2 py-1 text-left">Report ID</th>
-                  <th className="px-2 py-1 text-left">Client</th>
-                  <th className="px-2 py-1 text-left">Final value</th>
-                  <th className="px-2 py-1 text-left">Status</th>
-                  <th className="px-2 py-1 text-left">Action</th>
-                  <th className="px-2 py-1 text-left">Select</th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.reportId", "Report ID")}
+                  </th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.client", "Client")}
+                  </th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.finalValue", "Final value")}
+                  </th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.status", "Status")}
+                  </th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.action", "Action")}
+                  </th>
+                  <th className="px-2 py-1 text-left">
+                    {quickTranslate("reports.table.select", "Select")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -3350,7 +3476,15 @@ const DuplicateReport = ({ onViewChange }) => {
                             disabled={!recordId}
                             className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
                             aria-label={
-                              isExpanded ? "Hide assets" : "Show assets"
+                              isExpanded
+                                ? quickTranslate(
+                                    "reports.actions.hideAssets",
+                                    "Hide assets",
+                                  )
+                                : quickTranslate(
+                                    "reports.actions.showAssets",
+                                    "Show assets",
+                                  )
                             }
                           >
                             {isExpanded ? (
@@ -3362,7 +3496,8 @@ const DuplicateReport = ({ onViewChange }) => {
                         </td>
                         <td className="px-2 py-1">
                           <div className="text-[11px] font-semibold text-blue-950">
-                            {report.report_id || "Not sent"}
+                            {report.report_id ||
+                              quickTranslate("reports.notSubmitted", "Not submit")}
                           </div>
                         </td>
                         <td className="px-2 py-1">
@@ -3378,7 +3513,7 @@ const DuplicateReport = ({ onViewChange }) => {
                               "border-blue-200 bg-blue-50 text-blue-700"
                             }`}
                           >
-                            {reportStatusLabels[statusKey] || statusKey}
+                            {getReportStatusLabel(statusKey)}
                           </span>
                         </td>
                         <td className="px-2 py-1">
@@ -3395,16 +3530,35 @@ const DuplicateReport = ({ onViewChange }) => {
                               }}
                               className="rounded-md border border-blue-900/20 bg-white px-2 py-1 text-[10px] flex-1"
                             >
-                              <option value="">Actions</option>
-                              <option value="retry">Retry submit</option>
-                              <option value="delete">Delete</option>
-                              <option value="edit">Edit</option>
-                              <option value="send-approver">
-                                Send to approver
+                              <option value="">
+                                {quickTranslate("reports.row.actions", "Actions")}
                               </option>
-                              <option value="approve">Approve</option>
+                              <option value="retry">
+                                {quickTranslate(
+                                  "reports.row.retryIncomplete",
+                                  "Retry incomplete assets",
+                                )}
+                              </option>
+                              <option value="delete">
+                                {quickTranslate("reports.row.delete", "Delete")}
+                              </option>
+                              <option value="edit">
+                                {quickTranslate("reports.row.edit", "Edit")}
+                              </option>
+                              <option value="send-approver">
+                                {quickTranslate(
+                                  "reports.row.sendToApprover",
+                                  "Send to approver",
+                                )}
+                              </option>
+                              <option value="approve">
+                                {quickTranslate("reports.row.approve", "Approve")}
+                              </option>
                               <option value="download">
-                                Download certificate
+                                {translate(
+                                  "reports.row.downloadCertificate",
+                                  "Download certificate",
+                                )}
                               </option>
                             </select>
                             <button
@@ -3429,12 +3583,12 @@ const DuplicateReport = ({ onViewChange }) => {
                               }
                               className="inline-flex items-center justify-center px-3 py-1 rounded-md bg-blue-600 text-white text-[10px] font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
-                              Go
+                              {quickTranslate("reports.row.go", "Go")}
                             </button>
                           </div>
                           {reportBusy && (
                             <div className="text-[10px] text-blue-900/60 mt-1">
-                              Working...
+                              {quickTranslate("reports.row.working", "Working...")}
                             </div>
                           )}
                         </td>
@@ -3461,7 +3615,8 @@ const DuplicateReport = ({ onViewChange }) => {
                             <div className="p-2 space-y-2">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="text-[10px] text-blue-900/70">
-                                  Assets: {assetList.length}
+                                  {quickTranslate("reports.assets.label", "Assets")}:{" "}
+                                  {assetList.length}
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <select
@@ -3477,10 +3632,17 @@ const DuplicateReport = ({ onViewChange }) => {
                                     }}
                                     className="rounded-md border border-blue-900/20 bg-white px-2 py-1 text-[10px]"
                                   >
-                                    <option value="">Asset actions</option>
-                                    <option value="delete">Delete</option>
+                                    <option value="">
+                                      {translate("reports.assets.actions", "Asset actions")}
+                                    </option>
+                                    <option value="delete">
+                                      {quickTranslate("reports.row.delete", "Delete")}
+                                    </option>
                                     <option value="retry">
-                                      Retry submission
+                                      {translate(
+                                        "reports.assets.retrySubmission",
+                                        "Retry submission",
+                                      )}
                                     </option>
                                   </select>
                                   <button
@@ -3503,32 +3665,47 @@ const DuplicateReport = ({ onViewChange }) => {
                                     }
                                     className="inline-flex items-center justify-center px-3 py-1 rounded-md bg-blue-600 text-white text-[10px] font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                   >
-                                    Go
+                                    {quickTranslate("reports.row.go", "Go")}
                                   </button>
                                 </div>
                               </div>
                               <div className="rounded-xl border border-blue-900/10 overflow-hidden">
                                 <div className="max-h-64 overflow-auto">
-                                  <table className="min-w-full text-[10px] text-slate-700">
+                                  <table className="upload-report-table min-w-full text-[10px] text-slate-700">
                                     <thead className="bg-white text-blue-900">
                                       <tr>
                                         <th className="px-2 py-1 text-left font-semibold">
-                                          Macro ID
+                                          {quickTranslate(
+                                            "reports.assets.table.macroId",
+                                            "Macro ID",
+                                          )}
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
-                                          Asset name
+                                          {quickTranslate(
+                                            "reports.assets.table.assetName",
+                                            "Asset name",
+                                          )}
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
-                                          Final value
+                                          {quickTranslate(
+                                            "reports.assets.table.finalValue",
+                                            "Final value",
+                                          )}
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
                                           Approach
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
-                                          Status
+                                          {quickTranslate(
+                                            "reports.assets.table.status",
+                                            "Status",
+                                          )}
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
-                                          Actions
+                                          {quickTranslate(
+                                            "reports.row.actions",
+                                            "Actions",
+                                          )}
                                         </th>
                                         <th className="px-2 py-1 text-left font-semibold">
                                           <div className="flex flex-col gap-1">
@@ -3578,13 +3755,19 @@ const DuplicateReport = ({ onViewChange }) => {
                                               className="rounded-md border border-blue-900/20 bg-white px-2 py-1 text-[10px]"
                                             >
                                               <option value="all">
-                                                All assets
+                                                {translate("reports.assets.all", "All assets")}
                                               </option>
                                               <option value="complete">
-                                                Complete
+                                                {quickTranslate(
+                                                  "reports.status.complete",
+                                                  "Complete",
+                                                )}
                                               </option>
                                               <option value="incomplete">
-                                                Incomplete
+                                                {quickTranslate(
+                                                  "reports.status.incomplete",
+                                                  "Incomplete",
+                                                )}
                                               </option>
                                             </select>
                                           </div>
@@ -3599,8 +3782,14 @@ const DuplicateReport = ({ onViewChange }) => {
                                             className="px-2 py-2 text-center text-blue-900/60"
                                           >
                                             {assetList.length
-                                              ? "No assets match the selected status."
-                                              : "No assets available for this report."}
+                                              ? translate(
+                                                  "reports.assetsNoMatch",
+                                                  "No assets match the selected status.",
+                                                )
+                                              : quickTranslate(
+                                                  "reports.assets.none",
+                                                  "No assets available for this report.",
+                                                )}
                                           </td>
                                         </tr>
                                       )}
@@ -3624,7 +3813,11 @@ const DuplicateReport = ({ onViewChange }) => {
                                               className="border-t border-blue-900/10"
                                             >
                                               <td className="px-2 py-1">
-                                                {macroId || "Not created"}
+                                                {macroId ||
+                                                  translate(
+                                                    "reports.assets.notCreated",
+                                                    "Not created",
+                                                  )}
                                               </td>
                                               <td className="px-2 py-1">
                                                 {asset.asset_name || "-"}
@@ -3646,7 +3839,11 @@ const DuplicateReport = ({ onViewChange }) => {
                                                 >
                                                   {assetStatusLabels[
                                                     assetStatus
-                                                  ] || assetStatus}
+                                                  ]
+                                                    ? getAssetStatusLabel(
+                                                        assetStatus,
+                                                      )
+                                                    : assetStatus}
                                                 </span>
                                               </td>
                                               {/* REPLACE THE EXISTING INDIVIDUAL ASSET ACTIONS SELECT */}
@@ -3673,16 +3870,28 @@ const DuplicateReport = ({ onViewChange }) => {
                                                     className="rounded-md border border-blue-900/20 bg-white px-2 py-1 text-[10px] flex-1"
                                                   >
                                                     <option value="">
-                                                      Actions
+                                                      {quickTranslate(
+                                                        "reports.row.actions",
+                                                        "Actions",
+                                                      )}
                                                     </option>
                                                     <option value="delete">
-                                                      Delete
+                                                      {quickTranslate(
+                                                        "reports.row.delete",
+                                                        "Delete",
+                                                      )}
                                                     </option>
                                                     <option value="retry">
-                                                      Retry submission
+                                                      {translate(
+                                                        "reports.assets.retrySubmission",
+                                                        "Retry submission",
+                                                      )}
                                                     </option>
                                                     <option value="edit">
-                                                      Edit
+                                                      {quickTranslate(
+                                                        "reports.row.edit",
+                                                        "Edit",
+                                                      )}
                                                     </option>
                                                   </select>
                                                   <button
@@ -3763,7 +3972,13 @@ const DuplicateReport = ({ onViewChange }) => {
       <Modal
         open={showCreateModal}
         onClose={handleCloseCreateModal}
-        title={isEditing ? "Edit report" : "Create new report"}
+        title={
+          isEditing
+            ? quickTranslate("editModal.title", "Edit report")
+            : t("navigation.tabs.duplicate-report.label", {
+                defaultValue: "Create new report",
+              })
+        }
       >
         {headerAlert}
         <div className="space-y-4">
@@ -4138,15 +4353,21 @@ const DuplicateReport = ({ onViewChange }) => {
             </div>
           </Section>
           {!isEditing ? (
-            <Section title="Assets attachments">
+            <Section title={translate("attachments.title", "Assets attachments")}>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                 <div className="border border-dashed border-blue-900/20 rounded-xl p-2 flex items-center justify-between bg-blue-50/40">
                   <div>
                     <p className="text-[12px] font-semibold text-blue-950">
-                      Upload Excel (market &amp; cost)
+                      {translate(
+                        "attachments.uploadExcel",
+                        "Upload Excel (market & cost)",
+                      )}
                     </p>
                     <p className="text-[11px] text-blue-900/60">
-                      Must include sheets: market, cost.
+                      {translate(
+                        "attachments.uploadExcelHint",
+                        "Must include sheets: market, cost.",
+                      )}
                     </p>
                     {excelFile ? (
                       <p className="text-xs text-green-700 mt-1">
@@ -4155,14 +4376,18 @@ const DuplicateReport = ({ onViewChange }) => {
                     ) : (
                       fileNotes.excelName && (
                         <p className="text-xs text-blue-700 mt-1">
-                          Last selected: {fileNotes.excelName}
+                          {translate(
+                            "attachments.lastSelected",
+                            "Last selected: {{name}}",
+                            { name: fileNotes.excelName },
+                          )}
                         </p>
                       )
                     )}
                   </div>
                   <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer text-[10px] font-semibold text-blue-900">
                     <Upload className="w-4 h-4" />
-                    <span>Select file</span>
+                    <span>{translate("attachments.selectFile", "Select file")}</span>
                     <input
                       type="file"
                       accept=".xlsx,.xls"
@@ -4182,10 +4407,13 @@ const DuplicateReport = ({ onViewChange }) => {
                       onChange={(e) => handlePdfToggle(e.target.checked)}
                       className="h-4 w-4 rounded border-blue-900/30 text-blue-900 focus:ring-blue-900/20"
                     />
-                    Upload PDF (optional)
+                    {translate("attachments.uploadPdfOptional", "Upload PDF (optional)")}
                   </label>
                   <p className="text-[11px] text-blue-900/60">
-                    Attach a single PDF file for this report.
+                    {translate(
+                      "attachments.uploadPdfHint",
+                      "Attach a single PDF file for this report.",
+                    )}
                   </p>
                   {wantsPdfUpload ? (
                     <div className="flex items-center justify-between">
@@ -4197,14 +4425,18 @@ const DuplicateReport = ({ onViewChange }) => {
                         ) : (
                           fileNotes.pdfName && (
                             <p className="text-xs text-blue-700 mt-1">
-                              Last selected: {fileNotes.pdfName}
+                              {translate(
+                                "attachments.lastSelected",
+                                "Last selected: {{name}}",
+                                { name: fileNotes.pdfName },
+                              )}
                             </p>
                           )
                         )}
                       </div>
                       <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer text-[10px] font-semibold text-blue-900">
                         <Upload className="w-4 h-4" />
-                        <span>Select file</span>
+                        <span>{translate("attachments.selectFile", "Select file")}</span>
                         <input
                           type="file"
                           accept=".pdf"
@@ -4221,7 +4453,7 @@ const DuplicateReport = ({ onViewChange }) => {
                     </div>
                   ) : (
                     <p className="text-[10px] text-blue-900/60">
-                      PDF upload is disabled.
+                      {translate("attachments.pdfDisabled", "PDF upload is disabled.")}
                     </p>
                   )}
                 </div>
@@ -4229,8 +4461,10 @@ const DuplicateReport = ({ onViewChange }) => {
             </Section>
           ) : (
             <div className="rounded-xl border border-blue-900/10 bg-blue-50/40 px-3 py-2 text-[10px] text-blue-900/70">
-              Attachments are locked while editing. Create a new report to
-              upload Excel or PDF files.
+              {translate(
+                "attachments.locked",
+                "Attachments are locked while editing. Create a new report to upload Excel or PDF files.",
+              )}
             </div>
           )}
 
@@ -4239,7 +4473,7 @@ const DuplicateReport = ({ onViewChange }) => {
               onClick={clearSavedState}
               className="rounded-md border border-blue-900/20 bg-white px-4 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-50"
             >
-              Reset Form
+              {translate("actions.resetForm", "Reset Form")}
             </button>
             {isEditing ? (
               <button
@@ -4254,10 +4488,10 @@ const DuplicateReport = ({ onViewChange }) => {
                 {updatingReport ? (
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving...
+                    {quickTranslate("editModal.updating", "Updating...")}
                   </span>
                 ) : (
-                  "Save changes"
+                  quickTranslate("editModal.update", "Update")
                 )}
               </button>
             ) : (
@@ -4274,10 +4508,13 @@ const DuplicateReport = ({ onViewChange }) => {
                   {submitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Adding...
+                      {quickTranslate("actions.uploading", "Uploading...")}
                     </span>
                   ) : (
-                    "Store and Submit Later"
+                    quickTranslate(
+                      "actions.storeAndSubmitLater",
+                      "Store & Submit Later",
+                    )
                   )}
                 </button>
 
@@ -4293,12 +4530,15 @@ const DuplicateReport = ({ onViewChange }) => {
                   {submitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Adding...
+                      {quickTranslate("actions.uploading", "Uploading...")}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-2">
                       <Send className="w-4 h-4" />
-                      Store and Submit Now
+                      {quickTranslate(
+                        "actions.storeAndSubmitNow",
+                        "Store & Submit Now",
+                      )}
                     </span>
                   )}
                 </button>
@@ -4311,7 +4551,7 @@ const DuplicateReport = ({ onViewChange }) => {
       <Modal
         open={!!assetEdit}
         onClose={closeAssetEdit}
-        title="Edit asset"
+        title={translate("assetModal.title", "Edit asset")}
         maxWidth="max-w-3xl"
       >
         <div className="space-y-3">
@@ -4367,7 +4607,7 @@ const DuplicateReport = ({ onViewChange }) => {
               onClick={closeAssetEdit}
               className="rounded-md border border-blue-900/20 bg-white px-4 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-50"
             >
-              Cancel
+              {quickTranslate("editModal.cancel", "Cancel")}
             </button>
             <button
               type="button"
@@ -4379,7 +4619,9 @@ const DuplicateReport = ({ onViewChange }) => {
                   : "bg-blue-900 hover:bg-blue-800"
               }`}
             >
-              {assetEditBusy ? "Saving..." : "Save"}
+              {assetEditBusy
+                ? quickTranslate("editModal.updating", "Updating...")
+                : quickTranslate("editModal.update", "Update")}
             </button>
           </div>
         </div>

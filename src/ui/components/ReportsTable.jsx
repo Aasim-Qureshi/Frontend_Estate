@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   ChevronDown,
@@ -32,6 +33,17 @@ import EditAssetModal from "./EditAssetModal";
 const REPORTS_TABLE_PAGE_NAME = "Reports Table";
 
 const ReportsTable = ({ onViewChange, showTemporary = true }) => {
+  const { t } = useTranslation();
+  const quickTranslate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`submitReportsQuickly.${key}`, { defaultValue, ...options }),
+    [t],
+  );
+  const translate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`uploadAssets.reportsTable.${key}`, { defaultValue, ...options }),
+    [t],
+  );
   const [reports, setReports] = useState([]);
   const [unassignedReports, setUnassignedReports] = useState([]);
   const [unassignedLoading, setUnassignedLoading] = useState(false);
@@ -83,11 +95,11 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
     isGuestUser || unassignedLoading || unassignedReports.length > 0;
   const shouldShowTemporary = showTemporary && showTemporarySection;
   const temporaryTitle = isGuestUser
-    ? "Temporary Reports (Guest)"
-    : "Temporary Reports";
+    ? quickTranslate("temporarySection.title", "Guest Temporary Reports")
+    : quickTranslate("temporaryModal.title", "Temporary Reports");
   const temporaryHint = isGuestUser
-    ? "Guest session reports. Register to save them permanently."
-    : "Reports without company assignment.";
+    ? quickTranslate("temporaryModal.guestSession", "Guest temporary reports.")
+    : quickTranslate("temporaryModal.unassigned", "Unassigned reports.");
 
   // Add this useEffect to listen for progress updates
   useEffect(() => {
@@ -934,6 +946,63 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
     return capitalizeStatus("pending");
   };
 
+  const getStatusFilterLabel = useCallback(
+    (statusKey) => {
+      if (statusKey === "all") {
+        return translate("filters.all", "All");
+      }
+      if (statusKey === "pending") {
+        return translate("filters.pending", "Pending");
+      }
+      if (statusKey === "completed") {
+        return translate("filters.completed", "Completed");
+      }
+      if (statusKey === "sent") {
+        return translate("filters.sent", "Sent");
+      }
+      return statusKey;
+    },
+    [translate],
+  );
+
+  const getLocalizedStatusLabel = useCallback(
+    (statusValue) => {
+      const normalized = String(statusValue || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+      if (normalized === "new") {
+        return quickTranslate("reports.status.new", "New");
+      }
+      if (normalized === "sent") {
+        return quickTranslate("reports.status.sent", "Sent");
+      }
+      if (normalized === "approved") {
+        return quickTranslate("reports.status.approved", "Approved");
+      }
+      if (normalized === "confirmed") {
+        return quickTranslate("reports.status.confirmed", "Confirmed");
+      }
+      if (normalized === "complete" || normalized === "completed") {
+        return quickTranslate("reports.status.complete", "Complete");
+      }
+      if (normalized === "incomplete") {
+        return quickTranslate("reports.status.incomplete", "Incomplete");
+      }
+      if (
+        normalized === "pending" ||
+        normalized === "draft" ||
+        normalized.includes("progress")
+      ) {
+        return translate("status.pending", "Pending");
+      }
+
+      return statusValue;
+    },
+    [quickTranslate, translate],
+  );
+
   // Update the getStatusColor function to handle "NEW" status:
   const getStatusColor = (status) => {
     const statusUpper = status.toUpperCase();
@@ -1049,9 +1118,11 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
         <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <div>
             <h1 className="text-lg font-bold text-gray-900">
-              Reports Management
+              {translate("title", "Reports Management")}
             </h1>
-            <p className="text-xs text-gray-600">View and manage all reports</p>
+            <p className="text-xs text-gray-600">
+              {translate("subtitle", "View and manage all reports")}
+            </p>
           </div>
           <button
             type="button"
@@ -1059,7 +1130,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gray-100 text-gray-800 text-xs font-semibold hover:bg-gray-200 border border-gray-200"
           >
             <RefreshCcw className="w-3 h-3" />
-            Refresh
+            {quickTranslate("reports.refresh.refresh", "Refresh")}
           </button>
         </div>
 
@@ -1075,7 +1146,10 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Report ID..."
+                placeholder={translate(
+                  "searchPlaceholder",
+                  "Search by Report ID...",
+                )}
                 className="w-full pl-8 pr-7 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
               />
               {searchQuery && (
@@ -1096,25 +1170,25 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                   onClick={() => setStatusFilter("all")}
                   className={`px-2 py-1 text-xs font-medium rounded transition-colors ${statusFilter === "all" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:text-gray-900"}`}
                 >
-                  All
+                  {translate("filters.all", "All")}
                 </button>
                 <button
                   onClick={() => setStatusFilter("pending")}
                   className={`px-2 py-1 text-xs font-medium rounded transition-colors ${statusFilter === "pending" ? "bg-white shadow-sm text-amber-600" : "text-gray-600 hover:text-gray-900"}`}
                 >
-                  Pending
+                  {translate("filters.pending", "Pending")}
                 </button>
                 <button
                   onClick={() => setStatusFilter("completed")}
                   className={`px-2 py-1 text-xs font-medium rounded transition-colors ${statusFilter === "completed" ? "bg-white shadow-sm text-emerald-600" : "text-gray-600 hover:text-gray-900"}`}
                 >
-                  Completed
+                  {translate("filters.completed", "Completed")}
                 </button>
                 <button
                   onClick={() => setStatusFilter("sent")}
                   className={`px-2 py-1 text-xs font-medium rounded transition-colors ${statusFilter === "sent" ? "bg-white shadow-sm text-purple-600" : "text-gray-600 hover:text-gray-900"}`}
                 >
-                  Sent
+                  {translate("filters.sent", "Sent")}
                 </button>
               </div>
             </div>
@@ -1129,10 +1203,18 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                 }}
                 className="w-full sm:w-auto px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
               >
-                <option value="10">10 per page</option>
-                <option value="20">20 per page</option>
-                <option value="50">50 per page</option>
-                <option value="100">100 per page</option>
+                <option value="10">
+                  {translate("perPage", "{{count}} per page", { count: 10 })}
+                </option>
+                <option value="20">
+                  {translate("perPage", "{{count}} per page", { count: 20 })}
+                </option>
+                <option value="50">
+                  {translate("perPage", "{{count}} per page", { count: 50 })}
+                </option>
+                <option value="100">
+                  {translate("perPage", "{{count}} per page", { count: 100 })}
+                </option>
               </select>
             </div>
           </div>
@@ -1162,37 +1244,42 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                     temporaryLoading ? "animate-spin" : ""
                   }`}
                 />
-                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                {temporaryLoading
+                  ? quickTranslate("temporaryModal.refreshing", "Refreshing...")
+                  : quickTranslate("temporaryModal.refresh", "Refresh")}
               </button>
             </div>
             {temporaryLoading ? (
               <div className="flex items-center gap-2 text-xs text-amber-800">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Loading temporary reports...
+                {quickTranslate(
+                  "temporaryModal.loading",
+                  "Loading guest temporary reports...",
+                )}
               </div>
             ) : temporaryReports.length === 0 ? (
               <div className="text-xs text-amber-800">
-                No temporary reports found.
+                {quickTranslate("temporaryModal.empty", "No guest temporary reports found.")}
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs text-gray-700">
+                <table className="upload-report-table min-w-full text-xs text-gray-700">
                   <thead className="bg-amber-100 text-amber-900 uppercase">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Report ID
+                        {quickTranslate("temporaryModal.table.reportId", "Report ID")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Status
+                        {quickTranslate("temporaryModal.table.status", "Status")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Assets
+                        {quickTranslate("temporaryModal.table.assets", "Assets")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Created Date
+                        {translate("table.createdDate", "Created Date")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Action
+                        {quickTranslate("temporaryModal.table.action", "Action")}
                       </th>
                     </tr>
                   </thead>
@@ -1204,13 +1291,14 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                       return (
                         <tr key={report._id} className="hover:bg-amber-50">
                           <td className="px-3 py-2 text-xs text-gray-800">
-                            {report.report_id || "Not Submitted"}
+                            {report.report_id ||
+                              quickTranslate("reports.notSubmitted", "Not submit")}
                           </td>
                           <td className="px-3 py-2 text-xs">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusColor}`}
                             >
-                              {status}
+                              {getLocalizedStatusLabel(status)}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-xs text-gray-700">
@@ -1225,7 +1313,10 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                               onClick={() => handleSubmitToTaqeem(report.report_id)}
                               className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-700"
                             >
-                              Assign & Submit
+                              {quickTranslate(
+                                "temporaryModal.assignAndSubmit",
+                                "Assign & Submit",
+                              )}
                             </button>
                           </td>
                         </tr>
@@ -1237,13 +1328,18 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
             )}
             {isGuestUser && (
               <div className="mt-2 flex items-center justify-between rounded-md border border-amber-200 bg-amber-100/60 px-2 py-1 text-[10px] text-amber-900">
-                <span>Register your account to keep these reports linked to your phone.</span>
+                <span>
+                  {quickTranslate(
+                    "temporaryModal.registerHint",
+                    "Register your account to keep these reports linked to your phone.",
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={() => onViewChange?.("registration")}
                   className="rounded-md bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-amber-800"
                 >
-                  Register
+                  {quickTranslate("temporaryModal.register", "Register")}
                 </button>
               </div>
             )}
@@ -1256,7 +1352,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
             <div className="flex items-center justify-center p-8">
               <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
               <span className="ml-2 text-xs text-gray-600">
-                Loading reports...
+                {quickTranslate("reports.loading", "Loading reports...")}
               </span>
             </div>
           ) : error ? (
@@ -1274,32 +1370,44 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
             <>
               {(searchQuery || statusFilter !== "all") && (
                 <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-600">
-                  Showing {filteredReports.length} of {allReports.length}{" "}
-                  reports
-                  {searchQuery && ` matching "${searchQuery}"`}
-                  {statusFilter !== "all" && ` with status: ${statusFilter}`}
+                  {translate(
+                    "filteredSummary",
+                    "Showing {{filtered}} of {{total}} reports",
+                    {
+                      filtered: filteredReports.length,
+                      total: allReports.length,
+                    },
+                  )}
+                  {searchQuery &&
+                    ` ${translate("matching", 'matching "{{query}}"', {
+                      query: searchQuery,
+                    })}`}
+                  {statusFilter !== "all" &&
+                    ` ${translate("withStatus", "with status: {{status}}", {
+                      status: getStatusFilterLabel(statusFilter),
+                    })}`}
                 </div>
               )}
 
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
+                <table className="upload-report-table min-w-full text-xs">
                   <thead className="bg-gray-50 text-gray-700 uppercase">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold"></th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Report ID
+                        {quickTranslate("reports.table.reportId", "Report ID")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Status
+                        {quickTranslate("reports.table.status", "Status")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Assets
+                        {quickTranslate("reports.assets.label", "Assets")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold">
-                        Created Date
+                        {translate("table.createdDate", "Created Date")}
                       </th>
                       <th className="px-3 py-2 text-left font-semibold w-60">
-                        Actions
+                        {quickTranslate("reports.row.actions", "Actions")}
                       </th>
                     </tr>
                   </thead>
@@ -1311,13 +1419,18 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                           className="px-3 py-6 text-center text-gray-500"
                         >
                           <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                          <p className="text-xs">No reports found</p>
+                          <p className="text-xs">
+                            {translate("noReportsFound", "No reports found")}
+                          </p>
                           {(searchQuery || statusFilter !== "all") && (
                             <button
                               onClick={clearAllFilters}
                               className="mt-1 text-xs text-blue-600 hover:text-blue-800"
                             >
-                              Clear filters to see all reports
+                              {translate(
+                                "clearFilters",
+                                "Clear filters to see all reports",
+                              )}
                             </button>
                           )}
                         </td>
@@ -1391,7 +1504,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border ${statusColor}`}
                                 >
                                   {getStatusIcon(status)}
-                                  {status}
+                                  {getLocalizedStatusLabel(status)}
                                 </span>
                               </td>
                               <td className="px-3 py-2">
@@ -1662,14 +1775,25 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                         <div className="flex items-center gap-1.5">
                                           <Table className="w-3 h-3 text-gray-600" />
                                           <h4 className="text-xs font-semibold text-gray-900">
-                                            Assets in Report
+                                            {translate(
+                                              "assetsSection.title",
+                                              "Assets in Report",
+                                            )}
                                           </h4>
                                           <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">
-                                            {assetData.length} assets
+                                            {translate(
+                                              "assetsSection.count",
+                                              "{{count}} assets",
+                                              { count: assetData.length },
+                                            )}
                                           </span>
                                         </div>
                                         <div className="text-xs text-gray-500">
-                                          Report ID: {report.report_id}
+                                          {quickTranslate(
+                                            "reports.table.reportId",
+                                            "Report ID",
+                                          )}
+                                          : {report.report_id}
                                         </div>
                                       </div>
 
@@ -1677,7 +1801,10 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                       <div className="px-3 py-2 border-b border-gray-200 bg-gray-50">
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-xs font-medium text-gray-600">
-                                            Filter:
+                                            {quickTranslate(
+                                              "reports.filter.label",
+                                              "Filter:",
+                                            )}
                                           </span>
                                           <div className="flex bg-gray-100 rounded-md p-0.5 gap-0.5">
                                             <button
@@ -1686,7 +1813,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                               }
                                               className={`px-2 py-1 text-xs font-medium rounded transition-colors ${assetFilter === "all" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:text-gray-900"}`}
                                             >
-                                              All
+                                              {translate("filters.all", "All")}
                                             </button>
                                             <button
                                               onClick={() =>
@@ -1694,7 +1821,10 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                               }
                                               className={`px-2 py-1 text-xs font-medium rounded transition-colors ${assetFilter === "completed" ? "bg-white shadow-sm text-emerald-600" : "text-gray-600 hover:text-gray-900"}`}
                                             >
-                                              Submitted
+                                              {translate(
+                                                "assetsSection.submitted",
+                                                "Submitted",
+                                              )}
                                             </button>
                                             <button
                                               onClick={() =>
@@ -1702,33 +1832,48 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                               }
                                               className={`px-2 py-1 text-xs font-medium rounded transition-colors ${assetFilter === "incomplete" ? "bg-white shadow-sm text-amber-600" : "text-gray-600 hover:text-gray-900"}`}
                                             >
-                                              Pending
+                                              {translate(
+                                                "filters.pending",
+                                                "Pending",
+                                              )}
                                             </button>
                                           </div>
                                         </div>
                                       </div>
 
                                       <div className="overflow-x-auto">
-                                        <table className="min-w-full text-xs">
+                                        <table className="upload-report-table min-w-full text-xs">
                                           <thead className="bg-gray-50 text-gray-500 uppercase">
                                             <tr>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Asset ID
+                                                {translate(
+                                                  "table.assetId",
+                                                  "Asset ID",
+                                                )}
                                               </th>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Name
+                                                {translate("table.name", "Name")}
                                               </th>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Inspection Date
+                                                {translate(
+                                                  "table.inspectionDate",
+                                                  "Inspection Date",
+                                                )}
                                               </th>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Value
+                                                {translate("table.value", "Value")}
                                               </th>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Submit State
+                                                {translate(
+                                                  "table.submitState",
+                                                  "Submit State",
+                                                )}
                                               </th>
                                               <th className="px-3 py-1.5 text-left font-semibold">
-                                                Actions
+                                                {quickTranslate(
+                                                  "reports.row.actions",
+                                                  "Actions",
+                                                )}
                                               </th>
                                             </tr>
                                           </thead>
@@ -1764,11 +1909,20 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                                       <Package className="w-6 h-6 mx-auto mb-1 text-gray-300" />
                                                       <p className="text-xs">
                                                         {assetFilter === "all"
-                                                          ? "No assets found in this report"
+                                                          ? translate(
+                                                              "assetsEmpty.all",
+                                                              "No assets found in this report",
+                                                            )
                                                           : assetFilter ===
                                                               "completed"
-                                                            ? "No completed assets found"
-                                                            : "No incomplete assets found"}
+                                                            ? translate(
+                                                                "assetsEmpty.completed",
+                                                                "No completed assets found",
+                                                              )
+                                                            : translate(
+                                                                "assetsEmpty.pending",
+                                                                "No pending assets found",
+                                                              )}
                                                       </p>
                                                     </td>
                                                   </tr>
@@ -1818,8 +1972,14 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                                           <Clock className="w-2.5 h-2.5" />
                                                         )}
                                                         {asset.submitState === 1
-                                                          ? "Submitted"
-                                                          : "Pending"}
+                                                          ? translate(
+                                                              "assetsSection.submitted",
+                                                              "Submitted",
+                                                            )
+                                                          : translate(
+                                                              "status.pending",
+                                                              "Pending",
+                                                            )}
                                                       </span>
                                                     </td>
                                                     <td className="px-3 py-1.5">
@@ -1843,7 +2003,10 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                                         ] ? (
                                                           <Loader2 className="w-3 h-3 animate-spin" />
                                                         ) : (
-                                                          "Edit"
+                                                          quickTranslate(
+                                                            "reports.row.edit",
+                                                            "Edit",
+                                                          )
                                                         )}
                                                       </button>
                                                     </td>
@@ -1871,16 +2034,15 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
               {filteredReports.length > 0 && (
                 <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
                   <div className="text-xs text-gray-600">
-                    Showing{" "}
-                    <span className="font-semibold">
-                      {(currentPage - 1) * pageSize + 1}
-                    </span>{" "}
-                    to{" "}
-                    <span className="font-semibold">
-                      {Math.min(currentPage * pageSize, totalItems)}
-                    </span>{" "}
-                    of <span className="font-semibold">{totalItems}</span>{" "}
-                    reports
+                    {quickTranslate(
+                      "reports.pagination.summary",
+                      "Showing {{from}} to {{to}} of {{total}} reports",
+                      {
+                        from: (currentPage - 1) * pageSize + 1,
+                        to: Math.min(currentPage * pageSize, totalItems),
+                        total: totalItems,
+                      },
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <button

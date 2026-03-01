@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { useRam } from "../context/RAMContext";
 import { useSession } from "../context/SessionContext";
 import { useNavStatus } from "../context/NavStatusContext";
@@ -901,6 +902,21 @@ const isReportInfoIssue = (issue) => {
 };
 
 const MultiExcelUpload = ({ onViewChange }) => {
+  const { t, i18n } = useTranslation();
+  const quickTranslate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`submitReportsQuickly.${key}`, { defaultValue, ...options }),
+    [t],
+  );
+  const translate = useCallback(
+    (key, defaultValue, options = {}) =>
+      t(`multiExcelUpload.${key}`, { defaultValue, ...options }),
+    [t],
+  );
+  const isArabicUi = useMemo(
+    () => i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) === "rtl",
+    [i18n, i18n?.language, i18n?.resolvedLanguage],
+  );
   const { token, isGuest, user, login } = useSession();
   const { systemState } = useSystemControl();
   const { executeWithAuth } = useAuthAction();
@@ -1542,6 +1558,21 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const temporaryLoading = isGuestUser ? reportsLoading : unassignedLoading;
   const showTemporarySection =
     isGuestUser || unassignedLoading || unassignedReports.length > 0;
+  const getReportStatusLabel = useCallback(
+    (statusKey) =>
+      quickTranslate(
+        `reports.status.${statusKey}`,
+        reportStatusLabels[statusKey] || statusKey || "New",
+      ),
+    [quickTranslate],
+  );
+  const getAssetStatusLabel = useCallback(
+    (statusKey) =>
+      statusKey === "complete"
+        ? quickTranslate("reports.status.complete", "Complete")
+        : quickTranslate("reports.status.incomplete", "Incomplete"),
+    [quickTranslate],
+  );
 
   const loadReports = useCallback(
     async (append = false) => {
@@ -4098,9 +4129,14 @@ const MultiExcelUpload = ({ onViewChange }) => {
         <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 px-3 py-2.5 text-white">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="space-y-0.5">
-              <p className="text-xs font-semibold">Validation Console</p>
+              <p className="text-xs font-semibold">
+                {translate("validationConsole.title", "Validation Console")}
+              </p>
               <p className="text-[10px] text-blue-100">
-                Review and validate your Excel files before upload
+                {translate(
+                  "validationConsole.subtitle",
+                  "Review and validate your Excel files before upload",
+                )}
               </p>
             </div>
             <button
@@ -4114,7 +4150,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
-              {validating ? "Validating..." : "Re-validate"}
+              {validating
+                ? quickTranslate("validation.status.validating", "Validating...")
+                : translate("validationConsole.revalidate", "Re-validate")}
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium">
@@ -4128,7 +4166,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     : "text-blue-100 hover:text-white hover:bg-white/10"
                 }`}
               >
-                Report Info
+                {quickTranslate(
+                  "validationModal.tabs.reportInfo",
+                  "Report Info",
+                )}
               </button>
               <button
                 type="button"
@@ -4139,7 +4180,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     : "text-blue-100 hover:text-white hover:bg-white/10"
                 }`}
               >
-                PDFs &amp; Assets
+                {quickTranslate(
+                  "validationModal.tabs.assetsAndPdfs",
+                  "Assets & PDFs",
+                )}
               </button>
             </div>
             <button
@@ -4152,7 +4196,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
               ) : (
                 <ChevronUp className="w-3.5 h-3.5" />
               )}
-              {isValidationTableCollapsed ? "Show" : "Hide"}
+              {isValidationTableCollapsed
+                ? translate("actions.show", "Show")
+                : translate("actions.hide", "Hide")}
             </button>
           </div>
         </div>
@@ -4189,7 +4235,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   );
                   const reportInfoIssuesByField = reportIssues.reduce(
                     (acc, issue) => {
-                      const key = issue.field || "Issue";
+                      const key =
+                        issue.field ||
+                        translate("validationConsole.issue", "Issue");
                       if (!acc[key]) acc[key] = [];
                       acc[key].push(issue);
                       return acc;
@@ -4198,29 +4246,65 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   );
                   const reportFields = [
                     {
-                      label: "Purpose of Valuation",
+                      label: translate(
+                        "validationConsole.reportInfo.purpose",
+                        "Purpose of Valuation",
+                      ),
                       value: item.snapshot?.purpose,
                     },
                     {
-                      label: "Value Attributes",
+                      label: translate(
+                        "validationConsole.reportInfo.valueAttributes",
+                        "Value Attributes",
+                      ),
                       value: item.snapshot?.valueAttributes,
                     },
-                    { label: "Report", value: item.snapshot?.reportType },
-                    { label: "Client Name", value: item.snapshot?.clientName },
                     {
-                      label: "Client Telephone",
+                      label: translate("validationConsole.reportInfo.report", "Report"),
+                      value: item.snapshot?.reportType,
+                    },
+                    {
+                      label: translate(
+                        "validationConsole.reportInfo.clientName",
+                        "Client Name",
+                      ),
+                      value: item.snapshot?.clientName,
+                    },
+                    {
+                      label: translate(
+                        "validationConsole.reportInfo.clientTelephone",
+                        "Client Telephone",
+                      ),
                       value: item.snapshot?.telephone,
                     },
-                    { label: "Client Email", value: item.snapshot?.email },
-                    { label: "Valuers", value: valuerSummary },
                     {
-                      label: "Date of Valuation",
+                      label: translate(
+                        "validationConsole.reportInfo.clientEmail",
+                        "Client Email",
+                      ),
+                      value: item.snapshot?.email,
+                    },
+                    {
+                      label: translate(
+                        "validationConsole.reportInfo.valuers",
+                        "Valuers",
+                      ),
+                      value: valuerSummary,
+                    },
+                    {
+                      label: translate(
+                        "validationConsole.reportInfo.dateOfValuation",
+                        "Date of Valuation",
+                      ),
                       value: item.snapshot?.valuedAt
                         ? formatDateForDisplay(item.snapshot.valuedAt)
                         : "",
                     },
                     {
-                      label: "Report Issuing Date",
+                      label: translate(
+                        "validationConsole.reportInfo.reportIssuingDate",
+                        "Report Issuing Date",
+                      ),
                       value: item.snapshot?.submittedAt
                         ? formatDateForDisplay(item.snapshot.submittedAt)
                         : "",
@@ -4249,31 +4333,44 @@ const MultiExcelUpload = ({ onViewChange }) => {
                           }`}
                         >
                           {reportIssues.length
-                            ? `${reportIssues.length} issue(s)`
-                            : "All fields OK"}
+                            ? translate(
+                                "validationConsole.issueCount",
+                                "{{count}} issue(s)",
+                                { count: reportIssues.length },
+                              )
+                            : translate(
+                                "validationConsole.allFieldsOk",
+                                "All fields OK",
+                              )}
                         </span>
                       </div>
                       {isValidationTableCollapsed ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1">
                           <ChevronDown className="w-3.5 h-3.5" />
-                          Table hidden.
+                          {translate("validationConsole.tableHidden", "Table hidden.")}
                         </div>
                       ) : (
                         <div className="overflow-x-auto max-h-[200px] overflow-y-auto mt-2">
-                          <table className="min-w-full text-xs border-collapse">
+                          <table className="upload-report-table min-w-full text-xs border-collapse">
                             <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
                               <tr>
                                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider rounded-tl-md">
-                                  Field
+                                  {quickTranslate(
+                                    "validationModal.table.headers.field",
+                                    "Field",
+                                  )}
                                 </th>
                                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                  Value
+                                  {translate("validationConsole.value", "Value")}
                                 </th>
                                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                  Status
+                                  {quickTranslate(
+                                    "reports.table.status",
+                                    "Status",
+                                  )}
                                 </th>
                                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider rounded-tr-md">
-                                  Notes
+                                  {translate("validationConsole.notes", "Notes")}
                                 </th>
                               </tr>
                             </thead>
@@ -4284,10 +4381,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 const hasIssue = fieldIssues.length > 0;
                                 const hasFieldValue = hasValue(field.value);
                                 const statusLabel = hasIssue
-                                  ? "Issue"
+                                  ? translate("validationConsole.issue", "Issue")
                                   : hasFieldValue
-                                    ? "OK"
-                                    : "Missing";
+                                    ? translate("validationConsole.ok", "OK")
+                                    : translate("validationConsole.missing", "Missing");
                                 const statusTone = hasIssue
                                   ? "bg-rose-50 text-rose-700 border-rose-300"
                                   : hasFieldValue
@@ -4298,8 +4395,14 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                       .map((issue) => issue.message)
                                       .join(" / ")
                                   : hasFieldValue
-                                    ? "Looks good"
-                                    : "Missing in Excel";
+                                    ? translate(
+                                        "validationConsole.looksGood",
+                                        "Looks good",
+                                      )
+                                    : translate(
+                                        "validationConsole.missingInExcel",
+                                        "Missing in Excel",
+                                      );
                                 return (
                                   <tr
                                     key={field.label}
@@ -4309,7 +4412,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                       {field.label}
                                     </td>
                                     <td className="px-2 py-1.5 bg-white text-slate-700">
-                                      {hasFieldValue ? field.value : "N/A"}
+                                      {hasFieldValue
+                                        ? field.value
+                                        : translate(
+                                            "validationConsole.na",
+                                            "N/A",
+                                          )}
                                     </td>
                                     <td className="px-2 py-1.5 bg-white">
                                       <span
@@ -4329,21 +4437,30 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                   key={`issue-extra-${idx}`}
                                   className="border-b border-slate-200 hover:bg-slate-50/50"
                                 >
-                                  <td className="px-2 py-1.5 bg-white font-semibold text-slate-800">
-                                    {issue.field || "Issue"}
-                                  </td>
-                                  <td className="px-2 py-1.5 bg-white text-slate-700">
-                                    {issue.location || "Report Info"}
-                                  </td>
-                                  <td className="px-2 py-1.5 bg-white">
-                                    <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                                      Issue
-                                    </span>
-                                  </td>
-                                  <td className="px-2 py-1.5 bg-white text-slate-600 text-[10px]">
-                                    {issue.message || "Issue detected"}
-                                  </td>
-                                </tr>
+                                    <td className="px-2 py-1.5 bg-white font-semibold text-slate-800">
+                                    {issue.field ||
+                                      translate("validationConsole.issue", "Issue")}
+                                    </td>
+                                    <td className="px-2 py-1.5 bg-white text-slate-700">
+                                    {issue.location ||
+                                      quickTranslate(
+                                        "validationModal.tabs.reportInfo",
+                                        "Report Info",
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-1.5 bg-white">
+                                      <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                                      {translate("validationConsole.issue", "Issue")}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 py-1.5 bg-white text-slate-600 text-[10px]">
+                                    {issue.message ||
+                                      translate(
+                                        "validationConsole.issueDetected",
+                                        "Issue detected",
+                                      )}
+                                    </td>
+                                  </tr>
                               ))}
                             </tbody>
                           </table>
@@ -4355,7 +4472,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
               </div>
             ) : (
               <div className="p-4 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 text-sm text-slate-600 flex items-center justify-center font-medium">
-                Validation results will appear here after reading the Excel.
+                {translate(
+                  "validationConsole.empty",
+                  "Validation results will appear here after reading the Excel.",
+                )}
               </div>
             )
           ) : (
@@ -4365,19 +4485,28 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   pdfMatchInfo.unmatchedPdfs.length) && (
                   <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                     <div className="font-semibold mb-1">
-                      File matching issues
+                      {quickTranslate(
+                        "validationModal.pdfMatchingIssues.title",
+                        "PDF matching issues",
+                      )}
                     </div>
                     <div className="mt-1 space-y-1">
                       {pdfMatchInfo.excelsMissingPdf.length > 0 && (
                         <div className="font-medium">
-                          Excel files missing PDF:{" "}
-                          {pdfMatchInfo.excelsMissingPdf.join(", ")}
+                          {quickTranslate(
+                            "validationModal.pdfMatchingIssues.missing",
+                            "Excel files missing PDF: {{files}}",
+                            { files: pdfMatchInfo.excelsMissingPdf.join(", ") },
+                          )}
                         </div>
                       )}
                       {pdfMatchInfo.unmatchedPdfs.length > 0 && (
                         <div className="font-medium">
-                          Unmatched PDFs:{" "}
-                          {pdfMatchInfo.unmatchedPdfs.join(", ")}
+                          {quickTranslate(
+                            "validationModal.pdfMatchingIssues.unmatched",
+                            "Unmatched PDFs: {{files}}",
+                            { files: pdfMatchInfo.unmatchedPdfs.join(", ") },
+                          )}
                         </div>
                       )}
                     </div>
@@ -4387,44 +4516,62 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 <div className="space-y-2">
                   <div className="rounded-md border border-slate-200 bg-white p-2 shadow-sm">
                     <div className="text-xs font-semibold text-slate-800 mb-2">
-                      Assets &amp; PDF summary
+                      {translate(
+                        "validationConsole.assetsSummary",
+                        "Assets & PDF summary",
+                      )}
                     </div>
                     {isValidationTableCollapsed ? (
                       <div className="flex items-center gap-1.5 text-xs text-slate-600">
                         <ChevronDown className="w-3.5 h-3.5" />
-                        Table hidden.
+                        {translate("validationConsole.tableHidden", "Table hidden.")}
                       </div>
                     ) : (
                       <div className="overflow-x-auto max-h-[180px] overflow-y-auto">
-                        <table className="min-w-full text-xs text-slate-700">
+                        <table className="upload-report-table min-w-full text-xs text-slate-700">
                           <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white sticky top-0">
                             <tr>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Excel
+                                {quickTranslate(
+                                  "validationModal.table.headers.excel",
+                                  "Excel",
+                                )}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
                                 PDF
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Market
+                                {translate("validationConsole.market", "Market")}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Cost
+                                {translate("validationConsole.cost", "Cost")}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Market total
+                                {translate(
+                                  "validationConsole.marketTotal",
+                                  "Market total",
+                                )}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Cost total
+                                {translate(
+                                  "validationConsole.costTotal",
+                                  "Cost total",
+                                )}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Assets total
+                                {translate(
+                                  "validationConsole.assetsTotal",
+                                  "Assets total",
+                                )}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Report total
+                                {translate(
+                                  "validationConsole.reportTotal",
+                                  "Report total",
+                                )}
                               </th>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                Issues
+                                {translate("validationConsole.issues", "Issues")}
                               </th>
                             </tr>
                           </thead>
@@ -4444,11 +4591,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                   <td className="px-2 py-1.5">
                                     {item.pdfMatched ? (
                                       <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                        Matched
+                                        {translate("validationConsole.matched", "Matched")}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                                        Missing
+                                        {translate("validationConsole.missing", "Missing")}
                                       </span>
                                     )}
                                   </td>
@@ -4487,7 +4634,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         Issues
                       </div>
                       <div className="overflow-x-auto max-h-[180px] overflow-y-auto">
-                        <table className="min-w-full text-xs text-slate-700">
+                        <table className="upload-report-table min-w-full text-xs text-slate-700">
                           <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white sticky top-0">
                             <tr>
                               <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
@@ -4522,7 +4669,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                       className="px-2 py-1.5 text-slate-600"
                                       colSpan={3}
                                     >
-                                      No issues
+                                      {quickTranslate("validationModal.noIssues", "No issues detected")}
                                     </td>
                                   </tr>,
                                 ];
@@ -4555,7 +4702,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 </div>
               ) : (
                 <div className="p-3 border border-dashed border-slate-300 rounded-lg bg-slate-50 text-xs text-slate-600 flex items-center justify-center font-medium">
-                  Validation results will appear here after reading the Excel.
+                  {translate(
+                    "validationConsole.empty",
+                    "Validation results will appear here after reading the Excel.",
+                  )}
                 </div>
               )}
             </div>
@@ -4713,8 +4863,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
       onClose={closeValidationModal}
       title={
         validationModalStep === "validation"
-          ? "Validation Console"
-          : "Step 2: PDF upload and actions"
+          ? translate("validationConsole.title", "Validation Console")
+          : quickTranslate(
+              "validationModal.step2.title",
+              "Step 2: PDF upload and actions",
+            )
       }
       maxWidth="max-w-6xl"
     >
@@ -4728,7 +4881,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
-              Step 1: Validation
+              {translate("validationConsole.step1", "Step 1: Validation")}
             </span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             <span
@@ -4738,7 +4891,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
-              Step 2: PDF & Actions
+              {translate("validationConsole.step2", "Step 2: PDF & Actions")}
             </span>
           </div>
         </div>
@@ -4748,8 +4901,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
             {validationConsole}
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="text-xs text-slate-600">
-                Review validation results, then continue to Step 2 for PDF upload
-                and action selection.
+                {translate(
+                  "validationConsole.step1Hint",
+                  "Review validation results, then continue to Step 2 for PDF upload and action selection.",
+                )}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -4757,7 +4912,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   onClick={closeValidationModal}
                   className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                 >
-                  Close
+                  {quickTranslate("validationModal.closeButton", "Close")}
                 </button>
                 <button
                   type="button"
@@ -4766,7 +4921,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
-                  Continue to Step 2
+                  {translate("validationConsole.continueStep2", "Continue to Step 2")}
                 </button>
               </div>
             </div>
@@ -4778,11 +4933,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 <div>
                   <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                     <Files className="w-4 h-4 text-blue-600" />
-                    PDF attachment (optional)
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.title",
+                      "Attach PDF files (optional)",
+                    )}
                   </div>
                   <p className="mt-1 text-[11px] text-slate-600">
-                    Choose to upload matching PDFs now, or skip and use the
-                    placeholder automatically.
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.subtitle",
+                      "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
+                    )}
                   </p>
                 </div>
                 <span
@@ -4792,7 +4952,15 @@ const MultiExcelUpload = ({ onViewChange }) => {
                       : "border-emerald-200 bg-emerald-50 text-emerald-700"
                   }`}
                 >
-                  {wantsPdfUpload ? "Upload mode" : "Placeholder mode"}
+                  {wantsPdfUpload
+                    ? quickTranslate(
+                        "validationModal.step2.pdfSection.modeUpload",
+                        "Upload mode",
+                      )
+                    : quickTranslate(
+                        "validationModal.step2.pdfSection.modePlaceholder",
+                        "Placeholder mode",
+                      )}
                 </span>
               </div>
 
@@ -4807,11 +4975,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   }`}
                 >
                   <div className="text-xs font-semibold text-slate-800">
-                    Use placeholder PDF
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.usePlaceholder",
+                      "Use placeholder PDF",
+                    )}
                   </div>
                   <p className="mt-1 text-[10px] text-slate-600">
-                    Skip manual PDF upload and use the built-in placeholder
-                    file.
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.usePlaceholderHint",
+                      "Skip manual PDF upload and use the built-in placeholder file.",
+                    )}
                   </p>
                 </button>
                 <button
@@ -4824,10 +4997,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   }`}
                 >
                   <div className="text-xs font-semibold text-slate-800">
-                    Upload PDFs
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.uploadPdfs",
+                      "Upload PDF files",
+                    )}
                   </div>
                   <p className="mt-1 text-[10px] text-slate-600">
-                    Upload PDF files with names matching each Excel filename.
+                    {quickTranslate(
+                      "validationModal.step2.pdfSection.uploadPdfsHint",
+                      "Upload PDF files with names matching the Excel filenames.",
+                    )}
                   </p>
                 </button>
               </div>
@@ -4837,15 +5016,25 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] font-medium text-blue-800">
                       {pdfFiles.length
-                        ? `${pdfFiles.length} file(s) selected`
-                        : "Choose PDF files"}
+                        ? quickTranslate(
+                            "filePicker.selectedPdfs",
+                            "{{count}} file(s) selected",
+                            { count: pdfFiles.length },
+                          )
+                        : quickTranslate(
+                            "filePicker.choosePdfFiles",
+                            "Choose PDF files",
+                          )}
                     </span>
                     <button
                       type="button"
                       onClick={openPdfPicker}
                       className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
                     >
-                      Choose PDFs
+                      {quickTranslate(
+                        "validationModal.step2.pdfSection.chooseButton",
+                        "Choose PDF files",
+                      )}
                     </button>
                     <input
                       ref={pdfInputRef}
@@ -4863,38 +5052,57 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         .map((file) => file.name)
                         .join(", ")}
                       {pdfFiles.length > 4
-                        ? ` +${pdfFiles.length - 4} more`
+                        ? ` ${quickTranslate(
+                            "validationModal.step2.pdfSection.moreFiles",
+                            "+{{count}} more file(s)",
+                            { count: pdfFiles.length - 4 },
+                          )}`
                         : ""}
                     </div>
                   )}
                   {pdfMatchInfo.excelsMissingPdf.length > 0 ||
                   pdfMatchInfo.unmatchedPdfs.length > 0 ? (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] text-rose-700">
-                      Some PDF filenames do not match Excel filenames.
+                      {quickTranslate(
+                        "validationModal.step2.pdfSection.matchWarning",
+                        "Some PDF filenames do not match Excel filenames.",
+                      )}
                     </div>
                   ) : pdfFiles.length > 0 ? (
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700">
-                      All selected PDFs match Excel filenames.
+                      {quickTranslate(
+                        "validationModal.step2.pdfSection.matchSuccess",
+                        "All selected PDF files match Excel filenames.",
+                      )}
                     </div>
                   ) : null}
                 </div>
               ) : (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-700">
-                  Will use {DUMMY_PDF_NAME}
+                  {quickTranslate(
+                    "filePicker.willUseDummyPdf",
+                    "Will use {{placeholder}}",
+                    { placeholder: DUMMY_PDF_NAME },
+                  )}
                 </div>
               )}
             </div>
 
             {!isReadyToUpload && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Fix validation issues first, then choose one of the action
-                buttons below.
+                {quickTranslate(
+                  "validationModal.step2.fixValidationFirst",
+                  "Fix validation issues first, then choose one of the action buttons below.",
+                )}
               </div>
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="text-xs text-slate-600">
-                Choose how to continue with the reports.
+                {quickTranslate(
+                  "validationModal.step2.actionHint",
+                  "Choose how to continue with the uploaded reports.",
+                )}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -4902,7 +5110,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   onClick={() => setValidationModalStep("validation")}
                   className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                 >
-                  Back to validation
+                  {quickTranslate("validationModal.step2.back", "Back to validation")}
                 </button>
                 <button
                   type="button"
@@ -4915,7 +5123,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
                   ) : (
                     <FileIcon className="w-3.5 h-3.5" />
                   )}
-                  {loading ? "Storing..." : "Store and Send Later"}
+                  {loading
+                    ? translate("actions.storing", "Storing...")
+                    : quickTranslate(
+                        "actions.storeAndSubmitLater",
+                        "Store & Submit Later",
+                      )}
                 </button>
                 <button
                   type="button"
@@ -4931,10 +5144,13 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     <Send className="w-3.5 h-3.5" />
                   )}
                   {creatingReports
-                    ? "Creating Reports..."
+                    ? translate("actions.creatingReports", "Creating Reports...")
                     : loading
-                      ? "Uploading..."
-                      : "Upload & Send To Taqeem"}
+                      ? quickTranslate("actions.uploading", "Uploading...")
+                      : quickTranslate(
+                          "actions.storeAndSubmitNow",
+                          "Store & Submit Now",
+                        )}
                 </button>
               </div>
             </div>
@@ -4945,7 +5161,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
   );
 
   return (
-    <div className="relative p-3 space-y-3 page-animate overflow-x-hidden">
+    <div
+      className="relative p-3 space-y-3 page-animate overflow-x-hidden"
+      dir={isArabicUi ? "rtl" : "ltr"}
+    >
       {showInsufficientPointsModal && (
         <div className="fixed inset-0 z-[9999]">
           <div className="absolute top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm">
@@ -4975,10 +5194,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         {excelFiles[0].name}
                       </span>
                     ) : (
-                      `${excelFiles.length} file(s) selected`
+                      quickTranslate("filePicker.selectedFiles", "{{count}} file(s) selected", {
+                        count: excelFiles.length,
+                      })
                     )
                   ) : (
-                    "Choose Excel file"
+                    quickTranslate("filePicker.chooseExcel", "Choose Excel file")
                   )}
                 </span>
               </div>
@@ -4991,7 +5212,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 ref={excelInputRef}
               />
               <span className="text-xs font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">
-                Browse
+                {quickTranslate("filePicker.browse", "Browse")}
               </span>
             </label>
 
@@ -5006,7 +5227,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
               ) : (
                 <Download className="w-3.5 h-3.5" />
               )}
-              {downloadingTemplate ? "Downloading..." : "Export Excel Template"}
+              {downloadingTemplate
+                ? quickTranslate("filePicker.downloading", "Downloading...")
+                : quickTranslate(
+                    "filePicker.exportTemplate",
+                    "Export Excel Template",
+                  )}
             </button>
 
             <button
@@ -5015,7 +5241,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Reset
+              {quickTranslate("filePicker.reset", "Reset")}
             </button>
           </div>
         </div>
@@ -5032,7 +5258,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 transition-all"
           >
             <Table className="w-4 h-4" />
-            Open Validation & Actions
+            {translate(
+              "actions.openValidation",
+              "Open Validation & Actions",
+            )}
           </button>
         </div>
       </div>
@@ -5059,10 +5288,13 @@ const MultiExcelUpload = ({ onViewChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">
-                Temporary Reports
+                {quickTranslate("temporarySection.title", "Temporary Reports")}
               </h3>
               <p className="text-[10px] text-slate-500">
-                Reports without company assignment.
+                {quickTranslate(
+                  "temporarySection.subtitle",
+                  "Reports without company assignment.",
+                )}
               </p>
             </div>
             <button
@@ -5071,7 +5303,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
             >
               <Table className="w-3 h-3" />
-              Show Temporary Reports
+              {quickTranslate("temporarySection.open", "Show Temporary Reports")}
             </button>
           </div>
         </div>
@@ -5089,10 +5321,13 @@ const MultiExcelUpload = ({ onViewChange }) => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
               <div>
                 <h3 className="text-base font-semibold text-slate-800">
-                  Temporary Reports
+                  {quickTranslate("temporaryModal.title", "Temporary Reports")}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Reports without company assignment.
+                  {quickTranslate(
+                    "temporaryModal.subtitle",
+                    "Reports without company assignment.",
+                  )}
                 </p>
               </div>
               <button
@@ -5100,12 +5335,17 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 onClick={() => setShowTemporaryModal(false)}
                 className="text-slate-600 hover:text-slate-900 text-sm font-semibold"
               >
-                Close
+                {quickTranslate("temporaryModal.close", "Close")}
               </button>
             </div>
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="text-[11px] text-slate-600">
-                {isGuestUser ? "Guest session reports." : "Unassigned reports."}
+                {isGuestUser
+                  ? quickTranslate(
+                      "temporaryModal.guestSession",
+                      "Guest session reports.",
+                    )
+                  : quickTranslate("temporaryModal.unassigned", "Unassigned reports.")}
               </div>
               <button
                 type="button"
@@ -5118,37 +5358,48 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 <RefreshCw
                   className={`w-3 h-3 ${temporaryLoading ? "animate-spin" : ""}`}
                 />
-                {temporaryLoading ? "Refreshing..." : "Refresh"}
+                {temporaryLoading
+                  ? quickTranslate("temporaryModal.refreshing", "Refreshing...")
+                  : quickTranslate("temporaryModal.refresh", "Refresh")}
               </button>
             </div>
             <div className="px-4 pb-4">
               {temporaryLoading ? (
                 <div className="text-xs text-slate-600">
-                  Loading temporary reports...
+                  {quickTranslate(
+                    "temporaryModal.loading",
+                    "Loading temporary reports...",
+                  )}
                 </div>
               ) : temporaryReports.length === 0 ? (
                 <div className="text-xs text-slate-600">
-                  No temporary reports found.
+                  {quickTranslate(
+                    "temporaryModal.empty",
+                    "No temporary reports found.",
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs text-slate-700">
+                  <table className="upload-report-table min-w-full text-xs text-slate-700">
                     <thead className="bg-slate-100 text-slate-600 uppercase">
                       <tr>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Report ID
+                          {quickTranslate(
+                            "temporaryModal.table.reportId",
+                            "Report ID",
+                          )}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Client
+                          {quickTranslate("temporaryModal.table.client", "Client")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Assets
+                          {quickTranslate("temporaryModal.table.assets", "Assets")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Status
+                          {quickTranslate("temporaryModal.table.status", "Status")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold">
-                          Action
+                          {quickTranslate("temporaryModal.table.action", "Action")}
                         </th>
                       </tr>
                     </thead>
@@ -5159,8 +5410,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                           ? report.asset_data.length
                           : 0;
                         const statusKey = getReportStatus(report);
-                        const statusLabel =
-                          reportStatusLabels[statusKey] || statusKey || "New";
+                        const statusLabel = getReportStatusLabel(statusKey);
                         const statusClass =
                           reportStatusClasses[statusKey] ||
                           "border-slate-200 bg-slate-50 text-slate-700";
@@ -5170,7 +5420,8 @@ const MultiExcelUpload = ({ onViewChange }) => {
                             className="hover:bg-slate-50"
                           >
                             <td className="px-3 py-2 text-[11px] text-slate-800">
-                              {report.report_id || "Not Submitted"}
+                              {report.report_id ||
+                                quickTranslate("reports.notSubmitted", "Not submit")}
                             </td>
                             <td className="px-3 py-2 text-[11px] text-slate-700">
                               {report.client_name || report.title || "???"}
@@ -5197,7 +5448,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 }}
                                 className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700"
                               >
-                                Assign & Submit
+                                {quickTranslate(
+                                  "temporaryModal.assignAndSubmit",
+                                  "Assign & Submit",
+                                )}
                               </button>
                             </td>
                           </tr>
@@ -5210,15 +5464,17 @@ const MultiExcelUpload = ({ onViewChange }) => {
               {isGuestUser && (
                 <div className="mt-3 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700">
                   <span>
-                    Register your account to keep these reports linked to your
-                    phone.
+                    {quickTranslate(
+                      "temporaryModal.registerHint",
+                      "Register your account to keep these reports linked to your phone.",
+                    )}
                   </span>
                   <button
                     type="button"
                     onClick={() => onViewChange?.("registration")}
                     className="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-slate-900"
                   >
-                    Register
+                    {quickTranslate("temporaryModal.register", "Register")}
                   </button>
                 </div>
               )}
@@ -5227,7 +5483,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
         </div>
       )}
 
-      <Section title="Reports">
+      <Section title={quickTranslate("reports.title", "Reports")}>
         <div className="space-y-2 mb-2">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -5239,22 +5495,36 @@ const MultiExcelUpload = ({ onViewChange }) => {
               <RefreshCw
                 className={`w-3.5 h-3.5 ${reportsLoading ? "animate-spin" : ""}`}
               />
-              {reportsLoading ? "Refreshing..." : "Refresh"}
+              {reportsLoading
+                ? quickTranslate("reports.refresh.refreshing", "Refreshing...")
+                : quickTranslate("reports.refresh.refresh", "Refresh")}
             </button>
 
             <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-              Filter:
+              {quickTranslate("reports.filter.label", "Filter:")}
               <select
                 value={reportSelectFilter}
                 onChange={(e) => setReportSelectFilter(e.target.value)}
                 className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
               >
-                <option value="all">All statuses</option>
-                <option value="new">New</option>
-                <option value="complete">Complete</option>
-                <option value="incomplete">Incomplete</option>
-                <option value="sent">Sent</option>
-                <option value="approved">Approved</option>
+                <option value="all">
+                  {quickTranslate("reports.filter.all", "All statuses")}
+                </option>
+                <option value="new">
+                  {quickTranslate("reports.filter.new", "New")}
+                </option>
+                <option value="complete">
+                  {quickTranslate("reports.filter.complete", "Complete")}
+                </option>
+                <option value="incomplete">
+                  {quickTranslate("reports.filter.incomplete", "Incomplete")}
+                </option>
+                <option value="sent">
+                  {quickTranslate("reports.filter.sent", "Sent")}
+                </option>
+                <option value="approved">
+                  {quickTranslate("reports.filter.approved", "Approved")}
+                </option>
               </select>
             </label>
 
@@ -5262,7 +5532,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search reports..."
+                placeholder={quickTranslate(
+                  "reports.searchPlaceholder",
+                  "Search reports...",
+                )}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-64 rounded-md border border-slate-300 bg-white px-3 py-1.5 pl-9 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
@@ -5309,7 +5582,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
             {/* END SEARCH INPUT */}
 
             <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-              Items per page:
+              {quickTranslate("reports.itemsPerPageLabel", "Items per page:")}
               <select
                 value={itemsPerPage}
                 onChange={(e) => {
@@ -5327,7 +5600,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
             </label>
 
             <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5 ml-auto">
-              Page:
+              {translate("reports.pageLabel", "Page:")}
               <input
                 type="number"
                 min="1"
@@ -5345,14 +5618,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 className="w-16 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
               />
               <span className="text-xs text-slate-600">
-                of {reportsPagination.totalPages || 1}
+                {translate("reports.of", "of")} {reportsPagination.totalPages || 1}
               </span>
             </label>
             {searchQuery.trim() && (
               <div className="text-xs text-slate-600">
-                Found {visibleReports.length} report
-                {visibleReports.length !== 1 ? "s" : ""} matching "{searchQuery}
-                " on this page
+                {translate(
+                  "reports.searchResult",
+                  'Found {{count}} report(s) matching "{{query}}" on this page',
+                  { count: visibleReports.length, query: searchQuery },
+                )}
               </div>
             )}
           </div>
@@ -5363,7 +5638,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
         {reportsLoading && reports.length === 0 && (
           <div className="flex items-center gap-2 text-xs text-slate-600 py-2">
             <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-            Loading reports...
+            {quickTranslate("reports.loading", "Loading reports...")}
           </div>
         )}
 
@@ -5375,20 +5650,23 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
         {!reportsLoading && !reports.length && (
           <div className="text-xs text-slate-600 py-2 text-center">
-            No multi-approach reports found yet.
+            {translate("reports.empty", "No multi-approach reports found yet.")}
           </div>
         )}
 
         {!reportsLoading && reports.length > 0 && !filteredReports.length && (
           <div className="text-xs text-slate-600 py-2 text-center">
-            No reports match the selected status.
+            {quickTranslate(
+              "reports.noMatch",
+              "No reports match the selected status.",
+            )}
           </div>
         )}
 
         {!reportsLoading && reports.length > 0 && (
           <div className="w-full overflow-x-auto">
             <div className="min-w-full">
-              <table className="w-full text-xs text-slate-700">
+              <table className="upload-report-table w-full text-xs text-slate-700">
                 <thead className="bg-gradient-to-r from-blue-50 to-indigo-50 text-slate-800 border-b-2 border-blue-200">
                   <tr>
                     <th className="px-2 py-2 text-left w-12 text-[10px] font-semibold uppercase tracking-wider">
@@ -5396,22 +5674,22 @@ const MultiExcelUpload = ({ onViewChange }) => {
                     </th>
                     <th className="px-2 py-2 text-left w-10 text-[10px] font-semibold uppercase tracking-wider"></th>
                     <th className="px-2 py-2 text-left w-32 text-[10px] font-semibold uppercase tracking-wider">
-                      Report ID
+                      {quickTranslate("reports.table.reportId", "Report ID")}
                     </th>
                     <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                      Client
+                      {quickTranslate("reports.table.client", "Client")}
                     </th>
                     <th className="px-2 py-2 text-left w-24 text-[10px] font-semibold uppercase tracking-wider">
-                      Final value
+                      {quickTranslate("reports.table.finalValue", "Final value")}
                     </th>
                     <th className="px-2 py-2 text-left w-28 text-[10px] font-semibold uppercase tracking-wider">
-                      Status
+                      {quickTranslate("reports.table.status", "Status")}
                     </th>
                     <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider">
-                      Action
+                      {quickTranslate("reports.table.action", "Action")}
                     </th>
                     <th className="px-2 py-2 text-left w-16 text-[10px] font-semibold uppercase tracking-wider">
-                      Select
+                      {quickTranslate("reports.table.select", "Select")}
                     </th>
                   </tr>
                 </thead>
@@ -5461,7 +5739,15 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               disabled={!recordId}
                               className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-slate-300 text-slate-700 hover:bg-blue-50 hover:border-blue-400 disabled:opacity-50 transition-colors"
                               aria-label={
-                                isExpanded ? "Hide assets" : "Show assets"
+                                isExpanded
+                                  ? quickTranslate(
+                                      "reports.actions.hideAssets",
+                                      "Hide assets",
+                                    )
+                                  : quickTranslate(
+                                      "reports.actions.showAssets",
+                                      "Show assets",
+                                    )
                               }
                             >
                               {isExpanded ? (
@@ -5474,9 +5760,13 @@ const MultiExcelUpload = ({ onViewChange }) => {
                           <td className="px-2 py-2">
                             <div
                               className="text-xs font-semibold text-slate-900 truncate"
-                              title={report.report_id || "Not sent"}
+                              title={
+                                report.report_id ||
+                                quickTranslate("reports.notSubmitted", "Not submit")
+                              }
                             >
-                              {report.report_id || "Not sent"}
+                              {report.report_id ||
+                                quickTranslate("reports.notSubmitted", "Not submit")}
                             </div>
                           </td>
                           <td
@@ -5497,7 +5787,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 "border-blue-200 bg-blue-50 text-blue-700"
                               }`}
                             >
-                              {reportStatusLabels[statusKey] || statusKey}
+                              {getReportStatusLabel(statusKey)}
                             </span>
                           </td>
                           <td className="px-2 py-2">
@@ -5516,20 +5806,42 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 }}
                                 className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer flex-1"
                               >
-                                <option value="">Actions</option>
+                                <option value="">
+                                  {quickTranslate("reports.row.actions", "Actions")}
+                                </option>
                                 <option value="submit-taqeem">
-                                  Submit to Taqeem
+                                  {quickTranslate(
+                                    "reports.row.submitToTaqeem",
+                                    "Submit to Taqeem",
+                                  )}
                                 </option>
-                                <option value="retry">Retry submit</option>
-                                <option value="edit">Edit</option>
+                                <option value="retry">
+                                  {quickTranslate(
+                                    "reports.row.retryIncomplete",
+                                    "Retry incomplete assets",
+                                  )}
+                                </option>
+                                <option value="edit">
+                                  {quickTranslate("reports.row.edit", "Edit")}
+                                </option>
                                 <option value="send-approver">
-                                  Send to approver
+                                  {quickTranslate(
+                                    "reports.row.sendToApprover",
+                                    "Send to approver",
+                                  )}
                                 </option>
-                                <option value="approve">Approve</option>
+                                <option value="approve">
+                                  {quickTranslate("reports.row.approve", "Approve")}
+                                </option>
                                 <option value="download">
-                                  Download certificate
+                                  {translate(
+                                    "reports.row.downloadCertificate",
+                                    "Download certificate",
+                                  )}
                                 </option>
-                                <option value="delete">Delete</option>
+                                <option value="delete">
+                                  {quickTranslate("reports.row.delete", "Delete")}
+                                </option>
                               </select>
                               <button
                                 type="button"
@@ -5553,12 +5865,12 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 }
                                 className="inline-flex items-center justify-center px-3 py-1 rounded-md bg-blue-600 text-white text-[10px] font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                               >
-                                Go
+                                {quickTranslate("reports.row.go", "Go")}
                               </button>
                             </div>
                             {reportBusy && (
                               <div className="text-[10px] text-blue-600 mt-0.5 font-medium">
-                                Working...
+                                {quickTranslate("reports.row.working", "Working...")}
                               </div>
                             )}
                           </td>
@@ -5621,7 +5933,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               <div className="p-2 space-y-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div className="text-xs text-slate-700 font-medium">
-                                    Assets:{" "}
+                                    {quickTranslate("reports.assets.label", "Assets")}:{" "}
                                     <span className="text-blue-600 font-semibold">
                                       {assetList.length}
                                     </span>
@@ -5644,9 +5956,17 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                         }}
                                         className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                                       >
-                                        <option value="">Asset actions</option>
+                                        <option value="">
+                                          {translate(
+                                            "reports.assets.actions",
+                                            "Asset actions",
+                                          )}
+                                        </option>
                                         <option value="retry">
-                                          Retry submission
+                                          {translate(
+                                            "reports.assets.retrySubmission",
+                                            "Retry submission",
+                                          )}
                                         </option>
                                       </select>
                                       <button
@@ -5673,33 +5993,48 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                         }
                                         className="inline-flex items-center justify-center px-3 py-1 rounded-md bg-blue-600 text-white text-[10px] font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                       >
-                                        Go
+                                        {quickTranslate("reports.row.go", "Go")}
                                       </button>
                                     </div>
                                   </div>
                                 </div>
                                 <div className="rounded-md border border-slate-200 overflow-hidden bg-white shadow-sm">
                                   <div className="max-h-48 overflow-y-auto">
-                                    <table className="w-full text-xs text-slate-700">
+                                    <table className="upload-report-table w-full text-xs text-slate-700">
                                       <thead className="bg-slate-50 text-slate-800 border-b border-slate-200 sticky top-0">
                                         <tr>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                            Macro ID
+                                            {quickTranslate(
+                                              "reports.assets.table.macroId",
+                                              "Macro ID",
+                                            )}
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                            Asset name
+                                            {quickTranslate(
+                                              "reports.assets.table.assetName",
+                                              "Asset name",
+                                            )}
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                            Final value
+                                            {quickTranslate(
+                                              "reports.assets.table.finalValue",
+                                              "Final value",
+                                            )}
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
                                             Approach
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                            Status
+                                            {quickTranslate(
+                                              "reports.assets.table.status",
+                                              "Status",
+                                            )}
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
-                                            Actions
+                                            {quickTranslate(
+                                              "reports.row.actions",
+                                              "Actions",
+                                            )}
                                           </th>
                                           <th className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider">
                                             <select
@@ -5755,13 +6090,22 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                               className="rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                                             >
                                               <option value="all">
-                                                All assets
+                                                {translate(
+                                                  "reports.assets.filter.all",
+                                                  "All assets",
+                                                )}
                                               </option>
                                               <option value="complete">
-                                                Complete
+                                                {quickTranslate(
+                                                  "reports.status.complete",
+                                                  "Complete",
+                                                )}
                                               </option>
                                               <option value="incomplete">
-                                                Incomplete
+                                                {quickTranslate(
+                                                  "reports.status.incomplete",
+                                                  "Incomplete",
+                                                )}
                                               </option>
                                             </select>
                                           </th>
@@ -5775,8 +6119,14 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                               className="px-2 py-2 text-center text-slate-500 text-xs"
                                             >
                                               {assetList.length
-                                                ? "No assets match the selected status."
-                                                : "No assets available for this report."}
+                                                ? translate(
+                                                    "reports.assetsNoMatch",
+                                                    "No assets match the selected status.",
+                                                  )
+                                                : quickTranslate(
+                                                    "reports.assets.none",
+                                                    "No assets available for this report.",
+                                                  )}
                                             </td>
                                           </tr>
                                         )}
@@ -5800,7 +6150,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                                 className="border-t border-slate-200 hover:bg-slate-50/50"
                                               >
                                                 <td className="px-2 py-1.5 text-slate-600 text-xs">
-                                                  {macroId || "Not created"}
+                                                  {macroId ||
+                                                    translate(
+                                                      "reports.assets.notCreated",
+                                                      "Not created",
+                                                    )}
                                                 </td>
                                                 <td className="px-2 py-1.5 text-slate-700 text-xs font-medium">
                                                   {asset.asset_name || "-"}
@@ -5822,7 +6176,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                                   >
                                                     {assetStatusLabels[
                                                       assetStatus
-                                                    ] || assetStatus}
+                                                    ]
+                                                      ? getAssetStatusLabel(
+                                                          assetStatus,
+                                                        )
+                                                      : assetStatus}
                                                   </span>
                                                 </td>
                                                 <td className="px-2 py-1.5">
@@ -5848,10 +6206,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                                       className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer flex-1"
                                                     >
                                                       <option value="">
-                                                        Actions
+                                                        {quickTranslate(
+                                                          "reports.row.actions",
+                                                          "Actions",
+                                                        )}
                                                       </option>
                                                       <option value="edit">
-                                                        Edit
+                                                        {quickTranslate(
+                                                          "reports.row.edit",
+                                                          "Edit",
+                                                        )}
                                                       </option>
                                                     </select>
                                                     <button
@@ -5888,7 +6252,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                                       }
                                                       className="inline-flex items-center justify-center px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                     >
-                                                      Go
+                                                      {quickTranslate(
+                                                        "reports.row.go",
+                                                        "Go",
+                                                      )}
                                                     </button>
                                                   </div>
                                                 </td>
@@ -6023,19 +6390,15 @@ const MultiExcelUpload = ({ onViewChange }) => {
                 return (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2">
                     <div className="text-xs text-slate-600 font-medium">
-                      Showing{" "}
-                      <span className="font-semibold text-slate-800">
-                        {Math.min(startItem, reportsPagination.total || 0)}
-                      </span>{" "}
-                      to{" "}
-                      <span className="font-semibold text-slate-800">
-                        {Math.min(endItem, reportsPagination.total || 0)}
-                      </span>{" "}
-                      of{" "}
-                      <span className="font-semibold text-slate-800">
-                        {reportsPagination.total || 0}
-                      </span>{" "}
-                      total reports
+                      {quickTranslate(
+                        "reports.pagination.summary",
+                        "Showing {{from}} to {{to}} of {{total}} reports",
+                        {
+                          from: Math.min(startItem, reportsPagination.total || 0),
+                          to: Math.min(endItem, reportsPagination.total || 0),
+                          total: reportsPagination.total || 0,
+                        },
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -6044,7 +6407,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         disabled={currentPage === 1 || reportsLoading}
                         className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        Previous
+                        {quickTranslate("reports.pagination.previous", "Previous")}
                       </button>
                       <div className="flex items-center gap-1">
                         {pageNumbers.map((page, idx) => {
@@ -6081,7 +6444,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
                         disabled={currentPage === totalPages || reportsLoading}
                         className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        Next
+                        {quickTranslate("reports.pagination.next", "Next")}
                       </button>
                     </div>
                   </div>

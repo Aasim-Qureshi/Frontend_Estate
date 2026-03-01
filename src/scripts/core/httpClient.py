@@ -415,7 +415,7 @@ async def update_report_check_status(
         if deleted is not None:
             updates["deleted"] = deleted
 
-        # ✅ FIX: Only update if we have actual updates to send
+        # â FIX: Only update if we have actual updates to send
         if not updates:
             return True  # Nothing to update, consider it success
 
@@ -429,7 +429,7 @@ async def update_report_check_status(
         if company_office_id:
             payload["company_office_id"] = str(company_office_id)
 
-        # ✅ Add timeout and better error handling
+        # â Add timeout and better error handling
         try:
             response = await asyncio.wait_for(
                 http_patch("/new-scripts/update-check-status", json=payload),

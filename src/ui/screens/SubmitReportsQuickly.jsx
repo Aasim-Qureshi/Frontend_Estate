@@ -4109,57 +4109,59 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
           <div className="pointer-events-none absolute -top-12 -left-12 h-28 w-28 rounded-full bg-blue-200/20 blur-2xl" />
           <div className="pointer-events-none absolute -bottom-14 -right-10 h-32 w-32 rounded-full bg-emerald-200/20 blur-2xl" />
           <div
-            className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+            className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-stretch gap-1.5"
             style={{ direction: isArabicUi ? "rtl" : "ltr" }}
           >
-            <label
-              className={`group relative flex min-h-[52px] items-center gap-2.5 rounded-xl border border-slate-300/90 bg-white/90 px-2.5 py-2 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
-                isArabicUi ? "text-right" : "text-left"
-              }`}
-            >
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 ring-1 ring-blue-200/70">
-                <FileSpreadsheet className="h-4 w-4 text-blue-700" />
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 text-[9px] font-semibold text-blue-700 whitespace-nowrap">
+                {translate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="mb-0.5 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700">
-                  Step 1
+              <label
+                className={`group relative flex min-h-[44px] flex-1 items-center gap-2 rounded-xl border border-slate-300/90 bg-white/90 px-2 py-1.5 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
+                  isArabicUi ? "text-right" : "text-left"
+                }`}
+              >
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 ring-1 ring-blue-200/70">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-blue-700" />
                 </span>
-                <span className="block truncate text-[10px] font-semibold text-slate-800">
-                  {excelFiles.length ? (
-                    excelFiles.length === 1 ? (
-                      <span title={excelFiles[0].name}>
-                        {excelFiles[0].name}
-                      </span>
-                    ) : (
-                      translate(
-                        "filePicker.selectedFiles",
-                        "{{count}} file(s) selected",
-                        { count: excelFiles.length },
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[10px] font-semibold text-slate-800">
+                    {excelFiles.length ? (
+                      excelFiles.length === 1 ? (
+                        <span title={excelFiles[0].name}>
+                          {excelFiles[0].name}
+                        </span>
+                      ) : (
+                        translate(
+                          "filePicker.selectedFiles",
+                          "{{count}} file(s) selected",
+                          { count: excelFiles.length },
+                        )
                       )
-                    )
-                  ) : (
-                    translate("filePicker.chooseExcel", "Choose Excel file")
-                  )}
+                    ) : (
+                      translate("filePicker.chooseExcel", "Choose Excel file")
+                    )}
+                  </span>
+                  <span className="block text-[8px] font-medium text-slate-500">
+                    .xlsx / .xls
+                  </span>
                 </span>
-                <span className="block text-[9px] font-medium text-slate-500">
-                  .xlsx / .xls
+                <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm transition-colors group-hover:bg-blue-700">
+                  {translate("filePicker.browse", "Browse")}
                 </span>
-              </span>
-              <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-2 py-1 text-[10px] font-semibold text-white shadow-sm transition-colors group-hover:bg-blue-700">
-                {translate("filePicker.browse", "Browse")}
-              </span>
-              <input
-                ref={excelInputRef}
-                type="file"
-                multiple
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleExcelChange}
-                onClick={(e) => {
-                  e.currentTarget.value = null;
-                }}
-              />
-            </label>
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  multiple
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleExcelChange}
+                  onClick={(e) => {
+                    e.currentTarget.value = null;
+                  }}
+                />
+              </label>
+            </div>
             <input
               ref={pdfInputRef}
               type="file"
@@ -4168,6 +4170,15 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
               className="hidden"
               onChange={handlePdfChange}
             />
+            <button
+              type="button"
+              onClick={openValidationModal}
+              disabled={!excelFiles.length}
+              className="inline-flex min-h-[44px] min-w-[120px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-2 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Table className="h-3.5 w-3.5" />
+              {translate("workflow.openValidationModal", "Open Validation Modal")}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -4183,10 +4194,10 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                   pdfInputRef.current.value = null;
                 }
               }}
-              className="group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-[10px] font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-[1px] hover:border-slate-400 hover:bg-slate-50 md:w-auto"
+              className="group inline-flex min-h-[44px] min-w-[94px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2 text-[10px] font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-[1px] hover:border-slate-400 hover:bg-slate-50"
             >
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200 transition-colors group-hover:bg-slate-200">
-                <RefreshCw className="h-3.5 w-3.5" />
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200 transition-colors group-hover:bg-slate-200">
+                <RefreshCw className="h-3 w-3" />
               </span>
               {translate("filePicker.reset", "Reset")}
             </button>
@@ -4202,17 +4213,17 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                 "filePicker.exportTemplate",
                 "Export Excel Template",
               )}
-              className="group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-3 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+              className="group inline-flex min-h-[44px] min-w-[122px] w-auto items-center justify-center gap-1.5 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-2 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {downloadingTemplate ? (
-                <Loader2 className="h-4 w-4 animate-spin text-emerald-700" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-700" />
               ) : (
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/80 ring-1 ring-emerald-200/90">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/80 ring-1 ring-emerald-200/90">
                   <img
                     src={excelIconSrc}
                     alt="Excel icon"
                     onError={() => setExcelIconSrc(excelIconFallback)}
-                    className="h-4 w-4 pointer-events-none object-contain"
+                    className="h-3.5 w-3.5 pointer-events-none object-contain"
                   />
                 </span>
               )}
@@ -4222,28 +4233,6 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                   "Export Excel Template",
                 )}
               </span>
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/80 px-2.5 py-2">
-            <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold text-slate-700">
-              <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
-                Step 1: Upload Excel
-              </span>
-              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                Step 2: Upload PDF (Optional)
-              </span>
-              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
-                Step 3: Store & Submit Action
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={openValidationModal}
-              disabled={!excelFiles.length}
-              className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Table className="h-3.5 w-3.5" />
-              Open Validation Modal
             </button>
           </div>
         </div>
@@ -5971,18 +5960,21 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                       <div className="space-y-4">
                         <div className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-blue-900 shadow-[0_10px_30px_rgba(59,130,246,0.12)]">
                           <span className="inline-flex items-center rounded-full border border-blue-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                            Step 2
+                            {translate(
+                              "validationModal.step2.badge",
+                              "Step 2 (Optional)",
+                            )}
                           </span>
                           <div className="text-sm font-semibold">
                             {translate(
                               "validationModal.step2.title",
-                              "Step 2: Edit report information",
+                              "Step 2 (Optional): Edit report information",
                             )}
                           </div>
                           <p className="text-xs text-blue-900/80 mt-1">
                             {translate(
                               "validationModal.step2.subtitle",
-                              "Update important report fields and choose whether to upload PDFs or use the placeholder.",
+                              "You can update important report fields, or skip this optional step.",
                             )}
                           </p>
                         </div>
@@ -6064,13 +6056,16 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div>
                               <span className="mb-1 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                Step 2 (Optional)
+                                {translate(
+                                  "validationModal.step2.pdfSection.badgeOptional",
+                                  "Step 3 (Optional)",
+                                )}
                               </span>
                               <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                                 <Files className="w-3.5 h-3.5 text-blue-600" />
                                 {translate(
                                   "validationModal.step2.pdfSection.title",
-                                  "PDF attachment (optional)",
+                                  "Step 3: PDF attachment (optional)",
                                 )}
                               </div>
                               <p className="mt-1 text-[11px] text-slate-600">
@@ -6270,12 +6265,12 @@ const SubmitReportsQuickly = ({ onViewChange }) => {
                     <>
                       <span className="inline-flex items-center gap-1.5">
                         <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                          Step 3
+                          {translate("validationModal.step3.badge", "Step 4")}
                         </span>
                         <span>
                           {translate(
                             "validationModal.step2.actionHint",
-                            "Choose how to continue with the uploaded reports.",
+                            "Step 4: Choose how to continue with the uploaded reports.",
                           )}
                         </span>
                       </span>

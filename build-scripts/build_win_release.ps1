@@ -12,8 +12,7 @@ $FinalStage = Join-Path $ProjectRoot "build\win_python_exe"
 $EntryFile = "scripts/core/build_launcher.py"
 $OutputName = "excec_worker"
 
-$ElectronBuilderArgs = @("--win","--x64")
-# ----------------------------
+$ElectronBuilderArgs = @("--win", "--x64", "-c.win.target=nsis")
 
 Write-Host "[BUILD-WIN] Project root: $ProjectRoot"
 

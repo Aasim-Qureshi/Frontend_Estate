@@ -39,7 +39,7 @@ TBODY_XPATH_FALLBACK = (
     "/html/body/div/div[5]/div[2]/div/div[8]/div/div/div/div[2]/div[2]/table/tbody"
 )
 
-INCOMPLETE_AR = "غير مكتملة"
+INCOMPLETE_AR = "ØºÙØ± ÙÙØªÙÙØ©"
 macro_link_re = re.compile(r"/report/macro/(\d+)/(?:show|edit|delete)")
 
 # DataTables subpage pagination
@@ -59,7 +59,7 @@ DATATABLE_PREV_SEL = (
 # Main (outer) pagination
 MAIN_NEXT_SEL = 'a.page-link[rel="next"]'
 
-DRAFT_STATUS_AR = "مسودة"
+DRAFT_STATUS_AR = "ÙØ³ÙØ¯Ø©"
 DRAFT_STATUS_EN = "draft"
 
 
@@ -206,7 +206,7 @@ async def _try_click_inline_confirm(page):
     try:
         clicked = await page.evaluate("""
         () => {
-          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","حذف","تأكيد","موافق"];
+          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","Ø­Ø°Ù","ØªØ£ÙÙØ¯","ÙÙØ§ÙÙ"];
           const els = Array.from(document.querySelectorAll('button, [type=button], [type=submit], a'));
           for (const el of els) {
             const t = (el.innerText || el.value || "").trim();
@@ -329,7 +329,7 @@ async def _parse_asset_rows(page):
             continue
 
         if idx <= preview_cap:
-            log(f"[row {idx} preview] {html[:200].replace(chr(10), ' ')}â¦", "INFO")
+            log(f"[row {idx} preview] {html[:200].replace(chr(10), ' ')}Ã¢ÂÂ¦", "INFO")
 
         m = re.search(
             r'href="https?://[^"]*/report/macro/(\d+)/(?:show|edit|delete)"', html
@@ -488,7 +488,7 @@ async def delete_incomplete_assets_and_leave_one(
     page, process_id: str = None, total_assets_state: dict | None = None
 ):
     """
-    Delete assets with 'غير مكتملة' on the CURRENT subpage..
+    Delete assets with 'ØºÙØ± ÙÙØªÙÙØ©' on the CURRENT subpage..
     NEW BEHAVIOUR:
       - Delete *all* incomplete assets.
       - Do NOT keep any incomplete asset on purpose.
@@ -813,7 +813,7 @@ async def delete_incomplete_assets_until_delete_or_empty(
         log(f"[loop] Cleanup round #{round_idx}", "STEP")
 
         # 1) Try the Delete Report button on this page
-        log("[loop] Checking for Delete Report buttonâ¦", "INFO")
+        log("[loop] Checking for Delete Report buttonÃ¢ÂÂ¦", "INFO")
         if await try_delete_report(page):
             log(
                 "[loop] Delete Report button clicked successfully; stopping loop.", "OK"
@@ -971,14 +971,14 @@ async def create_one_asset_and_get_macro(
         log(f"[create-asset] failed to set macros=1: {e}", "ERR")
         return None
 
-    # 2) Click Save button ("حفظ" / "Save")
+    # 2) Click Save button ("Ø­ÙØ¸" / "Save")
     try:
         clicked = await page.evaluate("""
         (() => {
             const btns = Array.from(document.querySelectorAll("input[type=submit], button"));
             for (const b of btns) {
                 const t = (b.value || b.innerText || "").trim();
-                if (t.includes("حفظ") || t.toLowerCase().includes("save")) {
+                if (t.includes("Ø­ÙØ¸") || t.toLowerCase().includes("save")) {
                     b.click();
                     return true;
                 }
@@ -1011,7 +1011,7 @@ async def create_one_asset_and_get_macro(
             return macro_id
 
     log(
-        "[create-asset] Could not detect macro_id from redirect URL, trying table fallbackâ¦",
+        "[create-asset] Could not detect macro_id from redirect URL, trying table fallbackÃ¢ÂÂ¦",
         "WARN",
     )
 
@@ -1250,7 +1250,7 @@ async def delete_report_flow(
             await asyncio.sleep(1.0)
 
             # 2) Try Delete Report button first
-            log(f"Report {report_id}: checking for Delete Report buttonâ¦", "INFO")
+            log(f"Report {report_id}: checking for Delete Report buttonÃ¢ÂÂ¦", "INFO")
             if await try_delete_report(page):
                 log(
                     f"Report {report_id}: Delete Report button clicked in round #{round_idx}.",
@@ -1289,7 +1289,7 @@ async def delete_report_flow(
             # 3) No delete button -> prune incomplete assets across ALL pages/subpages
             log(
                 f"Report {report_id}: Delete button not present. "
-                f"Deleting incomplete assets across pagesâ¦",
+                f"Deleting incomplete assets across pagesÃ¢ÂÂ¦",
                 "INFO",
             )
             if total_assets_remaining is None:
@@ -1350,7 +1350,7 @@ async def delete_report_flow(
             # total_deleted == 0  --> no incomplete assets were removed anywhere.
             log(
                 f"Report {report_id}: No incomplete assets deleted in this round "
-                f"(total_deleted=0). Checking if any assets remainâ¦",
+                f"(total_deleted=0). Checking if any assets remainÃ¢ÂÂ¦",
                 "INFO",
             )
 
@@ -1385,9 +1385,9 @@ async def delete_report_flow(
                     "deletedAssets": total_deleted_overall,
                 }
 
-            # ð No assets at all: create ONE asset and then fill it using template
+            # Ã°ÂÂÂ No assets at all: create ONE asset and then fill it using template
             log(
-                f"Report {report_id}: No assets remain. Creating one new assetâ¦",
+                f"Report {report_id}: No assets remain. Creating one new assetÃ¢ÂÂ¦",
                 "INFO",
             )
             macro_id = await create_one_asset_and_get_macro(page, report_id, process_id)
@@ -1408,7 +1408,7 @@ async def delete_report_flow(
                 }
 
             log(
-                f"Report {report_id}: New asset created with macro_id={macro_id}. Filling detailsâ¦",
+                f"Report {report_id}: New asset created with macro_id={macro_id}. Filling detailsÃ¢ÂÂ¦",
                 "INFO",
             )
 

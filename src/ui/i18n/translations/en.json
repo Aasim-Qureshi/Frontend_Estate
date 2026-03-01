@@ -589,6 +589,13 @@
             "storeAndSubmitNow": "Store and Submit Now",
             "storeAndSubmitLater": "Store and Submit Later"
         },
+        "workflow": {
+            "step1Badge": "Step 1",
+            "step1UploadExcel": "Step 1: Upload Excel",
+            "step2UploadPdfOptional": "Step 2: Upload PDF (Optional)",
+            "step3StoreSubmitAction": "Step 3: Store & Submit Action",
+            "openValidationModal": "Open Validation Modal"
+        },
         "editModal": {
             "title": "Edit Report",
             "close": "Close",
@@ -748,16 +755,18 @@
                 "noIssues": "No asset issues detected."
             },
             "footerHint": "Close this panel after reviewing the issues.",
-            "footerContinueHint": "Continue to edit report info and choose the upload action.",
+            "footerContinueHint": "Continue to Step 2 (optional report info), then Step 3 (optional PDF), and finally Step 4 action.",
             "panelHeader": "Validation on Excel sheet",
             "step2": {
-                "title": "Step 2: Edit report information",
-                "subtitle": "Update important report fields before choosing how to continue.",
+                "badge": "Step 2 (Optional)",
+                "title": "Step 2 (Optional): Edit report information",
+                "subtitle": "You can update important report fields, or skip this optional step.",
                 "fixValidationFirst": "Fix validation issues first, then choose one of the action buttons below.",
-                "actionHint": "Choose how to continue with the uploaded reports.",
+                "actionHint": "Step 4: Choose how to continue with the uploaded reports.",
                 "back": "Back to validation",
                 "pdfSection": {
-                    "title": "Attach PDF files (optional)",
+                    "badgeOptional": "Step 3 (Optional)",
+                    "title": "Step 3: Attach PDF files (optional)",
                     "subtitle": "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
                     "modeUpload": "Upload mode",
                     "modePlaceholder": "Placeholder mode",
@@ -770,6 +779,9 @@
                     "matchSuccess": "All selected PDF files match Excel filenames.",
                     "moreFiles": "+{{count}} more file(s)"
                 }
+            },
+            "step3": {
+                "badge": "Step 4"
             }
         },
         "validation": {
@@ -893,6 +905,224 @@
             "stopSubmission": "Are you sure you want to stop this report submission? Progress will be lost.",
             "deleteReport": "Are you sure you want to delete this report?",
             "deleteMultipleReports": "Are you sure you want to delete {{count}} report(s)?"
+        }
+    },
+    "uploadAssets": {
+        "commonFields": {
+            "title": "Common Fields",
+            "inspectionDate": "Inspection Date",
+            "region": "Region",
+            "city": "City",
+            "ownerName": "Owner Name",
+            "selectRegion": "Select Region",
+            "selectCity": "Select City",
+            "selectRegionFirst": "Select region first",
+            "ownerPlaceholder": "Owner name",
+            "completeUploadSteps": "Complete Asset Upload Steps"
+        },
+        "actions": {
+            "storing": "Storing..."
+        },
+        "progress": {
+            "starting": "Starting submission...",
+            "processing": "Processing...",
+            "pause": "Pause",
+            "resume": "Resume",
+            "stop": "Stop"
+        },
+        "preview": {
+            "title": "Data Preview",
+            "records": "{{count}} records",
+            "showing": "Showing {{shown}} of {{total}} records",
+            "firstRows": "(first 50 rows)",
+            "columns": "Columns:",
+            "totalRows": "Total rows:",
+            "noData": "No preview data to display",
+            "extracting": "Extracting data...",
+            "processing": "Processing your Excel file",
+            "validationHint": "Validation results will appear here"
+        },
+        "reportsTable": {
+            "title": "Reports Management",
+            "subtitle": "View and manage all reports",
+            "searchPlaceholder": "Search by Report ID...",
+            "filters": {
+                "all": "All",
+                "pending": "Pending",
+                "completed": "Completed",
+                "sent": "Sent"
+            },
+            "perPage": "{{count}} per page",
+            "table": {
+                "createdDate": "Created Date",
+                "assetId": "Asset ID",
+                "name": "Name",
+                "inspectionDate": "Inspection Date",
+                "value": "Value",
+                "submitState": "Submit State"
+            },
+            "filteredSummary": "Showing {{filtered}} of {{total}} reports",
+            "matching": "matching \"{{query}}\"",
+            "withStatus": "with status: {{status}}",
+            "noReportsFound": "No reports found",
+            "clearFilters": "Clear filters to see all reports",
+            "assetsSection": {
+                "title": "Assets in Report",
+                "count": "{{count}} assets",
+                "submitted": "Submitted"
+            },
+            "assetsEmpty": {
+                "all": "No assets found in this report",
+                "completed": "No completed assets found",
+                "pending": "No pending assets found"
+            },
+            "status": {
+                "pending": "Pending"
+            }
+        },
+        "messages": {
+            "noFileSelected": "No file selected",
+            "extractFailed": "Failed to extract data from Excel file",
+            "noPreviewData": "No preview data returned from extract-asset-data.",
+            "extractSuccess": "Successfully extracted {{count}} records ({{market}} market approach, {{cost}} cost approach)",
+            "extractPreviewFailed": "Failed to extract preview via IPC",
+            "reportIdFromFileFailed": "Report ID could not be extracted from file name. Please check the file name.",
+            "noDataToUpload": "No data to upload",
+            "failedToCreateReport": "Failed to create report",
+            "flowCompletionFailed": "Flow completion failed: {{message}}",
+            "unknownError": "Unknown error",
+            "createSuccess": "Successfully created report \"{{reportId}}\" with {{count}} assets",
+            "commonFieldInspectionDate": "Inspection Date: {{value}}",
+            "commonFieldRegion": "Region: {{value}}",
+            "commonFieldCity": "City: {{value}}",
+            "commonFieldOwner": "Owner: {{value}}",
+            "commonFieldsApplied": "Common fields applied:",
+            "flowCompleted": "Flow completed: {{count}} assets processed",
+            "authFailed": "Authentication failed",
+            "unexpectedError": "An unexpected error occurred",
+            "fillCommonFields": "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+            "storeSuccess": "Successfully stored report \"{{reportId}}\" with {{count}} assets for later submission",
+            "sessionExpired": "Your session has expired. Please log in again."
+        }
+    },
+    "multiExcelUpload": {
+        "actions": {
+            "show": "Show",
+            "hide": "Hide",
+            "storing": "Storing...",
+            "creatingReports": "Creating Reports...",
+            "openValidation": "Open Validation & Actions"
+        },
+        "validationConsole": {
+            "title": "Validation Console",
+            "subtitle": "Review and validate your Excel files before upload",
+            "revalidate": "Re-validate",
+            "tableHidden": "Table hidden.",
+            "empty": "Validation results will appear here after reading the Excel.",
+            "step1": "Step 1: Validation",
+            "step2": "Step 2: PDF & Actions",
+            "step1Hint": "Review validation results, then continue to Step 2 for PDF upload and action selection.",
+            "continueStep2": "Continue to Step 2",
+            "issue": "Issue",
+            "issueCount": "{{count}} issue(s)",
+            "allFieldsOk": "All fields OK",
+            "value": "Value",
+            "notes": "Notes",
+            "ok": "OK",
+            "missing": "Missing",
+            "looksGood": "Looks good",
+            "missingInExcel": "Missing in Excel",
+            "na": "N/A",
+            "issueDetected": "Issue detected",
+            "assetsSummary": "Assets & PDF summary",
+            "market": "Market",
+            "cost": "Cost",
+            "marketTotal": "Market total",
+            "costTotal": "Cost total",
+            "assetsTotal": "Assets total",
+            "reportTotal": "Report total",
+            "issues": "Issues",
+            "matched": "Matched",
+            "reportInfo": {
+                "purpose": "Purpose of Valuation",
+                "valueAttributes": "Value Attributes",
+                "report": "Report",
+                "clientName": "Client Name",
+                "clientTelephone": "Client Telephone",
+                "clientEmail": "Client Email",
+                "valuers": "Valuers",
+                "dateOfValuation": "Date of Valuation",
+                "reportIssuingDate": "Report Issuing Date"
+            }
+        },
+        "reports": {
+            "pageLabel": "Page:",
+            "of": "of",
+            "searchResult": "Found {{count}} report(s) matching \"{{query}}\" on this page",
+            "empty": "No multi-approach reports found yet.",
+            "assetsNoMatch": "No assets match the selected status.",
+            "row": {
+                "downloadCertificate": "Download certificate"
+            },
+            "assets": {
+                "actions": "Asset actions",
+                "retrySubmission": "Retry submission",
+                "filter": {
+                    "all": "All assets"
+                },
+                "notCreated": "Not created"
+            }
+        }
+    },
+    "duplicateReport": {
+        "quickActions": {
+            "title": "Quick Actions"
+        },
+        "validation": {
+            "title": "Excel validation (market & cost)",
+            "sheets": "Market & cost sheets",
+            "readingExcel": "Reading Excel...",
+            "assetsCount": "Assets: {{total}} (market {{market}}, cost {{cost}})",
+            "issuesTitle": "Validation issues",
+            "showingFirst": "Showing first {{limit}} of {{total}} assets.",
+            "table": {
+                "sheet": "Sheet",
+                "assetUsage": "Asset usage id",
+                "region": "Region",
+                "city": "City"
+            }
+        },
+        "reports": {
+            "empty": "No manual reports found yet.",
+            "rows": "Rows",
+            "pageOf": "Page {{page}} / {{total}}",
+            "assetsNoMatch": "No assets match the selected status.",
+            "row": {
+                "downloadCertificate": "Download certificate"
+            },
+            "assets": {
+                "actions": "Asset actions",
+                "retrySubmission": "Retry submission",
+                "all": "All assets",
+                "notCreated": "Not created"
+            }
+        },
+        "attachments": {
+            "title": "Assets attachments",
+            "uploadExcel": "Upload Excel (market & cost)",
+            "uploadExcelHint": "Must include sheets: market, cost.",
+            "lastSelected": "Last selected: {{name}}",
+            "selectFile": "Select file",
+            "uploadPdfOptional": "Upload PDF (optional)",
+            "uploadPdfHint": "Attach a single PDF file for this report.",
+            "pdfDisabled": "PDF upload is disabled.",
+            "locked": "Attachments are locked while editing. Create a new report to upload Excel or PDF files."
+        },
+        "actions": {
+            "resetForm": "Reset Form"
+        },
+        "assetModal": {
+            "title": "Edit asset"
         }
     },
     "systemControl": {

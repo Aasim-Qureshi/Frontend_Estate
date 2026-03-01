@@ -586,6 +586,13 @@
             "storeAndSubmitNow": "حفظ وارسال الآن",
             "storeAndSubmitLater": "حفظ وارسال لاحقًا"
         },
+        "workflow": {
+            "step1Badge": "الخطوة 1",
+            "step1UploadExcel": "الخطوة 1: رفع ملف إكسل",
+            "step2UploadPdfOptional": "الخطوة 2: رفع ملف PDF (اختياري)",
+            "step3StoreSubmitAction": "الخطوة 3: إجراء الحفظ والإرسال",
+            "openValidationModal": "فتح نافذة التحقق واستكمال الخطوات"
+        },
         "editModal": {
             "title": "تعديل التقرير",
             "close": "إغلاق",
@@ -749,16 +756,18 @@
                 "noIssues": "لم يتم اكتشاف مشكلات في الأصول."
             },
             "footerHint": "أغلق اللوحة بعد مراجعة المشكلات.",
-            "footerContinueHint": "تابع لتعديل معلومات التقرير ثم اختر إجراء الرفع.",
+            "footerContinueHint": "تابع إلى الخطوة 2 (اختياري: معلومات التقرير)، ثم الخطوة 3 (اختياري: PDF)، وأخيرًا خطوة المتابعة 4.",
             "panelHeader": "التحقق من ملف الإكسل",
             "step2": {
-                "title": "الخطوة 2: تعديل معلومات التقرير",
-                "subtitle": "حدّث حقول التقرير المهمة ثم اختر رفع ملفات PDF أو استخدام الملف البديل.",
+                "badge": "الخطوة 2 (اختياري)",
+                "title": "الخطوة 2 (اختياري): تعديل معلومات التقرير",
+                "subtitle": "يمكنك تعديل معلومات التقرير المهمة أو تخطي هذه الخطوة الاختيارية.",
                 "fixValidationFirst": "أصلح مشكلات التحقق أولًا، ثم اختر أحد أزرار الإجراء أدناه.",
-                "actionHint": "اختر كيفية المتابعة للتقارير المرفوعة.",
+                "actionHint": "الخطوة 4: اختر كيفية المتابعة للتقارير المرفوعة.",
                 "back": "العودة إلى التحقق",
                 "pdfSection": {
-                    "title": "إرفاق ملفات PDF (اختياري)",
+                    "badgeOptional": "الخطوة 3 (اختياري)",
+                    "title": "الخطوة 3: إرفاق ملفات PDF (اختياري)",
                     "subtitle": "يمكنك رفع ملفات PDF المطابقة الآن، أو التخطي واستخدام الملف البديل تلقائيًا.",
                     "modeUpload": "وضع الرفع",
                     "modePlaceholder": "وضع الملف البديل",
@@ -771,6 +780,9 @@
                     "matchSuccess": "جميع ملفات PDF المحددة تطابق أسماء ملفات الإكسل.",
                     "moreFiles": "+{{count}} ملف إضافي"
                 }
+            },
+            "step3": {
+                "badge": "الخطوة 4"
             }
         },
         "validation": {
@@ -894,6 +906,224 @@
             "stopSubmission": "هل أنت متأكد أنك تريد إيقاف إرسال هذا التقرير؟ سيفقد التقدم.",
             "deleteReport": "هل أنت متأكد أنك تريد حذف هذا التقرير؟",
             "deleteMultipleReports": "هل أنت متأكد أنك تريد حذف {{count}} تقريرًا؟"
+        }
+    },
+    "uploadAssets": {
+        "commonFields": {
+            "title": "الحقول المشتركة",
+            "inspectionDate": "تاريخ المعاينة",
+            "region": "المنطقة",
+            "city": "المدينة",
+            "ownerName": "اسم المالك",
+            "selectRegion": "اختر المنطقة",
+            "selectCity": "اختر المدينة",
+            "selectRegionFirst": "اختر المنطقة أولاً",
+            "ownerPlaceholder": "اسم المالك",
+            "completeUploadSteps": "استكمال خطوات رفع الاصول"
+        },
+        "actions": {
+            "storing": "جارٍ الحفظ..."
+        },
+        "progress": {
+            "starting": "بدء الإرسال...",
+            "processing": "جارٍ المعالجة...",
+            "pause": "إيقاف مؤقت",
+            "resume": "استئناف",
+            "stop": "إيقاف"
+        },
+        "preview": {
+            "title": "معاينة البيانات",
+            "records": "{{count}} سجل",
+            "showing": "عرض {{shown}} من {{total}} سجل",
+            "firstRows": "(أول 50 صف)",
+            "columns": "الأعمدة:",
+            "totalRows": "إجمالي الصفوف:",
+            "noData": "لا توجد بيانات للمعاينة",
+            "extracting": "جارٍ استخراج البيانات...",
+            "processing": "جارٍ معالجة ملف الإكسل",
+            "validationHint": "ستظهر نتائج التحقق هنا"
+        },
+        "reportsTable": {
+            "title": "إدارة التقارير",
+            "subtitle": "عرض وإدارة جميع التقارير",
+            "searchPlaceholder": "ابحث برقم التقرير...",
+            "filters": {
+                "all": "الكل",
+                "pending": "قيد الانتظار",
+                "completed": "مكتمل",
+                "sent": "مرسل"
+            },
+            "perPage": "{{count}} لكل صفحة",
+            "table": {
+                "createdDate": "تاريخ الإنشاء",
+                "assetId": "معرّف الأصل",
+                "name": "الاسم",
+                "inspectionDate": "تاريخ المعاينة",
+                "value": "القيمة",
+                "submitState": "حالة الإرسال"
+            },
+            "filteredSummary": "عرض {{filtered}} من أصل {{total}} تقرير",
+            "matching": "مطابق لـ \"{{query}}\"",
+            "withStatus": "بالحالة: {{status}}",
+            "noReportsFound": "لا توجد تقارير",
+            "clearFilters": "امسح عوامل التصفية لعرض كل التقارير",
+            "assetsSection": {
+                "title": "أصول التقرير",
+                "count": "{{count}} أصل",
+                "submitted": "مرسل"
+            },
+            "assetsEmpty": {
+                "all": "لا توجد أصول في هذا التقرير",
+                "completed": "لا توجد أصول مكتملة",
+                "pending": "لا توجد أصول قيد الانتظار"
+            },
+            "status": {
+                "pending": "قيد الانتظار"
+            }
+        },
+        "messages": {
+            "noFileSelected": "لم يتم اختيار ملف.",
+            "extractFailed": "فشل استخراج البيانات من ملف الإكسل.",
+            "noPreviewData": "لم يتم إرجاع بيانات للمعاينة.",
+            "extractSuccess": "تم استخراج {{count}} سجل بنجاح (سوق: {{market}}، تكلفة: {{cost}}).",
+            "extractPreviewFailed": "فشل استخراج المعاينة عبر التكامل.",
+            "reportIdFromFileFailed": "تعذّر استخراج رقم التقرير من اسم الملف. تحقق من اسم الملف.",
+            "noDataToUpload": "لا توجد بيانات للرفع.",
+            "failedToCreateReport": "فشل إنشاء التقرير.",
+            "flowCompletionFailed": "فشل إكمال العملية: {{message}}",
+            "unknownError": "خطأ غير معروف",
+            "createSuccess": "تم إنشاء التقرير \"{{reportId}}\" بعدد {{count}} أصل.",
+            "commonFieldInspectionDate": "تاريخ المعاينة: {{value}}",
+            "commonFieldRegion": "المنطقة: {{value}}",
+            "commonFieldCity": "المدينة: {{value}}",
+            "commonFieldOwner": "المالك: {{value}}",
+            "commonFieldsApplied": "تم تطبيق الحقول المشتركة:",
+            "flowCompleted": "اكتملت العملية: تمت معالجة {{count}} أصل.",
+            "authFailed": "فشلت المصادقة.",
+            "unexpectedError": "حدث خطأ غير متوقع.",
+            "fillCommonFields": "يرجى تعبئة جميع الحقول المشتركة (تاريخ المعاينة، المنطقة، المدينة، واسم المالك).",
+            "storeSuccess": "تم حفظ التقرير \"{{reportId}}\" بعدد {{count}} أصل للإرسال لاحقًا.",
+            "sessionExpired": "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
+        }
+    },
+    "multiExcelUpload": {
+        "actions": {
+            "show": "إظهار",
+            "hide": "إخفاء",
+            "storing": "جارٍ الحفظ...",
+            "creatingReports": "جارٍ إنشاء التقارير...",
+            "openValidation": "فتح التحقق والإجراءات"
+        },
+        "validationConsole": {
+            "title": "لوحة التحقق",
+            "subtitle": "راجع ملفات الإكسل وتحقق منها قبل الرفع.",
+            "revalidate": "إعادة التحقق",
+            "tableHidden": "الجدول مخفي.",
+            "empty": "ستظهر نتائج التحقق هنا بعد قراءة ملف الإكسل.",
+            "step1": "الخطوة 1: التحقق",
+            "step2": "الخطوة 2: ملفات PDF والإجراءات",
+            "step1Hint": "راجع نتائج التحقق ثم تابع إلى الخطوة 2 لرفع PDF واختيار الإجراء.",
+            "continueStep2": "متابعة إلى الخطوة 2",
+            "issue": "مشكلة",
+            "issueCount": "{{count}} مشكلة",
+            "allFieldsOk": "جميع الحقول سليمة",
+            "value": "القيمة",
+            "notes": "ملاحظات",
+            "ok": "سليم",
+            "missing": "مفقود",
+            "looksGood": "يبدو جيدًا",
+            "missingInExcel": "مفقود في الإكسل",
+            "na": "غير متاح",
+            "issueDetected": "تم اكتشاف مشكلة",
+            "assetsSummary": "ملخص الأصول وملفات PDF",
+            "market": "السوق",
+            "cost": "التكلفة",
+            "marketTotal": "إجمالي السوق",
+            "costTotal": "إجمالي التكلفة",
+            "assetsTotal": "إجمالي الأصول",
+            "reportTotal": "إجمالي التقرير",
+            "issues": "المشكلات",
+            "matched": "متطابق",
+            "reportInfo": {
+                "purpose": "غرض التقييم",
+                "valueAttributes": "خصائص القيمة",
+                "report": "التقرير",
+                "clientName": "اسم العميل",
+                "clientTelephone": "هاتف العميل",
+                "clientEmail": "بريد العميل",
+                "valuers": "المقيمون",
+                "dateOfValuation": "تاريخ التقييم",
+                "reportIssuingDate": "تاريخ إصدار التقرير"
+            }
+        },
+        "reports": {
+            "pageLabel": "الصفحة:",
+            "of": "من",
+            "searchResult": "تم العثور على {{count}} تقرير مطابق لعبارة \"{{query}}\" في هذه الصفحة",
+            "empty": "لا توجد تقارير متعددة حتى الآن.",
+            "assetsNoMatch": "لا توجد أصول تطابق الحالة المحددة.",
+            "row": {
+                "downloadCertificate": "تنزيل الشهادة"
+            },
+            "assets": {
+                "actions": "إجراءات الأصول",
+                "retrySubmission": "إعادة المحاولة",
+                "filter": {
+                    "all": "كل الأصول"
+                },
+                "notCreated": "لم يتم الإنشاء"
+            }
+        }
+    },
+    "duplicateReport": {
+        "quickActions": {
+            "title": "إجراءات سريعة"
+        },
+        "validation": {
+            "title": "التحقق من الإكسل (السوق والتكلفة)",
+            "sheets": "أوراق السوق والتكلفة",
+            "readingExcel": "جارٍ قراءة الإكسل...",
+            "assetsCount": "الأصول: {{total}} (السوق {{market}}، التكلفة {{cost}})",
+            "issuesTitle": "مشكلات التحقق",
+            "showingFirst": "عرض أول {{limit}} من {{total}} أصل.",
+            "table": {
+                "sheet": "الورقة",
+                "assetUsage": "معرف استخدام الأصل",
+                "region": "المنطقة",
+                "city": "المدينة"
+            }
+        },
+        "reports": {
+            "empty": "لا توجد تقارير يدوية حتى الآن.",
+            "rows": "الصفوف",
+            "pageOf": "الصفحة {{page}} / {{total}}",
+            "assetsNoMatch": "لا توجد أصول تطابق الحالة المحددة.",
+            "row": {
+                "downloadCertificate": "تنزيل الشهادة"
+            },
+            "assets": {
+                "actions": "إجراءات الأصول",
+                "retrySubmission": "إعادة المحاولة",
+                "all": "كل الأصول",
+                "notCreated": "لم يتم الإنشاء"
+            }
+        },
+        "attachments": {
+            "title": "مرفقات الأصول",
+            "uploadExcel": "رفع إكسل (السوق والتكلفة)",
+            "uploadExcelHint": "يجب أن يحتوي على أوراق: market و cost.",
+            "lastSelected": "آخر اختيار: {{name}}",
+            "selectFile": "اختيار ملف",
+            "uploadPdfOptional": "رفع PDF (اختياري)",
+            "uploadPdfHint": "أرفق ملف PDF واحد لهذا التقرير.",
+            "pdfDisabled": "رفع PDF معطل.",
+            "locked": "المرفقات مقفلة أثناء التعديل. أنشئ تقريرًا جديدًا لرفع ملفات الإكسل أو PDF."
+        },
+        "actions": {
+            "resetForm": "إعادة تعيين النموذج"
+        },
+        "assetModal": {
+            "title": "تعديل الأصل"
         }
     },
     "systemControl": {

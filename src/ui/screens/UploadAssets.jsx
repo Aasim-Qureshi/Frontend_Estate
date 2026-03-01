@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useRam } from "../context/RAMContext";
 import { useNavStatus } from "../context/NavStatusContext";
 import { useSession } from "../context/SessionContext";
@@ -9,13 +10,13 @@ import InsufficientPointsModal from "../components/InsufficientPointsModal";
 import {
   AlertTriangle,
   Table,
-  FileText,
+  FileSpreadsheet,
   Calendar,
   MapPin,
   User,
   CheckCircle2,
   Loader2,
-  Download,
+  ChevronRight,
   RefreshCw,
   Send,
   FileIcon,
@@ -23,17 +24,26 @@ import {
 import ReportsTable from "../components/ReportsTable";
 import DeductionNotification from "../components/DeductionNotification";
 import { downloadTemplateFile } from "../utils/templateDownload";
+import excelIconFallback from "../../../public/images/excelicon.png";
 
 const UPLOAD_ASSETS_PAGE_NAME = "Upload Assets";
 const UPLOAD_ASSETS_PAGE_SOURCE = "upload-assets";
 
 const UploadAssets = ({ onViewChange }) => {
+  const { t, i18n } = useTranslation();
+  const translate = (key, defaultValue, options = {}) =>
+    t(`uploadAssets.${key}`, { defaultValue, ...options });
+  const quickTranslate = (key, defaultValue, options = {}) =>
+    t(`submitReportsQuickly.${key}`, { defaultValue, ...options });
+  const isArabicUi = useMemo(
+    () => i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) === "rtl",
+    [i18n, i18n?.language, i18n?.resolvedLanguage],
+  );
   const [excelFileName, setExcelFileName] = useState(null);
   const [showInsufficientPointsModal, setShowInsufficientPointsModal] =
     useState(false);
   const [excelFilePath, setExcelFilePath] = useState(null);
   const [previewData, setPreviewData] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
@@ -41,6 +51,11 @@ const UploadAssets = ({ onViewChange }) => {
   const [flowPaused, setFlowPaused] = useState({});
   const [flowStopped, setFlowStopped] = useState({});
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationModalStep, setValidationModalStep] = useState("validation");
+  const [excelIconSrc, setExcelIconSrc] = useState(excelIconFallback);
+  const [hasAutoOpenedValidationModal, setHasAutoOpenedValidationModal] =
+    useState(false);
 
   const [submitProgress, setSubmitProgress] = useState({});
   const { selectedCompany } = useValueNav();
@@ -82,6 +97,9 @@ const UploadAssets = ({ onViewChange }) => {
       setSuccess("");
       setPreviewData(null);
       setReportId("");
+      setShowValidationModal(false);
+      setValidationModalStep("validation");
+      setHasAutoOpenedValidationModal(false);
 
       // Use electron's showOpenDialog
       const dlgResult = await window.electronAPI.showOpenDialog({
@@ -105,7 +123,7 @@ const UploadAssets = ({ onViewChange }) => {
       const filePath = dlgResult.filePaths[0];
 
       if (!filePath) {
-        setError("No file selected");
+        setError(translate("messages.noFileSelected", "No file selected"));
         return;
       }
 
@@ -116,7 +134,6 @@ const UploadAssets = ({ onViewChange }) => {
       const extractedReportId = extractFileNameWithoutExtension(filePath);
       setReportId(extractedReportId);
 
-      setPreviewLoading(true);
       console.log("[UploadAssets] calling extract-asset-data for", filePath);
 
       const result = await window.electronAPI.extractAssetData(filePath);
@@ -125,13 +142,22 @@ const UploadAssets = ({ onViewChange }) => {
 
       if (result?.status === "FAILED" || result?.error) {
         throw new Error(
-          result.error || "Failed to extract data from Excel file",
+          result.error ||
+            translate(
+              "messages.extractFailed",
+              "Failed to extract data from Excel file",
+            ),
         );
       }
 
       const preview = result?.data ?? null;
       if (!preview) {
-        setError("No preview data returned from extract-asset-data.");
+        setError(
+          translate(
+            "messages.noPreviewData",
+            "No preview data returned from extract-asset-data.",
+          ),
+        );
         setPreviewData(null);
       } else {
         const processedData = processPreviewData(
@@ -140,15 +166,27 @@ const UploadAssets = ({ onViewChange }) => {
         setPreviewData(processedData);
         const info = result?.info || {};
         setSuccess(
-          `Successfully extracted ${processedData.length} records (${info.marketCount || 0} market approach, ${info.costCount || 0} cost approach)`,
+          translate(
+            "messages.extractSuccess",
+            "Successfully extracted {{count}} records ({{market}} market approach, {{cost}} cost approach)",
+            {
+              count: processedData.length,
+              market: info.marketCount || 0,
+              cost: info.costCount || 0,
+            },
+          ),
         );
       }
     } catch (err) {
       console.error("[UploadAssets] error extracting preview:", err);
-      setError(err?.message || "Failed to extract preview via IPC");
+      setError(
+        err?.message ||
+          translate(
+            "messages.extractPreviewFailed",
+            "Failed to extract preview via IPC",
+          ),
+      );
       setPreviewData(null);
-    } finally {
-      setPreviewLoading(false);
     }
   };
 
@@ -162,6 +200,50 @@ const UploadAssets = ({ onViewChange }) => {
   const [city, setCity] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [availableCities, setAvailableCities] = useState([]);
+  const missingCommonFields = useMemo(() => {
+    const missing = [];
+
+    if (!inspectionDate) {
+      missing.push(translate("commonFields.inspectionDate", "Inspection Date"));
+    }
+    if (!region) {
+      missing.push(translate("commonFields.region", "Region"));
+    }
+    if (!city) {
+      missing.push(translate("commonFields.city", "City"));
+    }
+    if (!ownerName) {
+      missing.push(translate("commonFields.ownerName", "Owner Name"));
+    }
+
+    return missing;
+  }, [inspectionDate, region, city, ownerName, t]);
+
+  const hasPreviewRecords = !!(previewData && previewData.length > 0);
+  const hasExcelStepReady = !!(excelFileName && reportId.trim() && hasPreviewRecords);
+  const hasCommonFieldsStepReady = missingCommonFields.length === 0;
+  const isValidationReady = hasExcelStepReady && hasCommonFieldsStepReady;
+
+  useEffect(() => {
+    if (!hasExcelStepReady || !hasCommonFieldsStepReady) {
+      setHasAutoOpenedValidationModal(false);
+      return;
+    }
+
+    if (showValidationModal || hasAutoOpenedValidationModal || uploadLoading) {
+      return;
+    }
+
+    setValidationModalStep("validation");
+    setShowValidationModal(true);
+    setHasAutoOpenedValidationModal(true);
+  }, [
+    hasExcelStepReady,
+    hasCommonFieldsStepReady,
+    showValidationModal,
+    hasAutoOpenedValidationModal,
+    uploadLoading,
+  ]);
 
   // Get RAM info from context
   const { ramInfo } = useRam();
@@ -170,19 +252,6 @@ const UploadAssets = ({ onViewChange }) => {
   const getTabsCount = () => {
     return ramInfo?.recommendedTabs || 1;
   };
-
-  // Updated table headings to match backend field names
-  const tableHeadings = [
-    "asset_name",
-    "asset_usage_id",
-    "market_approach",
-    "market_approach_value",
-    "cost_approach",
-    "cost_approach_value",
-    "region",
-    "city",
-    "inspection_date",
-  ];
 
   // Saudi Arabia regions and cities data
   const saudiRegions = {
@@ -241,13 +310,25 @@ const UploadAssets = ({ onViewChange }) => {
     setDownloadingTemplate(true);
     try {
       await downloadTemplateFile("upload-assets-template.xlsx");
-      setSuccess("Excel template downloaded successfully.");
+      setSuccess(
+        quickTranslate(
+          "messages.success.templateDownloaded",
+          "Excel template downloaded successfully.",
+        ),
+      );
     } catch (err) {
       const message =
-        err?.message || "Failed to download Excel template. Please try again.";
+        err?.message ||
+        quickTranslate(
+          "messages.error.templateDownload",
+          "Failed to download Excel template. Please try again.",
+        );
       setError(
         message.includes("not found")
-          ? "Template file not found. Please contact administrator to ensure the template file exists in the public folder."
+          ? quickTranslate(
+              "messages.error.templateNotFound",
+              "Template file not found. Please contact administrator to ensure the template file exists in the public folder.",
+            )
           : message,
       );
     } finally {
@@ -371,13 +452,16 @@ const UploadAssets = ({ onViewChange }) => {
     // Validation
     if (!reportId.trim()) {
       setError(
-        "Report ID could not be extracted from file name. Please check the file name.",
+        translate(
+          "messages.reportIdFromFileFailed",
+          "Report ID could not be extracted from file name. Please check the file name.",
+        ),
       );
       return;
     }
 
     if (!previewData || previewData.length === 0) {
-      setError("No data to upload");
+      setError(translate("messages.noDataToUpload", "No data to upload"));
       return;
     }
 
@@ -397,7 +481,7 @@ const UploadAssets = ({ onViewChange }) => {
               current: 0,
               total: 1,
               percentage: 0,
-              message: "Starting submission...",
+              message: translate("progress.starting", "Starting submission..."),
               status: "RUNNING",
             },
           }));
@@ -439,7 +523,13 @@ const UploadAssets = ({ onViewChange }) => {
           console.log("[UploadAssets] Upload response:", uploadResult);
 
           if (!uploadResult.success) {
-            throw new Error(uploadResult.message || "Failed to create report");
+            throw new Error(
+              uploadResult.message ||
+                translate(
+                  "messages.failedToCreateReport",
+                  "Failed to create report",
+                ),
+            );
           }
           window.dispatchEvent(
             new CustomEvent("refreshReportsTable", {
@@ -465,7 +555,15 @@ const UploadAssets = ({ onViewChange }) => {
 
           if (flowResult?.status !== "SUCCESS") {
             throw new Error(
-              `Flow completion failed: ${flowResult?.message || "Unknown error"}`,
+              translate(
+                "messages.flowCompletionFailed",
+                "Flow completion failed: {{message}}",
+                {
+                  message:
+                    flowResult?.message ||
+                    translate("messages.unknownError", "Unknown error"),
+                },
+              ),
             );
           }
 
@@ -474,23 +572,64 @@ const UploadAssets = ({ onViewChange }) => {
           console.log("[UploadAssets] Completed assets:", completedAssets);
 
           // Build success message
-          const successMessage = `Successfully created report "${reportId}" with ${previewData.length} assets`;
+          const successMessage = translate(
+            "messages.createSuccess",
+            'Successfully created report "{{reportId}}" with {{count}} assets',
+            {
+              reportId,
+              count: previewData.length,
+            },
+          );
 
           // Add common fields info if any were set
           const commonFieldsInfo = [];
-          if (inspectionDate)
-            commonFieldsInfo.push(`Inspection Date: ${inspectionDate}`);
-          if (region) commonFieldsInfo.push(`Region: ${region}`);
-          if (city) commonFieldsInfo.push(`City: ${city}`);
-          if (ownerName) commonFieldsInfo.push(`Owner: ${ownerName}`);
+          if (inspectionDate) {
+            commonFieldsInfo.push(
+              translate(
+                "messages.commonFieldInspectionDate",
+                "Inspection Date: {{value}}",
+                {
+                  value: inspectionDate,
+                },
+              ),
+            );
+          }
+          if (region) {
+            commonFieldsInfo.push(
+              translate("messages.commonFieldRegion", "Region: {{value}}", {
+                value: region,
+              }),
+            );
+          }
+          if (city) {
+            commonFieldsInfo.push(
+              translate("messages.commonFieldCity", "City: {{value}}", {
+                value: city,
+              }),
+            );
+          }
+          if (ownerName) {
+            commonFieldsInfo.push(
+              translate("messages.commonFieldOwner", "Owner: {{value}}", {
+                value: ownerName,
+              }),
+            );
+          }
 
           let fullMessage = successMessage;
           if (commonFieldsInfo.length > 0) {
-            fullMessage += `\n\nCommon fields applied:\n• ${commonFieldsInfo.join("\n• ")}`;
+            fullMessage += `\n\n${translate(
+              "messages.commonFieldsApplied",
+              "Common fields applied:",
+            )}\n• ${commonFieldsInfo.join("\n• ")}`;
           }
 
           if (flowResult?.summary) {
-            fullMessage += `\n\n✅ Flow completed: ${completedAssets || 0} assets processed`;
+            fullMessage += `\n\n${translate(
+              "messages.flowCompleted",
+              "Flow completed: {{count}} assets processed",
+              { count: completedAssets || 0 },
+            )}`;
           }
 
           return {
@@ -547,7 +686,10 @@ const UploadAssets = ({ onViewChange }) => {
               reason !== "INSUFFICIENT_POINTS" &&
               reason !== "LOGIN_REQUIRED"
             ) {
-              setError(reason?.message || "Authentication failed");
+              setError(
+                reason?.message ||
+                  translate("messages.authFailed", "Authentication failed"),
+              );
             }
           },
         },
@@ -585,7 +727,9 @@ const UploadAssets = ({ onViewChange }) => {
         return next;
       });
       setError(
-        error?.message || error?.error || "An unexpected error occurred",
+        error?.message ||
+          error?.error ||
+          translate("messages.unexpectedError", "An unexpected error occurred"),
       );
     } finally {
       setUploadLoading(false);
@@ -600,7 +744,9 @@ const UploadAssets = ({ onViewChange }) => {
       }
     } catch (error) {
       console.error("[UploadAssets] Error pausing flow:", error);
-      setError("Failed to pause flow");
+      setError(
+        quickTranslate("messages.error.pauseProcess", "Failed to pause process."),
+      );
     }
   };
 
@@ -612,7 +758,12 @@ const UploadAssets = ({ onViewChange }) => {
       }
     } catch (error) {
       console.error("[UploadAssets] Error resuming flow:", error);
-      setError("Failed to resume flow");
+      setError(
+        quickTranslate(
+          "messages.error.resumeProcess",
+          "Failed to resume process.",
+        ),
+      );
     }
   };
 
@@ -631,7 +782,9 @@ const UploadAssets = ({ onViewChange }) => {
       }
     } catch (error) {
       console.error("[UploadAssets] Error stopping flow:", error);
-      setError("Failed to stop flow");
+      setError(
+        quickTranslate("messages.error.stopProcess", "Failed to stop process."),
+      );
     }
   };
 
@@ -678,20 +831,26 @@ const UploadAssets = ({ onViewChange }) => {
     // Validation
     if (!reportId.trim()) {
       setError(
-        "Report ID could not be extracted from file name. Please check the file name.",
+        translate(
+          "messages.reportIdFromFileFailed",
+          "Report ID could not be extracted from file name. Please check the file name.",
+        ),
       );
       return;
     }
 
     if (!previewData || previewData.length === 0) {
-      setError("No data to upload");
+      setError(translate("messages.noDataToUpload", "No data to upload"));
       return;
     }
 
     // Check if all common fields are filled
     if (!inspectionDate || !region || !city || !ownerName) {
       setError(
-        "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+        translate(
+          "messages.fillCommonFields",
+          "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+        ),
       );
       return;
     }
@@ -732,23 +891,63 @@ const UploadAssets = ({ onViewChange }) => {
       console.log("[UploadAssets] Upload response:", uploadResult);
 
       if (!uploadResult.success) {
-        throw new Error(uploadResult.message || "Failed to create report");
+        throw new Error(
+          uploadResult.message ||
+            translate("messages.failedToCreateReport", "Failed to create report"),
+        );
       }
 
       // Build success message
-      const successMessage = `✅ Successfully stored report "${reportId}" with ${previewData.length} assets for later submission`;
+      const successMessage = translate(
+        "messages.storeSuccess",
+        'Successfully stored report "{{reportId}}" with {{count}} assets for later submission',
+        {
+          reportId,
+          count: previewData.length,
+        },
+      );
 
       // Add common fields info
       const commonFieldsInfo = [];
-      if (inspectionDate)
-        commonFieldsInfo.push(`Inspection Date: ${inspectionDate}`);
-      if (region) commonFieldsInfo.push(`Region: ${region}`);
-      if (city) commonFieldsInfo.push(`City: ${city}`);
-      if (ownerName) commonFieldsInfo.push(`Owner: ${ownerName}`);
+      if (inspectionDate) {
+        commonFieldsInfo.push(
+          translate(
+            "messages.commonFieldInspectionDate",
+            "Inspection Date: {{value}}",
+            {
+              value: inspectionDate,
+            },
+          ),
+        );
+      }
+      if (region) {
+        commonFieldsInfo.push(
+          translate("messages.commonFieldRegion", "Region: {{value}}", {
+            value: region,
+          }),
+        );
+      }
+      if (city) {
+        commonFieldsInfo.push(
+          translate("messages.commonFieldCity", "City: {{value}}", {
+            value: city,
+          }),
+        );
+      }
+      if (ownerName) {
+        commonFieldsInfo.push(
+          translate("messages.commonFieldOwner", "Owner: {{value}}", {
+            value: ownerName,
+          }),
+        );
+      }
 
       let fullMessage = successMessage;
       if (commonFieldsInfo.length > 0) {
-        fullMessage += `\n\nCommon fields applied:\n• ${commonFieldsInfo.join("\n• ")}`;
+        fullMessage += `\n\n${translate(
+          "messages.commonFieldsApplied",
+          "Common fields applied:",
+        )}\n• ${commonFieldsInfo.join("\n• ")}`;
       }
 
       setSuccess(fullMessage);
@@ -771,15 +970,41 @@ const UploadAssets = ({ onViewChange }) => {
         error?.message?.includes("token") ||
         error?.message?.includes("auth")
       ) {
-        setError("Your session has expired. Please log in again.");
+        setError(
+          translate(
+            "messages.sessionExpired",
+            "Your session has expired. Please log in again.",
+          ),
+        );
         // Optionally trigger login
         // login();
       } else {
-        setError(error?.message || "An unexpected error occurred");
+        setError(
+          error?.message ||
+            translate("messages.unexpectedError", "An unexpected error occurred"),
+        );
       }
     } finally {
       setUploadLoading(false);
     }
+  };
+
+  const openValidationModal = () => {
+    if (!isValidationReady) return;
+    setValidationModalStep("validation");
+    setShowValidationModal(true);
+    setHasAutoOpenedValidationModal(true);
+  };
+
+  const closeValidationModal = () => {
+    if (uploadLoading) return;
+    setShowValidationModal(false);
+    setValidationModalStep("validation");
+  };
+
+  const continueValidationModal = () => {
+    if (!isValidationReady || uploadLoading) return;
+    setValidationModalStep("action");
   };
 
   const removeFile = () => {
@@ -794,132 +1019,13 @@ const UploadAssets = ({ onViewChange }) => {
     setAvailableCities([]);
     setError("");
     setSuccess("");
-  };
-
-  const formatValue = (v) => {
-    if (v === null || v === undefined || v === "-") return "-";
-    if (typeof v === "boolean") return v ? "Yes" : "No";
-    if (typeof v === "object") {
-      if (v.value !== undefined) return formatValue(v.value);
-      return JSON.stringify(v);
-    }
-
-    if (typeof v === "string" && /^\d+$/.test(v) && v.length > 3) {
-      const num = parseInt(v);
-      if (num > 1000) {
-        return new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: "USD",
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0,
-        }).format(num);
-      }
-    }
-
-    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-      return new Date(v).toLocaleDateString();
-    }
-
-    return String(v);
-  };
-
-  const formatColumnName = (columnName) => {
-    return columnName
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
+    setShowValidationModal(false);
+    setValidationModalStep("validation");
+    setHasAutoOpenedValidationModal(false);
   };
 
   const getTodayDate = () => {
     return new Date().toISOString().split("T")[0];
-  };
-
-  const PreviewTable = ({ data }) => {
-    if (!data || data.length === 0)
-      return (
-        <div className="p-6 text-center text-slate-500 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
-          <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-          <div className="text-sm font-medium">No preview data to display</div>
-        </div>
-      );
-
-    const displayData = data.slice(0, 50);
-
-    return (
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 bg-slate-50/50">
-          <div className="flex items-center gap-2">
-            <Table className="w-4 h-4 text-blue-600" />
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">
-                Data Preview
-              </h3>
-              <p className="text-[10px] text-slate-600">
-                Showing {displayData.length} of {data.length} records
-                {displayData.length < data.length && " (first 50 rows)"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-h-96 overflow-auto">
-          <table className="min-w-full text-xs">
-            <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white sticky top-0">
-              <tr>
-                {tableHeadings.map((column) => (
-                  <th
-                    key={column}
-                    className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider border-r border-white/10 last:border-r-0"
-                  >
-                    {formatColumnName(column)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {displayData.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  className="hover:bg-blue-50/30 transition-colors"
-                >
-                  {tableHeadings.map((column) => (
-                    <td
-                      key={column}
-                      className={`px-2 py-1.5 border-r border-slate-100 last:border-r-0 whitespace-nowrap ${
-                        (column === "inspection_date" && inspectionDate) ||
-                        (column === "region" && region) ||
-                        (column === "city" && city)
-                          ? "text-emerald-600 font-semibold"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {formatValue(row[column])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-600">
-          <div className="flex justify-between items-center">
-            <span>
-              Columns:{" "}
-              <span className="font-semibold text-slate-800">
-                {tableHeadings.length}
-              </span>
-            </span>
-            <span>
-              Total rows:{" "}
-              <span className="font-semibold text-slate-800">
-                {data.length}
-              </span>
-            </span>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   // Check if upload should be enabled
@@ -944,7 +1050,10 @@ const UploadAssets = ({ onViewChange }) => {
     ownerName;
 
   return (
-    <div className="relative p-3 space-y-3 page-animate overflow-x-hidden">
+    <div
+      className="relative p-3 space-y-3 page-animate overflow-x-hidden"
+      dir={isArabicUi ? "rtl" : "ltr"}
+    >
       {showInsufficientPointsModal && (
         <div className="fixed inset-0 z-[9999]">
           {/* Modal positioned at top */}
@@ -959,111 +1068,203 @@ const UploadAssets = ({ onViewChange }) => {
 
       <DeductionNotification
         source="upload-assets"
-        defaultPageName={UPLOAD_ASSETS_PAGE_NAME}
+        defaultPageName={t("navigation.tabs.upload-assets.label", {
+          defaultValue: UPLOAD_ASSETS_PAGE_NAME,
+        })}
         defaultPageSource={UPLOAD_ASSETS_PAGE_SOURCE}
         onViewChange={onViewChange}
       />
 
-      {/* File Selection Section - Top */}
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3">
-        <div className="space-y-2">
-          {/* Main row with Excel input taking remaining width */}
-          <div className="flex items-center gap-2">
-            <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-dashed border-slate-300 bg-slate-50 cursor-pointer hover:bg-blue-50 hover:border-blue-400 transition-all flex-1 group">
-              <div className="flex items-center gap-2 text-xs text-slate-700">
-                <FileText className="w-4 h-4 text-blue-600 group-hover:text-blue-700" />
-                <span className="font-semibold">
-                  {excelFileName ? (
-                    <span className="truncate" title={excelFileName}>
-                      {excelFileName}
-                    </span>
-                  ) : (
-                    "Choose Excel file"
-                  )}
-                </span>
-              </div>
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onClick={(e) => {
-                  // Prevent the default file input dialog
-                  e.preventDefault();
-                  // Use electron's showOpenDialog instead
-                  openFileDialogAndExtract();
-                  // Reset the input
-                  e.target.value = null;
-                }}
-              />
-              <span className="text-xs font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">
-                Browse
+      <div className="space-y-2">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/25 shadow-[0_12px_32px_rgba(15,23,42,0.08)] p-2.5">
+          <div className="pointer-events-none absolute -top-12 -left-12 h-28 w-28 rounded-full bg-blue-200/20 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-14 -right-10 h-32 w-32 rounded-full bg-emerald-200/20 blur-2xl" />
+          <div
+            className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] items-stretch gap-1.5"
+            style={{ direction: isArabicUi ? "rtl" : "ltr" }}
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 text-[9px] font-semibold text-blue-700 whitespace-nowrap">
+                {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
               </span>
-            </label>
-
-            {/* Button container */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                disabled={downloadingTemplate}
-                className="inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              <label
+                className={`group relative flex min-h-[42px] flex-1 items-center gap-2 rounded-xl border border-slate-300/90 bg-white/90 px-2 py-1.5 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
+                  isArabicUi ? "text-right" : "text-left"
+                }`}
               >
-                {downloadingTemplate ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-                {downloadingTemplate ? "Downloading..." : "Export Template"}
-              </button>
-
-              <button
-                type="button"
-                onClick={removeFile}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors whitespace-nowrap"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Reset
-              </button>
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 ring-1 ring-blue-200/70">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-blue-700" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[10px] font-semibold text-slate-800">
+                    {excelFileName ? (
+                      <span title={excelFileName}>{excelFileName}</span>
+                    ) : (
+                      quickTranslate("filePicker.chooseExcel", "Choose Excel file")
+                    )}
+                  </span>
+                  <span className="block text-[8px] font-medium text-slate-500">
+                    .xlsx / .xls
+                  </span>
+                </span>
+                <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm transition-colors group-hover:bg-blue-700">
+                  {quickTranslate("filePicker.browse", "Browse")}
+                </span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openFileDialogAndExtract();
+                    e.target.value = null;
+                  }}
+                />
+              </label>
             </div>
-          </div>
 
-          {/* Status Messages */}
-          {(error || success) && (
-            <div
-              className={`rounded-lg border px-3 py-2 flex items-start gap-2 shadow-sm card-animate ${
-                error
-                  ? "bg-rose-50 text-rose-700 border-rose-300"
-                  : "bg-emerald-50 text-emerald-700 border-emerald-300"
-              }`}
+            <button
+              type="button"
+              onClick={openValidationModal}
+              disabled={!isValidationReady || uploadLoading}
+              className="inline-flex min-h-[42px] min-w-[142px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {error ? (
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <Table className="h-3.5 w-3.5" />
+              {translate(
+                "commonFields.completeUploadSteps",
+                "Complete Asset Upload Steps",
               )}
-              <div className="text-xs font-medium whitespace-pre-line">
-                {error || success}
+            </button>
+
+            <button
+              type="button"
+              onClick={removeFile}
+              className="group inline-flex min-h-[42px] min-w-[94px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2 text-[10px] font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-[1px] hover:border-slate-400 hover:bg-slate-50"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200 transition-colors group-hover:bg-slate-200">
+                <RefreshCw className="h-3 w-3" />
+              </span>
+              {quickTranslate("filePicker.reset", "Reset")}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              disabled={downloadingTemplate}
+              title={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              aria-label={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              className="group inline-flex min-h-[42px] min-w-[122px] w-auto items-center justify-center gap-1.5 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-2 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloadingTemplate ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-700" />
+              ) : (
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/80 ring-1 ring-emerald-200/90">
+                  <img
+                    src={excelIconSrc}
+                    alt="Excel icon"
+                    onError={() => setExcelIconSrc(excelIconFallback)}
+                    className="h-3.5 w-3.5 pointer-events-none object-contain"
+                  />
+                </span>
+              )}
+              <span className="text-[10px] font-semibold leading-tight">
+                {downloadingTemplate
+                  ? quickTranslate("filePicker.downloading", "Downloading...")
+                  : quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              </span>
+            </button>
+          </div>
+          {hasExcelStepReady && !hasCommonFieldsStepReady && (
+            <div className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800">
+              <div className="font-semibold">
+                {quickTranslate("validationModal.actionRequired", "Action required")}
+              </div>
+              <div className="mt-0.5">
+                {translate(
+                  "messages.fillCommonFields",
+                  "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+                )}
               </div>
             </div>
           )}
         </div>
+
+        {(error || success) && (
+          <div
+            className={`rounded-lg border px-3 py-2 flex items-start gap-2 shadow-sm card-animate ${
+              error
+                ? "bg-rose-50 text-rose-700 border-rose-300"
+                : "bg-emerald-50 text-emerald-700 border-emerald-300"
+            }`}
+          >
+            {error ? (
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            )}
+            <div className="text-xs font-medium whitespace-pre-line">
+              {error || success}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Common Fields Section - Full Row Below File Selection */}
       {previewData && (
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">
-            Common Fields
-          </h3>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <span className="mb-1 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                {quickTranslate("validationModal.step2.badge", "Step 2")}
+              </span>
+              <h3 className="text-sm font-semibold text-slate-800">
+                {quickTranslate("validationModal.step2.badge", "Step 2")}:{" "}
+                {translate("commonFields.title", "Common Fields")}
+              </h3>
+              <p className="mt-1 text-[11px] text-slate-600">
+                {quickTranslate(
+                  "validationModal.step2.subtitle",
+                  "Update important report fields before choosing how to continue.",
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                  hasCommonFieldsStepReady
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-amber-200 bg-amber-50 text-amber-700"
+                }`}
+              >
+                {hasCommonFieldsStepReady
+                  ? quickTranslate("validationModal.noIssues", "No issues detected")
+                  : quickTranslate("validationModal.actionRequired", "Action required")}
+              </span>
+              <button
+                type="button"
+                onClick={openValidationModal}
+                disabled={!isValidationReady || uploadLoading}
+                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-3 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Table className="h-3.5 w-3.5" />
+                {translate(
+                  "commonFields.completeUploadSteps",
+                  "Complete Asset Upload Steps",
+                )}
+              </button>
+            </div>
+          </div>
 
-          <div className="grid grid-cols-4 gap-3">
-            {/* Inspection Date */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Inspection Date
+                {translate("commonFields.inspectionDate", "Inspection Date")}
               </label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                <Calendar
+                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                    isArabicUi ? "right-3" : "left-3"
+                  }`}
+                />
                 <input
                   type="date"
                   value={inspectionDate}
@@ -1071,26 +1272,39 @@ const UploadAssets = ({ onViewChange }) => {
                     handleCommonFieldChange("inspectionDate", e.target.value)
                   }
                   max={getTodayDate()}
-                  className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
+                    isArabicUi
+                      ? "pr-10 pl-3 text-right"
+                      : "pl-10 pr-3 text-left"
+                  }`}
                 />
               </div>
             </div>
 
-            {/* Region */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Region
+                {translate("commonFields.region", "Region")}
               </label>
               <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                <MapPin
+                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                    isArabicUi ? "right-3" : "left-3"
+                  }`}
+                />
                 <select
                   value={region}
                   onChange={(e) =>
                     handleCommonFieldChange("region", e.target.value)
                   }
-                  className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white cursor-pointer"
+                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white cursor-pointer ${
+                    isArabicUi
+                      ? "pr-10 pl-3 text-right"
+                      : "pl-10 pr-3 text-left"
+                  }`}
                 >
-                  <option value="">Select Region</option>
+                  <option value="">
+                    {translate("commonFields.selectRegion", "Select Region")}
+                  </option>
                   {Object.keys(saudiRegions).map((regionName) => (
                     <option key={regionName} value={regionName}>
                       {regionName}
@@ -1100,23 +1314,35 @@ const UploadAssets = ({ onViewChange }) => {
               </div>
             </div>
 
-            {/* City */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                City
+                {translate("commonFields.city", "City")}
               </label>
               <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                <MapPin
+                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                    isArabicUi ? "right-3" : "left-3"
+                  }`}
+                />
                 <select
                   value={city}
                   onChange={(e) =>
                     handleCommonFieldChange("city", e.target.value)
                   }
                   disabled={!region}
-                  className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed"
+                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed ${
+                    isArabicUi
+                      ? "pr-10 pl-3 text-right"
+                      : "pl-10 pr-3 text-left"
+                  }`}
                 >
                   <option value="">
-                    {region ? "Select City" : "Select region first"}
+                    {region
+                      ? translate("commonFields.selectCity", "Select City")
+                      : translate(
+                          "commonFields.selectRegionFirst",
+                          "Select region first",
+                        )}
                   </option>
                   {availableCities.map((cityName) => (
                     <option key={cityName} value={cityName}>
@@ -1127,67 +1353,37 @@ const UploadAssets = ({ onViewChange }) => {
               </div>
             </div>
 
-            {/* Owner Name */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Owner Name
+                {translate("commonFields.ownerName", "Owner Name")}
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                <User
+                  className={`absolute top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none ${
+                    isArabicUi ? "right-3" : "left-3"
+                  }`}
+                />
                 <input
                   type="text"
                   value={ownerName}
                   onChange={(e) =>
                     handleCommonFieldChange("ownerName", e.target.value)
                   }
-                  className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                  placeholder="Owner name"
+                  className={`w-full py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all ${
+                    isArabicUi
+                      ? "pr-10 pl-3 text-right"
+                      : "pl-10 pr-3 text-left"
+                  }`}
+                  placeholder={translate(
+                    "commonFields.ownerPlaceholder",
+                    "Owner name",
+                  )}
                 />
               </div>
             </div>
           </div>
         </div>
       )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleUploadToDB}
-          disabled={!isUploadEnabled || uploadLoading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-green-600 hover:bg-green-700
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-        >
-          {uploadLoading ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Send className="w-3.5 h-3.5" />
-          )}
-          {uploadLoading ? "Uploading..." : "Store & Submit Now"}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleStoreAndSubmitLater}
-          disabled={!isStoreEnabled || uploadLoading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-blue-600 hover:bg-blue-700
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-        >
-          {uploadLoading ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <FileIcon className="w-4 h-4" />
-          )}
-          {uploadLoading ? "Storing..." : "Store & Submit Later"}
-        </button>
-      </div>
 
       {/* Progress Bar with Controls - Show if there's active progress */}
       {submitProgress[reportId?.trim()] && uploadLoading && (
@@ -1200,7 +1396,7 @@ const UploadAssets = ({ onViewChange }) => {
                   <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                   <span className="text-sm font-medium text-blue-900">
                     {submitProgress[reportId.trim()]?.message ||
-                      "Processing..."}
+                      translate("progress.processing", "Processing...")}
                   </span>
                 </div>
                 <span className="text-sm font-semibold text-blue-900">
@@ -1239,7 +1435,7 @@ const UploadAssets = ({ onViewChange }) => {
                       clipRule="evenodd"
                     />
                   </svg>
-                  Pause
+                  {translate("progress.pause", "Pause")}
                 </button>
               ) : (
                 <button
@@ -1258,7 +1454,7 @@ const UploadAssets = ({ onViewChange }) => {
                       clipRule="evenodd"
                     />
                   </svg>
-                  Resume
+                  {translate("progress.resume", "Resume")}
                 </button>
               )}
 
@@ -1278,45 +1474,314 @@ const UploadAssets = ({ onViewChange }) => {
                     clipRule="evenodd"
                   />
                 </svg>
-                Stop
+                {translate("progress.stop", "Stop")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Preview Table - Full Width Below Everything */}
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-800">Data Preview</h3>
-          {previewData && (
-            <div className="text-xs text-slate-600 font-medium">
-              {previewData.length} records
-            </div>
-          )}
-        </div>
-
-        {previewLoading ? (
-          <div className="flex items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            <div className="text-slate-600">
-              <div className="text-sm font-semibold">Extracting data...</div>
-              <div className="text-xs">Processing your Excel file</div>
-            </div>
-          </div>
-        ) : previewData ? (
-          <PreviewTable data={previewData} />
-        ) : (
-          <div className="text-center p-3 border-2 border-dashed border-300 rounded-lg bg-slate-50">
-            <div className="text-xs">Validation results will appear here</div>
-          </div>
-        )}
-      </div>
-
       {/* Reports Table Section */}
       <div className="mt-4">
         <ReportsTable onViewChange={onViewChange} showTemporary={false} />
       </div>
+
+      {showValidationModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex h-screen items-center justify-center overflow-y-auto px-4 py-6"
+          onClick={closeValidationModal}
+        >
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-6xl max-h-[95vh]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="pointer-events-none absolute -top-12 right-6 h-28 w-28 rounded-full bg-cyan-400/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-10 left-4 h-32 w-32 rounded-full bg-blue-500/20 blur-3xl" />
+            <div className="relative rounded-[32px] bg-gradient-to-br from-cyan-200/70 via-white to-blue-200/70 p-[1px] shadow-[0_40px_120px_rgba(15,23,42,0.35)]">
+              <div className="relative flex max-h-[95vh] flex-col overflow-hidden rounded-[32px] bg-white/95 backdrop-blur-xl">
+                <div className="relative sticky top-0 z-10 overflow-hidden bg-gradient-to-r from-slate-950 via-blue-900 to-slate-900 px-5 py-4 text-white">
+                  <div className="pointer-events-none absolute -right-10 top-0 h-20 w-20 rounded-full bg-cyan-400/25 blur-2xl" />
+                  <div className="pointer-events-none absolute left-6 top-6 h-16 w-16 rounded-full bg-indigo-500/20 blur-2xl" />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[9px] uppercase tracking-[0.3em] text-cyan-200 font-semibold">
+                        {quickTranslate("validationModal.title", "Excel Validation")}
+                      </div>
+                      <div className="mt-1 text-xs text-blue-100">
+                        {quickTranslate(
+                          "validationModal.subtitle",
+                          "Validation Results",
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold">
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
+                          {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
+                        </span>
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
+                          {quickTranslate("validationModal.step2.badge", "Step 2")}:
+                          {" "}
+                          {translate("commonFields.title", "Common Fields")}
+                        </span>
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
+                          {quickTranslate(
+                            "workflow.step3StoreSubmitAction",
+                            "Step 3: Store & Submit Action",
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={
+                        validationModalStep === "validation"
+                          ? continueValidationModal
+                          : closeValidationModal
+                      }
+                      disabled={
+                        uploadLoading ||
+                        (validationModalStep === "validation" &&
+                          !isValidationReady)
+                      }
+                      className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                      {quickTranslate("validationModal.continueButton", "Continue")}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="relative flex-1 overflow-y-auto px-5 py-4"
+                  style={{ direction: isArabicUi ? "rtl" : "ltr" }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_55%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.08),transparent_50%)]" />
+                  <div className="relative z-10 space-y-4">
+                    {validationModalStep === "validation" ? (
+                      <>
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <span className="mb-1 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                            {quickTranslate("workflow.step1UploadExcel", "Step 1: Upload Excel")}
+                          </span>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {quickTranslate("validationModal.table.headers.excel", "Excel")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800 truncate">
+                                {excelFileName || "-"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {quickTranslate("reports.table.reportId", "Report ID")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800 truncate">
+                                {reportId || "-"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {translate("preview.title", "Data Preview")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800">
+                                {translate("preview.records", "{{count}} records", {
+                                  count: previewData?.length || 0,
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <span className="mb-1 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                            {quickTranslate("validationModal.step2.badge", "Step 2")}
+                          </span>
+                          <div className="text-xs font-semibold text-slate-800">
+                            {translate("commonFields.title", "Common Fields")}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {translate("commonFields.inspectionDate", "Inspection Date")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800">
+                                {inspectionDate || "-"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {translate("commonFields.region", "Region")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800">
+                                {region || "-"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {translate("commonFields.city", "City")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800">
+                                {city || "-"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {translate("commonFields.ownerName", "Owner Name")}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-800">
+                                {ownerName || "-"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {isValidationReady ? (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-4 text-emerald-700 shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
+                            <div className="flex items-center gap-3">
+                              <CheckCircle2 className="w-6 h-6" />
+                              <div>
+                                <div className="text-sm font-semibold">
+                                  {quickTranslate(
+                                    "validationModal.noIssues",
+                                    "No issues detected",
+                                  )}
+                                </div>
+                                <p className="text-xs text-emerald-700/90">
+                                  {quickTranslate(
+                                    "validationModal.noIssuesDetails",
+                                    "Your Excel files look clean. You can proceed with uploading and submission.",
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-700 shadow-[0_10px_30px_rgba(245,158,11,0.12)]">
+                            <div className="text-sm font-semibold">
+                              {quickTranslate("validationModal.actionRequired", "Action required")}
+                            </div>
+                            <p className="text-xs text-amber-700/90">
+                              {translate(
+                                "messages.fillCommonFields",
+                                "Please fill all common fields (Inspection Date, Region, City, and Owner Name)",
+                              )}
+                            </p>
+                            {!!missingCommonFields.length && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {missingCommonFields.map((fieldName) => (
+                                  <span
+                                    key={fieldName}
+                                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700"
+                                  >
+                                    {fieldName}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              {quickTranslate("validationModal.step3.badge", "Step 3")}
+                            </span>
+                            <h3 className="text-sm font-semibold text-slate-800">
+                              {quickTranslate(
+                                "workflow.step3StoreSubmitAction",
+                                "Step 3: Store & Submit Action",
+                              )}
+                            </h3>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-600">
+                            {quickTranslate(
+                              "validationModal.step2.actionHint",
+                              "Choose how to continue with the uploaded reports.",
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/90 px-6 py-4 text-xs text-slate-500">
+                  {validationModalStep === "validation" ? (
+                    <>
+                      <span>
+                        {quickTranslate(
+                          "validationModal.footerContinueHint",
+                          "Continue to edit report info and choose the upload action.",
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={continueValidationModal}
+                        disabled={!isValidationReady || uploadLoading}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                        {quickTranslate("validationModal.continueButton", "Continue")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setValidationModalStep("validation")}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400"
+                      >
+                        {quickTranslate("validationModal.step2.back", "Back to validation")}
+                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleStoreAndSubmitLater}
+                          disabled={!isStoreEnabled || uploadLoading}
+                          className="inline-flex min-h-[46px] items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {uploadLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <FileIcon className="w-4 h-4" />
+                          )}
+                          {uploadLoading
+                            ? translate("actions.storing", "Storing...")
+                            : quickTranslate(
+                                "actions.storeAndSubmitLater",
+                                "Store and Submit Later",
+                              )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleUploadToDB}
+                          disabled={!isUploadEnabled || uploadLoading}
+                          className="inline-flex min-h-[46px] items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {uploadLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Send className="w-4 h-4" />
+                          )}
+                          {uploadLoading
+                            ? quickTranslate("actions.uploading", "Uploading...")
+                            : quickTranslate(
+                                "actions.storeAndSubmitNow",
+                                "Store and Submit Now",
+                              )}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
