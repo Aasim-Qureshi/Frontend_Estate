@@ -14,6 +14,7 @@ import {
     Layers,
     Loader2,
     LogOut,
+    Menu,
     RefreshCcw,
     Settings,
     ShieldCheck,
@@ -244,6 +245,11 @@ const Layout = ({ children, currentView, onViewChange }) => {
     const [profileImageFailed, setProfileImageFailed] = useState(false);
     const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
     const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isMobileNavExpanded, setIsMobileNavExpanded] = useState(false);
+    const [viewportWidth, setViewportWidth] = useState(
+        typeof window !== 'undefined' ? window.innerWidth : 1440
+    );
     const reconnectCloseTimerRef = useRef(null);
     const prevTaqeemStateRef = useRef(taqeemStatus?.state);
     const deviceMenuRef = useRef(null);
@@ -263,6 +269,13 @@ const Layout = ({ children, currentView, onViewChange }) => {
     useEffect(() => {
         setProfileImageFailed(false);
     }, [user?.profileImagePath, user?.profileImage, user?.avatar, user?.image]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+        const handleResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         if (!isDeviceMenuOpen && !isLanguageMenuOpen) return undefined;
@@ -739,11 +752,42 @@ const Layout = ({ children, currentView, onViewChange }) => {
         setActiveGroup(null);
         setActiveTab(null);
         resetNavigation();
+        setIsSidebarOpen(false);
+        setIsMobileNavExpanded(false);
         if (onViewChange) onViewChange(view);
     };
 
     const currentLangCode = i18n.language?.startsWith('ar') ? 'ar' : 'en';
+    const isCompactNav = viewportWidth < 1650;
+    const isUltraCompactNav = viewportWidth < 1450;
+    const isSidebarOverlay = viewportWidth < 1200;
+    const isMobileNav = viewportWidth < 980;
     const betaVersionLabel = currentLangCode === 'ar' ? 'نسخة بيتا 1.0.0' : 'Beta v1.0.0';
+    const sidebarDrawerEdge = uiDir === 'rtl' ? 'right-0' : 'left-0';
+    const sidebarDrawerHidden = uiDir === 'rtl' ? 'translate-x-full' : '-translate-x-full';
+
+    useEffect(() => {
+        if (!isSidebarOverlay) {
+            setIsSidebarOpen(false);
+        }
+        if (!isMobileNav) {
+            setIsMobileNavExpanded(false);
+        }
+    }, [isSidebarOverlay, isMobileNav]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+        if (!isSidebarOpen && !isMobileNavExpanded) return undefined;
+        const handleEscape = (event) => {
+            if (event?.key !== 'Escape') return;
+            setIsSidebarOpen(false);
+            setIsMobileNavExpanded(false);
+            setIsDeviceMenuOpen(false);
+            setIsLanguageMenuOpen(false);
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [isSidebarOpen, isMobileNavExpanded]);
 
     const handleLanguageChange = (langCode) => {
         if (!langCode || langCode === currentLangCode) return;
@@ -754,6 +798,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
     const handleGoProfile = () => {
         setActiveGroup('settings');
         setActiveTab('profile');
+        setIsSidebarOpen(false);
+        setIsMobileNavExpanded(false);
         if (onViewChange) {
             onViewChange('profile');
         }
@@ -763,6 +809,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
         setActiveGroup(null);
         setActiveTab(null);
         resetNavigation();
+        setIsSidebarOpen(false);
+        setIsMobileNavExpanded(false);
         if (onViewChange) {
             onViewChange('login');
         }
@@ -806,6 +854,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
         setShowTaqeemReconnect(false);
         setReconnectState('idle');
         setReconnectError('');
+        setIsSidebarOpen(false);
+        setIsMobileNavExpanded(false);
         setActiveGroup(null);
         setActiveTab(null);
         resetNavigation();
@@ -821,6 +871,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
         setActiveGroup(null);
         setActiveTab(null);
         resetAll();
+        setIsSidebarOpen(false);
+        setIsMobileNavExpanded(false);
         logout();
         if (onViewChange) {
             onViewChange('login');
@@ -1122,6 +1174,247 @@ const Layout = ({ children, currentView, onViewChange }) => {
         );
     };
 
+    const handleSidebarViewChange = (view) => {
+        if (onViewChange) {
+            onViewChange(view);
+        }
+        if (isSidebarOverlay) {
+            setIsSidebarOpen(false);
+        }
+        setIsMobileNavExpanded(false);
+        setIsDeviceMenuOpen(false);
+        setIsLanguageMenuOpen(false);
+    };
+
+    const handleHeaderViewChange = (view) => {
+        if (onViewChange) {
+            onViewChange(view);
+        }
+        setIsMobileNavExpanded(false);
+    };
+
+    const renderSystemStatusChip = () => (
+        <div className={`inline-flex shrink-0 items-center rounded-lg border border-slate-700/80 bg-slate-900/85 ${isCompactNav ? 'gap-1 px-1.5 py-1' : 'gap-1.5 px-2 py-1.5'}`}>
+            <span className="text-[9px] font-semibold text-slate-300">
+                {t('layout.status.systemState', {
+                    defaultValue: currentLangCode === 'ar' ? 'حالة النظام' : 'System Status'
+                })}:
+            </span>
+            <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${mode === 'active'
+                ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+                : mode === 'partial'
+                    ? 'border-amber-400/40 bg-amber-500/15 text-amber-100'
+                    : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
+                }`}>
+                <CircleDot className="h-3 w-3" />
+                {modeLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-100">
+                {betaVersionLabel}
+            </span>
+        </div>
+    );
+
+    const renderTaqeemControl = () => (
+        <button
+            type="button"
+            onClick={taqeemLoginClickable ? handleReconnectToTaqeem : undefined}
+            disabled={!taqeemLoginClickable}
+            title={!taqeemLoggedIn
+                ? t('taqeemReconnect.action', { defaultValue: 'Connect to Taqeem' })
+                : t('taqeemReconnect.success', { defaultValue: 'Reconnected to Taqeem successfully.' })}
+            className={`inline-flex h-9 shrink-0 items-center rounded-lg border ${isCompactNav ? 'gap-1 px-1.5' : 'gap-1.5 px-2'} text-[10px] font-semibold ${taqeemLoggedIn
+                ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100 cursor-not-allowed opacity-90'
+                : taqeemLoginClickable
+                    ? 'border-cyan-400/45 bg-cyan-500/20 text-cyan-100 hover:bg-cyan-500/30'
+                    : 'border-slate-600/70 bg-slate-700/30 text-slate-300 cursor-not-allowed opacity-90'
+                }`}
+        >
+            {!taqeemLoggedIn && reconnectState === 'opening' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+                <ShieldCheck className="h-3.5 w-3.5" />
+            )}
+            {!isUltraCompactNav && t('layout.status.taqeem', { defaultValue: 'Taqeem' })}
+            <span className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 text-[9px] font-semibold uppercase ${taqeemLoggedIn
+                ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+                : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
+                }`}>
+                <CircleDot className="h-2.5 w-2.5" />
+                {taqeemLoggedIn
+                    ? t('layout.status.on', { defaultValue: 'On' })
+                    : t('layout.status.off', { defaultValue: 'Off' })}
+            </span>
+        </button>
+    );
+
+    const renderCompanyControl = () => (
+        <div className={`inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 ${isCompactNav ? 'px-1' : 'px-1.5'}`}>
+            <Building2 className="h-3.5 w-3.5 text-cyan-200" />
+            {!isUltraCompactNav && (
+                <span className="text-[9px] font-semibold text-slate-300">
+                    {t('layout.status.company', { defaultValue: 'Company' })}:
+                </span>
+            )}
+            <select
+                value={getCompanySelectionKey(selectedCompany)}
+                onChange={(e) => handleCompanyChange(e.target.value)}
+                className={`rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-semibold text-slate-50 outline-none ${isUltraCompactNav
+                    ? 'w-[118px]'
+                    : isCompactNav
+                        ? 'w-[145px]'
+                        : 'w-[190px]'
+                    }`}
+            >
+                <option
+                    value=""
+                    style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}
+                >
+                    {t('layout.status.companyDefault', { defaultValue: 'No company selected' })}
+                </option>
+                {(companies || []).map((company) => (
+                    <option
+                        key={getCompanySelectionKey(company)}
+                        value={getCompanySelectionKey(company)}
+                        style={{ backgroundColor: '#0f172a', color: '#f8fafc' }}
+                    >
+                        {company.name || t('sidebar.company.fallback')}
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+
+    const renderDeviceMenuControl = () => (
+        <div ref={deviceMenuRef} className="relative shrink-0">
+            <button
+                type="button"
+                onClick={() => {
+                    setIsDeviceMenuOpen((prev) => !prev);
+                    setIsLanguageMenuOpen(false);
+                }}
+                className={`inline-flex h-9 items-center rounded-lg border border-slate-700/80 bg-slate-900/85 ${isCompactNav ? 'gap-1 px-1.5' : 'gap-1.5 px-2'} text-[10px] font-semibold text-slate-100 hover:border-slate-600`}
+            >
+                <HardDrive className="h-3.5 w-3.5 text-cyan-200" />
+                {!isUltraCompactNav && t('layout.nav.deviceCapability', {
+                    defaultValue: currentLangCode === 'ar' ? 'قدرة الجهاز' : 'Device Capability'
+                })}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isDeviceMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isDeviceMenuOpen && (
+                <div
+                    className="absolute z-40 mt-1 w-[320px] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-700/80 bg-slate-950/95 p-2 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
+                    style={uiDir === 'rtl' ? { right: 0 } : { left: 0 }}
+                >
+                    <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-slate-100">
+                            {t('layout.nav.deviceCapability', {
+                                defaultValue: currentLangCode === 'ar' ? 'قدرة الجهاز' : 'Device Capability'
+                            })}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={readRam}
+                            disabled={readingRam || !isRamAvailable}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-600/80 bg-slate-800/80 text-slate-100 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            title={!isRamAvailable ? t('layout.ram.unavailable') : t('layout.ram.refreshTitle')}
+                        >
+                            {readingRam ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <HardDrive className="h-3.5 w-3.5" />
+                            )}
+                        </button>
+                    </div>
+                    {ramError ? (
+                        <div className="rounded-lg border border-rose-400/35 bg-rose-500/15 px-2 py-1 text-[10px] text-rose-100">
+                            {ramError}
+                        </div>
+                    ) : (
+                        <div className="space-y-1 text-[10px] text-slate-100">
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
+                                {t('layout.nav.memoryRead', { defaultValue: 'قراءة الذاكرة' })}: {' '}
+                                {ramInfo
+                                    ? `${formatNumber(ramInfo.usedGb)}/${formatNumber(ramInfo.totalGb)} GB`
+                                    : t('layout.ram.unavailable')}
+                                {ramInfo && typeof ramInfo.freeGb === 'number'
+                                    ? ` | ${formatNumber(ramInfo.freeGb)} GB`
+                                    : ''}
+                                {ramInfo?.usagePercentage
+                                    ? ` | ${formatNumber(ramInfo.usagePercentage)}%`
+                                    : ''}
+                            </div>
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
+                                {t('layout.ram.recommendedTabs', { defaultValue: 'المهام الموصى بها' })}: {' '}
+                                {ramInfo?.recommendedTabs != null
+                                    ? formatNumber(ramInfo.recommendedTabs)
+                                    : '--'}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+
+    const renderLanguageMenuControl = () => (
+        <div ref={languageMenuRef} className="relative shrink-0">
+            <button
+                type="button"
+                onClick={() => {
+                    setIsLanguageMenuOpen((prev) => !prev);
+                    setIsDeviceMenuOpen(false);
+                }}
+                className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
+            >
+                {currentLangCode.toUpperCase()}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isLanguageMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isLanguageMenuOpen && (
+                <div
+                    className="absolute z-40 mt-1 w-[148px] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-700/80 bg-slate-950/95 p-1.5 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
+                    style={uiDir === 'rtl' ? { left: 0 } : { right: 0 }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => handleLanguageChange('ar')}
+                        className={`flex w-full items-center justify-between whitespace-nowrap rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'ar'
+                            ? 'bg-cyan-500/20 text-cyan-100'
+                            : 'text-slate-200 hover:bg-slate-800/80'
+                            }`}
+                    >
+                        <span>AR</span>
+                        <span>{t('common.arabic', { defaultValue: 'العربية' })}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleLanguageChange('en')}
+                        className={`mt-1 flex w-full items-center justify-between whitespace-nowrap rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'en'
+                            ? 'bg-cyan-500/20 text-cyan-100'
+                            : 'text-slate-200 hover:bg-slate-800/80'
+                            }`}
+                    >
+                        <span>EN</span>
+                        <span>{t('common.english', { defaultValue: 'English' })}</span>
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+
+    const renderNotificationControls = () => (
+        <div className={`inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 ${isCompactNav ? 'px-1' : 'px-1.5'}`}>
+            <NotificationBell onViewChange={handleHeaderViewChange} mode="unread" />
+            <NotificationBell onViewChange={handleHeaderViewChange} mode="all" />
+        </div>
+    );
+
+    const companySelectionHint = taqeemLoggedIn && companies && companies.length > 0 && !selectedCompany ? (
+        <div className="inline-flex h-9 shrink-0 items-center rounded-lg border border-amber-400/35 bg-amber-500/15 px-2 text-[10px] font-semibold text-amber-100">
+            {t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to complete uploading.' })}
+        </div>
+    ) : null;
+
     return (
         <div dir={uiDir} className="flex h-screen bg-slate-100 overflow-x-hidden max-w-full">
             {showGuestReloginModal && (
@@ -1248,7 +1541,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 <h3 className="text-sm font-semibold text-slate-900">
                                     {t('layout.companyModal.title', { defaultValue: 'Select a company to continue' })}
                                 </h3>
-                                <p className="text-[11px] text-slate-600">
+                                <p className="text-[11px] text-slate-800">
                                     {t('layout.companyModal.description', {
                                         defaultValue: 'This selects the active company for now. Change your default company from Settings when needed.'
                                     })}
@@ -1291,219 +1584,89 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 </div>
             )}
             {/* Sidebar */}
-            <Sidebar currentView={currentView} onViewChange={onViewChange} />
+            {isSidebarOverlay ? (
+                <>
+                    {isSidebarOpen && (
+                        <button
+                            type="button"
+                            aria-label={currentLangCode === 'ar' ? 'إغلاق القائمة الجانبية' : 'Close sidebar'}
+                            onClick={() => setIsSidebarOpen(false)}
+                            className="fixed inset-0 z-[60] bg-slate-950/60 backdrop-blur-[1px]"
+                        />
+                    )}
+                    <div
+                        className={`fixed inset-y-0 ${sidebarDrawerEdge} z-[65] transform-gpu transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : sidebarDrawerHidden} ${isSidebarOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                    >
+                        <Sidebar currentView={currentView} onViewChange={handleSidebarViewChange} />
+                    </div>
+                </>
+            ) : (
+                <Sidebar currentView={currentView} onViewChange={onViewChange} />
+            )}
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden max-w-full">
                 {/* Header */}
                 <header className="relative max-w-full overflow-visible border-b border-slate-800/80 bg-slate-950/95 shadow-[0_12px_24px_rgba(2,6,23,0.35)]">
-                    <div className="relative px-3 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 py-1.5">
-                                <AppWindow className="h-3.5 w-3.5 text-cyan-300" />
-                                <span className="text-[9px] font-semibold text-slate-300">
-                                    {t('layout.header.workspace', { defaultValue: 'Workspace' })}:
-                                </span>
-                                <span className="max-w-[220px] truncate text-[11px] font-semibold text-slate-100">
-                                    {headerTitle}
-                                </span>
-                            </div>
-
-                            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 py-1.5">
-                                <span className="text-[9px] font-semibold text-slate-300">
-                                    {t('layout.status.systemState', {
-                                        defaultValue: currentLangCode === 'ar' ? 'حالة النظام' : 'System Status'
-                                    })}:
-                                </span>
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${mode === 'active'
-                                    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
-                                    : mode === 'partial'
-                                        ? 'border-amber-400/40 bg-amber-500/15 text-amber-100'
-                                        : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
-                                    }`}>
-                                    <CircleDot className="h-3 w-3" />
-                                    {modeLabel}
-                                </span>
-                                <span className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-100">
-                                    {betaVersionLabel}
-                                </span>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={taqeemLoginClickable ? handleReconnectToTaqeem : undefined}
-                                disabled={!taqeemLoginClickable}
-                                title={!taqeemLoggedIn
-                                    ? t('taqeemReconnect.action', { defaultValue: 'Connect to Taqeem' })
-                                    : t('taqeemReconnect.success', { defaultValue: 'Reconnected to Taqeem successfully.' })}
-                                className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold ${taqeemLoggedIn
-                                    ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100 cursor-not-allowed opacity-90'
-                                    : taqeemLoginClickable
-                                        ? 'border-cyan-400/45 bg-cyan-500/20 text-cyan-100 hover:bg-cyan-500/30'
-                                        : 'border-slate-600/70 bg-slate-700/30 text-slate-300 cursor-not-allowed opacity-90'
-                                    }`}
-                            >
-                                {!taqeemLoggedIn && reconnectState === 'opening' ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <ShieldCheck className="h-3.5 w-3.5" />
-                                )}
-                                {t('layout.status.taqeem', { defaultValue: 'Taqeem' })}
-                                <span className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 text-[9px] font-semibold uppercase ${taqeemLoggedIn
-                                    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
-                                    : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
-                                    }`}>
-                                    <CircleDot className="h-2.5 w-2.5" />
-                                    {taqeemLoggedIn
-                                        ? t('layout.status.on', { defaultValue: 'On' })
-                                        : t('layout.status.off', { defaultValue: 'Off' })}
-                                </span>
-                            </button>
-
-                            <div className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5">
-                                <Building2 className="h-3.5 w-3.5 text-cyan-200" />
-                                <span className="text-[9px] font-semibold text-slate-300">
-                                    {t('layout.status.company', { defaultValue: 'Company' })}:
-                                </span>
-                                <select
-                                    value={getCompanySelectionKey(selectedCompany)}
-                                    onChange={(e) => handleCompanyChange(e.target.value)}
-                                    className="min-w-[170px] bg-transparent text-[10px] font-semibold text-slate-100 outline-none"
-                                >
-                                    <option value="">{t('layout.status.companyDefault', { defaultValue: 'No company selected' })}</option>
-                                    {(companies || []).map((company) => (
-                                        <option
-                                            key={getCompanySelectionKey(company)}
-                                            value={getCompanySelectionKey(company)}
-                                        >
-                                            {company.name || t('sidebar.company.fallback')}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div ref={deviceMenuRef} className="relative">
+                    <div className="relative px-2.5 py-2.5 sm:px-3 sm:py-3">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-visible">
+                            {isSidebarOverlay && (
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setIsDeviceMenuOpen((prev) => !prev);
-                                        setIsLanguageMenuOpen(false);
-                                    }}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
+                                    onClick={() => setIsSidebarOpen((prev) => !prev)}
+                                    aria-label={currentLangCode === 'ar' ? 'فتح القائمة الجانبية' : 'Open sidebar'}
+                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-900/85 text-slate-100 hover:border-slate-600"
                                 >
-                                    <HardDrive className="h-3.5 w-3.5 text-cyan-200" />
-                                    {t('layout.nav.deviceCapability', { defaultValue: 'قدرة الجهاز' })}
-                                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isDeviceMenuOpen ? 'rotate-180' : ''}`} />
+                                    <Menu className="h-4 w-4" />
                                 </button>
-                                {isDeviceMenuOpen && (
-                                    <div
-                                        className="absolute z-40 mt-1 w-[320px] rounded-xl border border-slate-700/80 bg-slate-950/95 p-2 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
-                                        style={uiDir === 'rtl' ? { right: 0 } : { left: 0 }}
-                                    >
-                                        <div className="mb-2 flex items-center justify-between">
-                                            <span className="text-[10px] font-semibold text-slate-100">
-                                                {t('layout.nav.deviceCapability', { defaultValue: 'قدرة الجهاز' })}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={readRam}
-                                                disabled={readingRam || !isRamAvailable}
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-600/80 bg-slate-800/80 text-slate-100 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                                title={!isRamAvailable ? t('layout.ram.unavailable') : t('layout.ram.refreshTitle')}
-                                            >
-                                                {readingRam ? (
-                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                ) : (
-                                                    <HardDrive className="h-3.5 w-3.5" />
-                                                )}
-                                            </button>
-                                        </div>
-                                        {ramError ? (
-                                            <div className="rounded-lg border border-rose-400/35 bg-rose-500/15 px-2 py-1 text-[10px] text-rose-100">
-                                                {ramError}
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-1 text-[10px] text-slate-100">
-                                                <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
-                                                    {t('layout.nav.memoryRead', { defaultValue: 'قراءة الذاكرة' })}: {' '}
-                                                    {ramInfo
-                                                        ? `${formatNumber(ramInfo.usedGb)}/${formatNumber(ramInfo.totalGb)} GB`
-                                                        : t('layout.ram.unavailable')}
-                                                    {ramInfo && typeof ramInfo.freeGb === 'number'
-                                                        ? ` | ${formatNumber(ramInfo.freeGb)} GB`
-                                                        : ''}
-                                                    {ramInfo?.usagePercentage
-                                                        ? ` | ${formatNumber(ramInfo.usagePercentage)}%`
-                                                        : ''}
-                                                </div>
-                                                <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
-                                                    {t('layout.ram.recommendedTabs', { defaultValue: 'المهام الموصى بها' })}: {' '}
-                                                    {ramInfo?.recommendedTabs != null
-                                                        ? formatNumber(ramInfo.recommendedTabs)
-                                                        : '--'}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {taqeemLoggedIn && companies && companies.length > 0 && !selectedCompany && (
-                                <div className="inline-flex h-9 items-center rounded-lg border border-amber-400/35 bg-amber-500/15 px-2 text-[10px] font-semibold text-amber-100">
-                                    {t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to complete uploading.' })}
-                                </div>
                             )}
 
-                            <div ref={languageMenuRef} className="relative" style={{ marginInlineStart: 'auto' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setIsLanguageMenuOpen((prev) => !prev);
-                                        setIsDeviceMenuOpen(false);
-                                    }}
-                                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
-                                >
-                                    {currentLangCode.toUpperCase()}
-                                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isLanguageMenuOpen ? 'rotate-180' : ''}`} />
-                                </button>
-                                {isLanguageMenuOpen && (
-                                    <div
-                                        className="absolute z-40 mt-1 min-w-[120px] rounded-xl border border-slate-700/80 bg-slate-950/95 p-1.5 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
-                                        style={uiDir === 'rtl' ? { left: 0 } : { right: 0 }}
+                            {renderSystemStatusChip()}
+
+                            {!isMobileNav && (
+                                <>
+                                    {renderTaqeemControl()}
+                                    {renderCompanyControl()}
+                                    {renderDeviceMenuControl()}
+                                    {companySelectionHint}
+                                </>
+                            )}
+
+                            <div className="ms-auto flex min-w-0 items-center gap-2">
+                                {!isMobileNav && renderLanguageMenuControl()}
+                                {!isMobileNav && renderNotificationControls()}
+                                {!isMobileNav && userBadge}
+
+                                {isMobileNav && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsMobileNavExpanded((prev) => !prev);
+                                            setIsLanguageMenuOpen(false);
+                                            setIsDeviceMenuOpen(false);
+                                        }}
+                                        className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
                                     >
-                                        <button
-                                            type="button"
-                                            onClick={() => handleLanguageChange('ar')}
-                                            className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'ar'
-                                                ? 'bg-cyan-500/20 text-cyan-100'
-                                                : 'text-slate-200 hover:bg-slate-800/80'
-                                                }`}
-                                        >
-                                            <span>AR</span>
-                                            <span>{t('common.arabic', { defaultValue: 'العربية' })}</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleLanguageChange('en')}
-                                            className={`mt-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'en'
-                                                ? 'bg-cyan-500/20 text-cyan-100'
-                                                : 'text-slate-200 hover:bg-slate-800/80'
-                                                }`}
-                                        >
-                                            <span>EN</span>
-                                            <span>{t('common.english', { defaultValue: 'English' })}</span>
-                                        </button>
-                                    </div>
+                                        {currentLangCode === 'ar' ? 'الخيارات' : 'Controls'}
+                                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isMobileNavExpanded ? 'rotate-180' : ''}`} />
+                                    </button>
                                 )}
                             </div>
-
-                            <div className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5">
-                                <NotificationBell onViewChange={onViewChange} mode="unread" />
-                                <NotificationBell onViewChange={onViewChange} mode="all" />
-                            </div>
-
-                            {userBadge}
                         </div>
+
+                        {isMobileNav && isMobileNavExpanded && (
+                            <div className="mt-2 grid w-full grid-cols-1 gap-2 rounded-xl border border-slate-700/80 bg-slate-900/55 p-2">
+                                {userBadge}
+                                {renderTaqeemControl()}
+                                {renderCompanyControl()}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {renderDeviceMenuControl()}
+                                    {renderLanguageMenuControl()}
+                                    {renderNotificationControls()}
+                                </div>
+                                {companySelectionHint}
+                            </div>
+                        )}
 
                         {updateNotice}
 
@@ -1549,7 +1712,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 </header>
 
                 {/* Page Content */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-1 pb-5 bg-transparent relative max-w-full">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 lg:px-6 pt-1 pb-5 bg-transparent relative max-w-full">
                     <div className="pointer-events-none absolute inset-0 z-0">
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.95),rgba(241,245,249,0.9))]" />
                     </div>

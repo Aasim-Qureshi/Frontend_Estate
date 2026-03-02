@@ -66,6 +66,7 @@
         "status": {
             "refreshTitle": "Refresh status",
             "refresh": "Refresh",
+            "systemState": "System Status",
             "taqeem": "Taqeem",
             "taqeemLogin": "Taqeem login",
             "company": "Company",
@@ -80,9 +81,14 @@
         "auth": {
             "userFallback": "User",
             "guest": "Guest",
+            "profile": "Profile",
             "logout": "Logout",
             "register": "Register",
             "login": "Login"
+        },
+        "nav": {
+            "deviceCapability": "Device Capability",
+            "memoryRead": "Memory Read"
         },
         "header": {
             "workspace": "Workspace",
@@ -96,7 +102,7 @@
             "usedOf": "Used {{used}} GB of {{total}} GB",
             "free": "Free {{free}} GB",
             "usage": "{{usage}}%",
-            "recommendedTabs": "Recommended Tabs"
+            "recommendedTabs": "Recommended Tasks"
         },
         "messages": {
             "inactive": "The system is currently inactive. Access to features is disabled.",
@@ -938,7 +944,9 @@
         "title": "My Reports",
         "summary": "Showing {{count}} rows (page {{page}})",
         "pagination": {
-            "perPage": "{{count}}/page"
+            "perPage": "{{count}}/page",
+            "previous": "Previous",
+            "next": "Next"
         },
         "filters": {
             "reportId": "Report ID",
@@ -957,6 +965,10 @@
             "ElrajhiReport": "Elrajhi Reports"
         },
         "states": {
+            "NEW": "New",
+            "APPROVED": "Approved",
+            "DRAFT": "Draft",
+            "IN_PROGRESS": "In Progress",
             "SENT": "Sent",
             "COMPLETE": "Complete",
             "CONFIRMED": "Confirmed",
@@ -976,7 +988,9 @@
             "reportId": "Report ID",
             "clientName": "Client Name",
             "source": "Source",
-            "status": "Status"
+            "status": "Status",
+            "officeId": "Office ID",
+            "updatedAt": "Updated At"
         },
         "messages": {
             "loading": "Loading...",
@@ -984,7 +998,12 @@
             "notCreated": "Not Created",
             "noTitle": "No Title",
             "searchPrompt": "Please enter something to search",
-            "searchFailed": "Search failed"
+            "searchFailed": "Search failed",
+            "loadingFailed": "Failed to load reports.",
+            "guestBootstrapFailed": "Failed to initialize guest session.",
+            "loginRequiredTitle": "Login required",
+            "loginRequiredMessage": "Your account is already registered. Please log in again to view reports and take actions.",
+            "loginRequiredAction": "Login with phone"
         }
     },
     "uploadAssets": {
@@ -1026,6 +1045,18 @@
             "title": "Reports Management",
             "subtitle": "View and manage all reports",
             "searchPlaceholder": "Search by Report ID...",
+            "actions": {
+                "selectAction": "Select action",
+                "fullCheck": "Full Check",
+                "halfCheck": "Half Check",
+                "retry": "Retry",
+                "send": "Send",
+                "paused": "Paused",
+                "processing": "Processing...",
+                "pause": "Pause",
+                "resume": "Resume",
+                "stop": "Stop"
+            },
             "filters": {
                 "all": "All",
                 "pending": "Pending",

@@ -5,6 +5,7 @@ import navigation from '../constants/navigation';
 import { useTranslation } from 'react-i18next';
 
 const { valueSystemCards, valueSystemGroups } = navigation;
+const EVALUATION_SOURCES_URL = 'https://www.sparkvision.sa/evaluation-source/cars';
 
 const cardIcons = {
     'uploading-reports': UploadCloud,
@@ -101,18 +102,23 @@ const Apps = ({ onViewChange }) => {
         })();
     };
 
-    const openEvaluationSources = (card) => {
-        const evaluationTabs = valueSystemGroups.evaluationSources?.tabs || [];
-        const mainTab = evaluationTabs.find((tab) => tab.id === 'yalla-motor')?.id
-            || evaluationTabs.find((tab) => tab.id === 'haraj-scrape')?.id
-            || evaluationTabs.find((tab) => tab.id === 'haraj')?.id
-            || evaluationTabs[0]?.id
-            || 'haraj-scrape';
-
-        chooseCard(card.id);
-        setActiveGroup('evaluationSources');
-        setActiveTab(mainTab);
-        if (onViewChange) onViewChange(mainTab);
+    const openEvaluationSources = async () => {
+        try {
+            if (window?.electronAPI?.openWebWindow) {
+                await window.electronAPI.openWebWindow({
+                    url: EVALUATION_SOURCES_URL,
+                    title: 'SparkVision - Evaluation Source'
+                });
+                return;
+            }
+            if (window?.electronAPI?.openExternal) {
+                await window.electronAPI.openExternal(EVALUATION_SOURCES_URL);
+                return;
+            }
+            window.open(EVALUATION_SOURCES_URL, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+            console.warn('Failed to open evaluation sources URL', err);
+        }
     };
 
     const handleCardClick = async (card) => {
@@ -121,7 +127,7 @@ const Apps = ({ onViewChange }) => {
             return;
         }
         if (card.id === 'evaluation-sources') {
-            openEvaluationSources(card);
+            await openEvaluationSources();
             return;
         }
         chooseCard(card.id);

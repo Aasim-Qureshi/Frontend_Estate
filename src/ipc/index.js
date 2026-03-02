@@ -31,6 +31,7 @@ function registerIpcHandlers() {
     ipcMain.removeHandler("api-request");
     ipcMain.removeHandler("read-ram");
     ipcMain.removeHandler("open-external");
+    ipcMain.removeHandler("open-web-window");
     ipcMain.removeHandler("download-image");
     ipcMain.removeHandler("show-image-window");
     ipcMain.removeHandler("read-file");
@@ -318,6 +319,11 @@ function registerIpcHandlers() {
       "open-external",
       workerHandlers.openExternal,
       "workerHandlers.openExternal",
+    );
+    safeHandle(
+      "open-web-window",
+      workerHandlers.openWebWindow,
+      "workerHandlers.openWebWindow",
     );
     safeHandle(
       "download-image",

@@ -6,6 +6,8 @@ const http = require("http");
 const fs = require("fs");
 const { app } = require("electron");
 
+let externalWebWindow = null;
+
 const workerHandlers = {
   async handlePing() {
     try {
@@ -283,6 +285,60 @@ const workerHandlers = {
       return { status: "SUCCESS" };
     } catch (error) {
       console.error("[MAIN] Open external error:", error);
+      return { status: "ERROR", error: error.message };
+    }
+  },
+
+  async openWebWindow(event, payload = {}) {
+    try {
+      const options =
+        typeof payload === "string" ? { url: payload } : payload || {};
+      const targetUrl = String(options.url || "").trim();
+      const title =
+        typeof options.title === "string" && options.title.trim()
+          ? options.title.trim()
+          : "Browser";
+
+      if (!targetUrl) {
+        throw new Error("Invalid URL provided");
+      }
+      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+        throw new Error("URL must start with http:// or https://");
+      }
+
+      if (externalWebWindow && !externalWebWindow.isDestroyed()) {
+        externalWebWindow.setTitle(title);
+        await externalWebWindow.loadURL(targetUrl);
+        externalWebWindow.show();
+        externalWebWindow.focus();
+        return { status: "SUCCESS" };
+      }
+
+      externalWebWindow = new BrowserWindow({
+        width: 1280,
+        height: 860,
+        minWidth: 1000,
+        minHeight: 700,
+        show: false,
+        autoHideMenuBar: true,
+        title,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      });
+
+      externalWebWindow.on("closed", () => {
+        externalWebWindow = null;
+      });
+
+      await externalWebWindow.loadURL(targetUrl);
+      externalWebWindow.show();
+      externalWebWindow.focus();
+      return { status: "SUCCESS" };
+    } catch (error) {
+      console.error("[MAIN] Open web window error:", error);
       return { status: "ERROR", error: error.message };
     }
   },

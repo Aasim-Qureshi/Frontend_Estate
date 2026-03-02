@@ -13,6 +13,7 @@ const SHOULD_OPEN_DEVTOOLS =
   process.env.ELECTRON_DEVTOOLS === "1" || process.argv.includes("--devtools");
 const STARTUP_TIMEOUT_MS = 60000;
 const LOADING_DELAY_MS = 3000;
+const AUTH_COOKIE_NAMES = ["refreshToken", "accessToken", "token"];
 const LOADING_ICON_PATH = path.join(__dirname, "assets", "icon.png");
 const LOADING_ICON_DATA_URL = fs.existsSync(LOADING_ICON_PATH)
   ? `data:image/png;base64,${fs.readFileSync(LOADING_ICON_PATH, "base64")}`
@@ -145,6 +146,57 @@ const LOADING_HTML =
 
 function isDevelopment() {
   return process.env.NODE_ENV === "development" || !app.isPackaged;
+}
+
+function buildCookieRemovalUrl(cookie) {
+  const host = String(cookie?.domain || "").replace(/^\./, "");
+  if (!host) return null;
+  const scheme = cookie?.secure ? "https" : "http";
+  const rawPath = String(cookie?.path || "/");
+  const pathPart = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+  return `${scheme}://${host}${pathPart}`;
+}
+
+async function clearAuthCookiesFromSession(targetSession) {
+  if (!targetSession?.cookies) return 0;
+
+  let removedCount = 0;
+  for (const cookieName of AUTH_COOKIE_NAMES) {
+    const cookies = await targetSession.cookies.get({ name: cookieName });
+    if (!Array.isArray(cookies) || cookies.length === 0) continue;
+
+    const removals = cookies.map(async (cookie) => {
+      const cookieUrl = buildCookieRemovalUrl(cookie);
+      if (!cookieUrl) return false;
+      await targetSession.cookies.remove(cookieUrl, cookie.name);
+      return true;
+    });
+
+    const results = await Promise.allSettled(removals);
+    results.forEach((result) => {
+      if (result.status === "fulfilled" && result.value === true) {
+        removedCount += 1;
+      }
+    });
+  }
+
+  return removedCount;
+}
+
+async function clearPersistedAuthState() {
+  try {
+    const removedCount = await clearAuthCookiesFromSession(
+      session.defaultSession,
+    );
+    if (removedCount > 0) {
+      console.log(`[MAIN] Cleared ${removedCount} persisted auth cookie(s).`);
+    }
+  } catch (error) {
+    console.warn(
+      "[MAIN] Failed to clear persisted auth state:",
+      error?.message || error,
+    );
+  }
 }
 
 function buildErrorPage(message) {
@@ -397,13 +449,19 @@ function createWindow() {
 }
 
 // Electron app event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Always start with a clean auth state so reopening the app requires login.
+  await clearPersistedAuthState();
+
   // Register IPC handlers BEFORE creating window to avoid race conditions
   registerIpcHandlers();
   createWindow();
 });
 
 app.on("window-all-closed", async () => {
+  // Drop persisted auth state on app close.
+  await clearPersistedAuthState();
+
   // Close Python worker gracefully when app is quitting
   try {
     await pythonAPI.closeWorker();

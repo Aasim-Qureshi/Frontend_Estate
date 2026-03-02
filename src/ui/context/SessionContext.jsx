@@ -1,6 +1,36 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
 const SessionContext = createContext();
+const USER_STORAGE_KEY = "user";
+const TOKEN_STORAGE_KEY = "token";
+
+const getSessionStorage = () => {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage || null;
+};
+
+const getLocalStorage = () => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage || null;
+};
+
+const safeRemove = (storage, key) => {
+  if (!storage) return;
+  try {
+    storage.removeItem(key);
+  } catch (error) {
+    console.warn(`Failed to remove ${key} from storage`, error);
+  }
+};
+
+const safeSet = (storage, key, value) => {
+  if (!storage) return;
+  try {
+    storage.setItem(key, value);
+  } catch (error) {
+    console.warn(`Failed to persist ${key} in storage`, error);
+  }
+};
 
 export const useSession = () => {
   const context = useContext(SessionContext);
@@ -39,10 +69,15 @@ export const SessionProvider = ({ children }) => {
     );
   };
 
-  // Initialize session from localStorage on mount
+  // Initialize session from sessionStorage on mount.
+  // Also clear legacy auth keys left in localStorage from older app versions.
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
-    const savedToken = localStorage.getItem("token");
+    const sessionStorageRef = getSessionStorage();
+    const localStorageRef = getLocalStorage();
+
+    const savedUser = sessionStorageRef?.getItem(USER_STORAGE_KEY);
+    const savedToken = sessionStorageRef?.getItem(TOKEN_STORAGE_KEY);
+
     if (savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
@@ -55,49 +90,72 @@ export const SessionProvider = ({ children }) => {
         }
       } catch (e) {
         console.error("Failed to parse saved user:", e);
-        localStorage.removeItem("user");
+        safeRemove(sessionStorageRef, USER_STORAGE_KEY);
       }
     }
+
     if (savedToken && savedToken !== "undefined" && savedToken !== "null") {
       setToken(savedToken);
     }
+
+    safeRemove(localStorageRef, USER_STORAGE_KEY);
+    safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
+
     setIsLoading(false);
   }, []);
 
   const login = (userData, accessToken) => {
+    const sessionStorageRef = getSessionStorage();
+    const localStorageRef = getLocalStorage();
+
     let normalizedUser = userData;
     let guestFlag = false;
+
     if (typeof userData === "string") {
       normalizedUser = { id: userData, guest: true };
       guestFlag = true;
     } else if (userData?.guest) {
       guestFlag = true;
     }
+
     setUser(normalizedUser);
     setIsGuest(guestFlag);
-    localStorage.setItem("user", JSON.stringify(normalizedUser));
+    safeSet(sessionStorageRef, USER_STORAGE_KEY, JSON.stringify(normalizedUser));
+    safeRemove(localStorageRef, USER_STORAGE_KEY);
+
     if (accessToken) {
       setToken(accessToken);
-      localStorage.setItem("token", accessToken);
+      safeSet(sessionStorageRef, TOKEN_STORAGE_KEY, accessToken);
+      safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
     } else {
       setToken(null);
-      localStorage.removeItem("token");
+      safeRemove(sessionStorageRef, TOKEN_STORAGE_KEY);
+      safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
     }
   };
 
   const logout = () => {
+    const sessionStorageRef = getSessionStorage();
+    const localStorageRef = getLocalStorage();
+
     setUser(null);
     setToken(null);
     setIsGuest(false);
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    safeRemove(sessionStorageRef, USER_STORAGE_KEY);
+    safeRemove(sessionStorageRef, TOKEN_STORAGE_KEY);
+    safeRemove(localStorageRef, USER_STORAGE_KEY);
+    safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
     void clearPersistedRefreshToken();
   };
 
   const updateUser = (userData) => {
+    const sessionStorageRef = getSessionStorage();
+    const localStorageRef = getLocalStorage();
+
     setUser(userData);
     setIsGuest(Boolean(userData?.guest));
-    localStorage.setItem("user", JSON.stringify(userData));
+    safeSet(sessionStorageRef, USER_STORAGE_KEY, JSON.stringify(userData));
+    safeRemove(localStorageRef, USER_STORAGE_KEY);
   };
 
   return (

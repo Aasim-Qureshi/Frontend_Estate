@@ -1,4 +1,4 @@
-{
+﻿{
     "common": {
         "language": "اللغة",
         "english": "English",
@@ -66,15 +66,24 @@
         "status": {
             "refreshTitle": "تحديث الحالة",
             "refresh": "تحديث",
+            "systemState": "حالة النظام",
             "taqeem": "تقييم",
             "company": "الشركة",
-            "companyDefault": "لم يتم اختيار شركة بعد"
+            "companyDefault": "لم يتم اختيار شركة بعد",
+            "on": "On",
+            "off": "Off"
         },
         "auth": {
             "userFallback": "مستخدم",
+            "guest": "ضيف",
+            "profile": "الملف الشخصي",
             "logout": "تسجيل الخروج",
             "register": "تسجيل",
             "login": "تسجيل الدخول"
+        },
+        "nav": {
+            "deviceCapability": "قدرة الجهاز",
+            "memoryRead": "قراءة الذاكرة"
         },
         "header": {
             "workspace": "مساحة العمل",
@@ -181,6 +190,9 @@
             "deleteReport": {
                 "title": "حذف تقرير"
             },
+            "myReports": {
+                "title": "تقاريري"
+            },
             "adminConsole": {
                 "title": "لوحة المدير العام"
             }
@@ -270,6 +282,10 @@
                 "label": "حذف تقرير",
                 "description": "حذف التقارير والملفات المرتبطة بأمان."
             },
+            "my-reports": {
+                "label": "تقاريري",
+                "description": "عرض جميع تقاريرك في مكان واحد."
+            },
             "yalla-motor": {
                 "label": "يلا موتور",
                 "description": "استعرض بيانات يلا موتور المسحوبة وادرس رؤوس الحقول."
@@ -341,11 +357,12 @@
             "company-statics": "إحصائيات الشركة",
             "profile": "الملف الشخصي",
             "packages": "الباقات",
-            "tickets": "????? ?? ????? ?????",
+            "tickets": "تواصل مع الدعم الفني",
             "admin-packages": "الباقات",
             "valuation-system": "نظام التقييم",
             "word-copy": "نسخ وورد",
             "delete-report": "حذف تقرير",
+            "my-reports": "تقاريري",
             "yalla-motor": "يلا موتور",
             "system-status": "حالة تشغيل النظام",
             "system-updates": "تحديثات النظام",
@@ -677,7 +694,7 @@
                 "complete": "مكتملة",
                 "sent": "مرسلة",
                 "approved": "معتمدة",
-                "confirmed": "مؤكدة"
+                "confirmed": "معتمد"
             },
             "actions": {
                 "hideAssets": "إخفاء الأصول",
@@ -862,9 +879,9 @@
                 "approveReport": "فشل اعتماد التقرير.",
                 "desktopIntegration": "دمج سطح المكتب غير متاح. أعد تشغيل التطبيق.",
                 "missingReportId": "معرّف سجل التقرير مفقود.",
-                "submitFirst": "??? ????? ??? ??????? ??? ????? ?????.",
-                "submitAlreadyDone": "??? ??????? ????? ?????? ??? ?????.",
-                "insufficientPoints": "?? ???? ???? ????? ?????? ??? ???????."
+                "submitFirst": "يجب إرسال هذا التقرير إلى تقييم أولًا.",
+                "submitAlreadyDone": "هذا التقرير مُرسل بالفعل إلى تقييم.",
+                "insufficientPoints": "لا تملك نقاطًا كافية لإرسال هذا التقرير."
             },
             "success": {
                 "uploadingFiles": "جارٍ رفع الملفات إلى الخادم...",
@@ -895,18 +912,84 @@
                 "reportResumed": "استُؤنف إرسال التقرير.",
                 "stoppingSubmission": "جارٍ إيقاف إرسال التقرير...",
                 "reportStopped": "تم إيقاف إرسال التقرير.",
-                "successfulUploads": "?? ??? {{count}} ?????(??) ?????.",
-                "reportsStoredResumeAfterLogin": "?? ??? ???????? ?????. ???? ????? ???? ????? ?? ?????? ???????.",
-                "waitingCompanies": "???? ?????? ????? ??????? ?? ?????..."
+                "successfulUploads": "تم رفع {{count}} تقرير(ات) بنجاح.",
+                "reportsStoredResumeAfterLogin": "تم حفظ التقارير بنجاح. أكمل تسجيل الدخول إلى تقييم ثم استأنف الإرسال.",
+                "waitingCompanies": "جارٍ انتظار قائمة الشركات من تقييم..."
             },
             "info": {
-                "processNotActive": "????? ??? ??????? ??? ???? ?????? (?? ???? ????? ??????)."
+                "processNotActive": "عملية هذا التقرير غير نشطة حاليًا (قد تكون اكتملت بالفعل)."
             }
         },
         "confirm": {
             "stopSubmission": "هل أنت متأكد أنك تريد إيقاف إرسال هذا التقرير؟ سيفقد التقدم.",
             "deleteReport": "هل أنت متأكد أنك تريد حذف هذا التقرير؟",
             "deleteMultipleReports": "هل أنت متأكد أنك تريد حذف {{count}} تقريرًا؟"
+        }
+    },
+    "myReportsPage": {
+        "title": "تقاريري",
+        "summary": "عرض {{count}} سجل (الصفحة {{page}})",
+        "pagination": {
+            "perPage": "{{count}}/الصفحة",
+            "previous": "السابق",
+            "next": "التالي"
+        },
+        "filters": {
+            "reportId": "رقم التقرير",
+            "searchPlaceholder": "ابحث بأي كلمة...",
+            "source": "المصدر",
+            "submitState": "حالة الإرسال",
+            "allSources": "كل المصادر",
+            "allStates": "كل الحالات"
+        },
+        "sources": {
+            "UrgentReport": "رفع تقرير (الراجحي)",
+            "DuplicateReport": "رفع تقرير يدوي",
+            "MultiApproachReport": "رفع متعدد (إكسل)",
+            "SubmitReportsQuickly": "رفع سريع للتقارير",
+            "Reports": "رفع الأصول",
+            "ElrajhiReport": "تقارير الراجحي"
+        },
+        "states": {
+            "NEW": "جديد",
+            "APPROVED": "معتمد",
+            "DRAFT": "مسودة",
+            "IN_PROGRESS": "قيد التنفيذ",
+            "SENT": "مرسل",
+            "COMPLETE": "مكتمل",
+            "CONFIRMED": "معتمدة",
+            "EDITED": "معدّل",
+            "INCOMPLETE": "غير مكتمل",
+            "NOT_AVAILABLE": "غير متاح",
+            "PENDING": "قيد الانتظار",
+            "FAILED": "فشل"
+        },
+        "actions": {
+            "search": "بحث",
+            "searching": "جارٍ البحث...",
+            "reset": "إعادة ضبط"
+        },
+        "table": {
+            "index": "#",
+            "reportId": "رقم التقرير",
+            "clientName": "اسم العميل",
+            "source": "المصدر",
+            "status": "الحالة",
+            "officeId": "رقم المكتب",
+            "updatedAt": "آخر تحديث"
+        },
+        "messages": {
+            "loading": "جارٍ التحميل...",
+            "noRecords": "لا توجد سجلات",
+            "notCreated": "غير منشأ",
+            "noTitle": "بدون عنوان",
+            "searchPrompt": "يرجى إدخال قيمة للبحث",
+            "searchFailed": "فشل البحث",
+            "loadingFailed": "تعذر تحميل التقارير.",
+            "guestBootstrapFailed": "تعذر بدء جلسة الضيف.",
+            "loginRequiredTitle": "تسجيل الدخول مطلوب",
+            "loginRequiredMessage": "حسابك مسجل بالفعل. يرجى إعادة تسجيل الدخول لعرض التقارير وتنفيذ الإجراءات.",
+            "loginRequiredAction": "تسجيل الدخول بالهاتف"
         }
     },
     "uploadAssets": {
@@ -948,6 +1031,18 @@
             "title": "إدارة التقارير",
             "subtitle": "عرض وإدارة جميع التقارير",
             "searchPlaceholder": "ابحث برقم التقرير...",
+            "actions": {
+                "selectAction": "اختر إجراء",
+                "fullCheck": "فحص كامل",
+                "halfCheck": "فحص جزئي",
+                "retry": "إعادة المحاولة",
+                "send": "إرسال",
+                "paused": "متوقف مؤقتًا",
+                "processing": "جارٍ المعالجة...",
+                "pause": "إيقاف مؤقت",
+                "resume": "استئناف",
+                "stop": "إيقاف"
+            },
             "filters": {
                 "all": "الكل",
                 "pending": "قيد الانتظار",

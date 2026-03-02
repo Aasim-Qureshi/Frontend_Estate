@@ -1363,7 +1363,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                 onClick={() => fetchAllReports()}
                 className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700 font-medium"
               >
-                Retry
+                {translate("actions.retry", "Retry")}
               </button>
             </div>
           ) : (
@@ -1534,23 +1534,39 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                       disabled={isAnyActionLoading}
                                       className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer appearance-none bg-white"
                                     >
-                                      <option value="">Select Action</option>
+                                      <option value="">
+                                        {translate(
+                                          "actions.selectAction",
+                                          "Select action",
+                                        )}
+                                      </option>
                                       <option
                                         value="submit-to-taqeem"
                                         disabled={!isNewReport}
                                       >
-                                        {isNewReport
-                                          ? "Submit to Taqeem"
-                                          : "Submit to Taqeem"}
+                                        {quickTranslate(
+                                          "reports.row.submitToTaqeem",
+                                          "Submit to Taqeem",
+                                        )}
                                       </option>
                                       <option value="full-check">
-                                        Full Check
+                                        {translate(
+                                          "actions.fullCheck",
+                                          "Full Check",
+                                        )}
                                       </option>
                                       <option value="half-check">
-                                        Half Check
+                                        {translate(
+                                          "actions.halfCheck",
+                                          "Half Check",
+                                        )}
                                       </option>
-                                      <option value="retry">Retry</option>
-                                      <option value="send">Send</option>
+                                      <option value="retry">
+                                        {translate("actions.retry", "Retry")}
+                                      </option>
+                                      <option value="send">
+                                        {translate("actions.send", "Send")}
+                                      </option>
                                     </select>
 
                                     {/* Dropdown arrow */}
@@ -1612,28 +1628,51 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                   >
                                     {(() => {
                                       const action = actionDropdown[report._id];
-                                      if (!action) return "Go";
+                                      if (!action) {
+                                        return quickTranslate(
+                                          "reports.row.go",
+                                          "Go",
+                                        );
+                                      }
 
                                       if (
                                         action === "submit-to-taqeem" &&
                                         isSubmitToTaqeemLoading
                                       )
-                                        return "Working...";
+                                        return quickTranslate(
+                                          "reports.row.working",
+                                          "Working...",
+                                        );
                                       if (
                                         action === "full-check" &&
                                         isFullCheckLoading
                                       )
-                                        return "Working...";
+                                        return quickTranslate(
+                                          "reports.row.working",
+                                          "Working...",
+                                        );
                                       if (
                                         action === "half-check" &&
                                         isHalfCheckLoading
                                       )
-                                        return "Working...";
+                                        return quickTranslate(
+                                          "reports.row.working",
+                                          "Working...",
+                                        );
                                       if (action === "retry" && isRetryLoading)
-                                        return "Working...";
+                                        return quickTranslate(
+                                          "reports.row.working",
+                                          "Working...",
+                                        );
                                       if (action === "send" && isSendLoading)
-                                        return "Working...";
-                                      return "Go";
+                                        return quickTranslate(
+                                          "reports.row.working",
+                                          "Working...",
+                                        );
+                                      return quickTranslate(
+                                        "reports.row.go",
+                                        "Go",
+                                      );
                                     })()}
                                   </button>
                                 </div>
@@ -1668,9 +1707,15 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                           )}
                                           <span className="text-xs font-medium text-blue-900">
                                             {flowPaused[report.report_id]
-                                              ? "Paused"
+                                              ? translate(
+                                                  "actions.paused",
+                                                  "Paused",
+                                                )
                                               : progress.message ||
-                                                "Processing..."}
+                                                translate(
+                                                  "actions.processing",
+                                                  "Processing...",
+                                                )}
                                           </span>
                                         </div>
                                         <span className="text-xs font-semibold text-blue-900">
@@ -1710,7 +1755,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                               clipRule="evenodd"
                                             />
                                           </svg>
-                                          Pause
+                                          {translate("actions.pause", "Pause")}
                                         </button>
                                       ) : (
                                         <button
@@ -1732,7 +1777,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                               clipRule="evenodd"
                                             />
                                           </svg>
-                                          Resume
+                                          {translate("actions.resume", "Resume")}
                                         </button>
                                       )}
 
@@ -1755,7 +1800,7 @@ const ReportsTable = ({ onViewChange, showTemporary = true }) => {
                                             clipRule="evenodd"
                                           />
                                         </svg>
-                                        Stop
+                                        {translate("actions.stop", "Stop")}
                                       </button>
                                     </div>
                                   </div>

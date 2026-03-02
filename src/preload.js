@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   resumeCompleteFlow: (reportId) =>
     safeInvoke("resume-complete-flow", reportId),
   stopCompleteFlow: (reportId) => safeInvoke("stop-complete-flow", reportId),
-  // Set refresh token (main process will store this as HttpOnly cookie)
+  // Set refresh token (stored as HttpOnly session cookie by default)
   setRefreshToken: (token, opts = {}) => {
     const payload = Object.assign(
       {
@@ -61,7 +61,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
         token,
         name: opts.name || "refreshToken",
         path: opts.path || "/",
-        maxAgeDays: opts.maxAgeDays || 7,
+        maxAgeDays:
+          typeof opts.maxAgeDays === "number" ? opts.maxAgeDays : 7,
+        sessionOnly: opts.sessionOnly !== false,
         sameSite: opts.sameSite || "lax",
         secure:
           typeof opts.secure === "boolean"
@@ -352,6 +354,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Image utilities
   openExternal: (url) => safeInvoke("open-external", url),
+  openWebWindow: (payload) => safeInvoke("open-web-window", payload),
   downloadImage: (url, filename) =>
     safeInvoke("download-image", { url, filename }),
   showImageWindow: (url) => safeInvoke("show-image-window", url),

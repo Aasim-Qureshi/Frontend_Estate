@@ -19,16 +19,29 @@ const extractTaqeemUser = (explicitUser, profileData) => {
     return profileUser || "";
 };
 
+const readUserFromStorage = () => {
+    if (typeof window === "undefined") return null;
+
+    const storageCandidates = [window.sessionStorage, window.localStorage].filter(Boolean);
+    for (const storage of storageCandidates) {
+        try {
+            const raw = storage.getItem("user");
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") {
+                return parsed;
+            }
+        } catch (err) {
+            // ignore invalid/blocked storage and continue fallback lookup
+        }
+    }
+
+    return null;
+};
+
 const getCachedUserSnapshot = (cachedUser = null) => {
     if (cachedUser && typeof cachedUser === "object") return cachedUser;
-    try {
-        const raw = window?.localStorage?.getItem("user");
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === "object" ? parsed : null;
-    } catch (err) {
-        return null;
-    }
+    return readUserFromStorage();
 };
 
 const getCachedProfile = (cachedUser = null) => {

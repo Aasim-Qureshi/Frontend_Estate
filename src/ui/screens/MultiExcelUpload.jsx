@@ -6190,7 +6190,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 quickTranslate("reports.notSubmitted", "Not submit")}
                             </td>
                             <td className="px-3 py-2 text-[11px] text-slate-700">
-                              {report.client_name || report.title || "???"}
+                              {report.client_name ||
+                                report.title ||
+                                quickTranslate("temporaryModal.unknownClient", "Unknown")}
                             </td>
                             <td className="px-3 py-2 text-[11px] text-slate-700">
                               {assetCount}

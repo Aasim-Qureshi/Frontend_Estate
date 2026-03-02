@@ -267,6 +267,7 @@ const authHandlers = {
             name = 'refreshToken',
             path = '/',
             maxAgeDays = 7,
+            sessionOnly = true,
             sameSite = 'lax',
             secure = (process.env.NODE_ENV === 'production'),
             httpOnly = true
@@ -281,9 +282,6 @@ const authHandlers = {
             let cookieUrl = baseUrl;
             if (!/^https?:\/\//i.test(cookieUrl)) cookieUrl = `http://${cookieUrl}`;
 
-            const nowSeconds = Math.floor(Date.now() / 1000);
-            const expirationDate = nowSeconds + (Number(maxAgeDays) * 24 * 60 * 60);
-
             const cookieData = {
                 url: cookieUrl,
                 name,
@@ -291,12 +289,23 @@ const authHandlers = {
                 path,
                 httpOnly: !!httpOnly,
                 secure: !!secure,
-                sameSite: (sameSite === 'strict' ? 'strict' : (sameSite === 'no_restriction' ? 'no_restriction' : 'lax')),
-                expirationDate
+                sameSite: (sameSite === 'strict' ? 'strict' : (sameSite === 'no_restriction' ? 'no_restriction' : 'lax'))
             };
+            const persistForDays = Number(maxAgeDays);
+            const shouldPersist = sessionOnly !== true && Number.isFinite(persistForDays) && persistForDays > 0;
+            if (shouldPersist) {
+                const nowSeconds = Math.floor(Date.now() / 1000);
+                cookieData.expirationDate = nowSeconds + (persistForDays * 24 * 60 * 60);
+            }
 
             await session.defaultSession.cookies.set(cookieData);
-            console.log('[MAIN] Set cookie:', name, 'for', cookieUrl);
+            console.log(
+                '[MAIN] Set cookie:',
+                name,
+                'for',
+                cookieUrl,
+                shouldPersist ? `(persistent ${persistForDays}d)` : '(session-only)'
+            );
 
             return { status: 'SUCCESS' };
         } catch (error) {
