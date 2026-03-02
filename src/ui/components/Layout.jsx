@@ -5,16 +5,20 @@ import {
     AppWindow,
     Bell,
     Building2,
+    ChevronDown,
+    CircleDot,
     Compass,
     Download,
     FileText,
     HardDrive,
     Layers,
     Loader2,
+    LogOut,
     RefreshCcw,
     Settings,
     ShieldCheck,
     Trash2,
+    UserRound,
     UploadCloud
 } from 'lucide-react';
 import { getHealth } from '../../api/health';
@@ -25,13 +29,18 @@ import { useNavStatus } from '../context/NavStatusContext';
 import { useValueNav } from '../context/ValueNavContext';
 import { useRam } from '../context/RAMContext'; // Updated import
 import navigation from '../constants/navigation';
-import LanguageToggle from './LanguageToggle';
 import NotificationBell from './NotificationBell';
 import { useTranslation } from 'react-i18next';
 import usePersistentState from '../hooks/usePersistentState';
 import { ensureTaqeemAuthorized } from '../../shared/helper/taqeemAuthWrap';
 import { TAQEEM_CONFLICT_EVENT } from '../../shared/helper/taqeemSync';
+import { canAccessGroup, filterTabsByAccess } from '../utils/viewAccess';
 const { viewTitles, valueSystemGroups, findTabInfo, valueSystemCards, isValueSystemView } = navigation;
+const API_BASE_URL = (
+    (typeof process !== 'undefined' && process?.env?.REACT_APP_BACKEND_URL) ||
+    (typeof process !== 'undefined' && process?.env?.BACKEND_URL) ||
+    'http://167.71.231.64:3000'
+);
 
 const findCardForGroup = (groupId) =>
     valueSystemCards.find((card) => Array.isArray(card.groups) && card.groups.includes(groupId));
@@ -120,6 +129,11 @@ const heroIcons = {
     adminConsole: ShieldCheck
 };
 
+const uploadReportActionViewIds = new Set([
+    ...(valueSystemGroups.uploadReports?.tabs || []).map((tab) => tab.id),
+    ...(valueSystemGroups.uploadSingleReport?.tabs || []).map((tab) => tab.id)
+]);
+
 const getInitials = (label = '') => {
     const words = String(label).split(' ').filter(Boolean);
     const initials = words.slice(0, 3).map((word) => word[0]?.toUpperCase());
@@ -161,6 +175,7 @@ const HeroArt = ({ label, theme, Icon }) => {
 const Layout = ({ children, currentView, onViewChange }) => {
     const { isAuthenticated, user, logout, isGuest, token, login } = useSession();
     const { t, i18n } = useTranslation();
+    const uiDir = i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) || 'ltr';
     const {
         systemState,
         latestUpdate,
@@ -226,8 +241,13 @@ const Layout = ({ children, currentView, onViewChange }) => {
     const [showTaqeemReconnect, setShowTaqeemReconnect] = useState(false);
     const [reconnectState, setReconnectState] = useState('idle');
     const [reconnectError, setReconnectError] = useState('');
+    const [profileImageFailed, setProfileImageFailed] = useState(false);
+    const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
+    const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
     const reconnectCloseTimerRef = useRef(null);
     const prevTaqeemStateRef = useRef(taqeemStatus?.state);
+    const deviceMenuRef = useRef(null);
+    const languageMenuRef = useRef(null);
 
     useEffect(() => {
         // Reset notice dismissal whenever a new update arrives
@@ -239,6 +259,39 @@ const Layout = ({ children, currentView, onViewChange }) => {
             setCompanyModalSelection(getCompanySelectionKey(selectedCompany));
         }
     }, [selectedCompany]);
+
+    useEffect(() => {
+        setProfileImageFailed(false);
+    }, [user?.profileImagePath, user?.profileImage, user?.avatar, user?.image]);
+
+    useEffect(() => {
+        if (!isDeviceMenuOpen && !isLanguageMenuOpen) return undefined;
+
+        const handlePointerDown = (event) => {
+            const target = event?.target;
+            if (
+                isDeviceMenuOpen &&
+                deviceMenuRef.current &&
+                !deviceMenuRef.current.contains(target)
+            ) {
+                setIsDeviceMenuOpen(false);
+            }
+            if (
+                isLanguageMenuOpen &&
+                languageMenuRef.current &&
+                !languageMenuRef.current.contains(target)
+            ) {
+                setIsLanguageMenuOpen(false);
+            }
+        };
+
+        window.addEventListener('mousedown', handlePointerDown);
+        window.addEventListener('touchstart', handlePointerDown);
+        return () => {
+            window.removeEventListener('mousedown', handlePointerDown);
+            window.removeEventListener('touchstart', handlePointerDown);
+        };
+    }, [isDeviceMenuOpen, isLanguageMenuOpen]);
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -477,6 +530,29 @@ const Layout = ({ children, currentView, onViewChange }) => {
 
     const isMandatoryUpdate = latestUpdate?.rolloutType === 'mandatory';
     const shouldShowUpdateNotice = isAuthenticated && !isAdmin && latestUpdate && userUpdateState?.status !== 'applied' && !hideUpdateNotice;
+    const isUploadReportsPage = uploadReportActionViewIds.has(currentView);
+    const guestHasCompanyData =
+        isGuest &&
+        (
+            Boolean(selectedCompany) ||
+            (Array.isArray(companies) && companies.length > 0) ||
+            Boolean(
+                user?.taqeemUser ||
+                user?.taqeem?.username ||
+                user?.defaultCompanyOfficeId ||
+                user?.taqeem?.defaultCompanyOfficeId
+            )
+        );
+    const showGuestReloginModal = guestHasCompanyData && isUploadReportsPage && !taqeemConflict;
+    const guestReloginTitle = t('layout.guestRelogin.title', {
+        defaultValue: 'Login required'
+    });
+    const guestReloginMessage = t('layout.guestRelogin.message', {
+        defaultValue: 'Your account is already registered. Please log in again to upload reports and take actions.'
+    });
+    const guestReloginActionLabel = t('layout.guestRelogin.action', {
+        defaultValue: 'Login with phone'
+    });
 
     const taqeemLoggedIn = taqeemStatus?.state === 'success';
     const taqeemLoginClickable = !taqeemLoggedIn && reconnectState !== 'opening';
@@ -579,7 +655,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         }
     };
 
-    const showCompanyModal = forceCompanyModal && !taqeemConflict;
+    const showCompanyModal = forceCompanyModal && !taqeemConflict && !showGuestReloginModal;
 
     const updateNotice = shouldShowUpdateNotice ? (
         <div className="relative mb-2 overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-2.5 text-[10px] text-slate-200 shadow-[0_10px_24px_rgba(2,6,23,0.45)]">
@@ -666,6 +742,32 @@ const Layout = ({ children, currentView, onViewChange }) => {
         if (onViewChange) onViewChange(view);
     };
 
+    const currentLangCode = i18n.language?.startsWith('ar') ? 'ar' : 'en';
+    const betaVersionLabel = currentLangCode === 'ar' ? 'نسخة بيتا 1.0.0' : 'Beta v1.0.0';
+
+    const handleLanguageChange = (langCode) => {
+        if (!langCode || langCode === currentLangCode) return;
+        i18n.changeLanguage(langCode);
+        setIsLanguageMenuOpen(false);
+    };
+
+    const handleGoProfile = () => {
+        setActiveGroup('settings');
+        setActiveTab('profile');
+        if (onViewChange) {
+            onViewChange('profile');
+        }
+    };
+
+    const handleGuestRelogin = () => {
+        setActiveGroup(null);
+        setActiveTab(null);
+        resetNavigation();
+        if (onViewChange) {
+            onViewChange('login');
+        }
+    };
+
     const handleConflictGoToLogin = () => {
         if (typeof window !== 'undefined' && window?.sessionStorage && currentView) {
             if (currentView !== 'login' && currentView !== 'registration') {
@@ -715,44 +817,77 @@ const Layout = ({ children, currentView, onViewChange }) => {
         }
     };
 
+    const handleLogout = () => {
+        setActiveGroup(null);
+        setActiveTab(null);
+        resetAll();
+        logout();
+        if (onViewChange) {
+            onViewChange('login');
+        }
+    };
+
+    const rawProfileImagePath = user?.profileImagePath || user?.profileImage || user?.avatar || user?.image || '';
+    const userDisplayName = user?.phone || t('layout.auth.userFallback', { defaultValue: 'User' });
+    const userDisplayInitial = String(userDisplayName || '?').charAt(0).toUpperCase();
+    const profileImageUrl = rawProfileImagePath
+        ? (String(rawProfileImagePath).startsWith('http')
+            ? String(rawProfileImagePath)
+            : `${API_BASE_URL}${String(rawProfileImagePath).startsWith('/') ? '' : '/'}${rawProfileImagePath}`)
+        : '';
+
     const userBadge = isAuthenticated && !isGuest ? (
-        <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-3 py-1 text-[10px] shadow-[0_8px_20px_rgba(2,6,23,0.45)]">
-            <div className="h-6 w-6 rounded-full bg-slate-800 text-cyan-200 border border-slate-700 flex items-center justify-center text-[10px] font-semibold">
-                {(user?.phone || '').charAt(0) || '?'}
+        <div className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5 py-1">
+            <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-slate-800/80 text-cyan-200">
+                {profileImageUrl && !profileImageFailed ? (
+                    <img
+                        src={profileImageUrl}
+                        alt={t('layout.auth.userFallback', { defaultValue: 'User' })}
+                        className="h-full w-full object-cover"
+                        onError={() => setProfileImageFailed(true)}
+                    />
+                ) : (
+                    <span className="text-[10px] font-semibold">
+                        {userDisplayInitial}
+                    </span>
+                )}
             </div>
-            <div className="text-[10px] text-slate-100 font-medium">{user?.phone || t('layout.auth.userFallback')}</div>
+            <div className="max-w-[110px] truncate text-[10px] font-semibold text-slate-100">
+                {userDisplayName}
+            </div>
             <button
-                onClick={() => {
-                    setActiveGroup(null);
-                    setActiveTab(null);
-                    resetAll();
-                    logout();
-                    if (onViewChange) {
-                        onViewChange('login');
-                    }
-                }}
-                className="text-[9px] font-semibold text-rose-300 hover:text-rose-200 underline decoration-dotted"
+                onClick={handleGoProfile}
+                className="inline-flex items-center gap-1 rounded-md border border-cyan-400/35 bg-cyan-500/10 px-1.5 py-1 text-[9px] font-semibold text-cyan-100 hover:bg-cyan-500/20"
             >
+                {t('layout.auth.profile', { defaultValue: 'Profile' })}
+            </button>
+            <button
+                onClick={handleLogout}
+                className="inline-flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-1.5 py-1 text-[9px] font-semibold text-rose-200 hover:bg-rose-500/20"
+            >
+                <LogOut className="h-3 w-3" />
                 {t('layout.auth.logout')}
             </button>
         </div>
     ) : (
-        <div className="flex items-center gap-2 text-[10px]">
-            <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-3 py-1 text-[10px] text-slate-100 shadow-[0_8px_20px_rgba(2,6,23,0.45)]">
-                <div className="h-6 w-6 rounded-full bg-slate-800 text-cyan-200 border border-slate-700 flex items-center justify-center text-[10px] font-semibold">
-                    G
+        <div className="inline-flex shrink-0 items-center gap-1.5 text-[10px]">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5 py-1 text-slate-100">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-cyan-200">
+                    <UserRound className="h-3.5 w-3.5" />
                 </div>
-                <div className="text-[10px] font-medium text-slate-100">Guest</div>
+                <div className="text-[10px] font-semibold text-slate-100">
+                    {t('layout.auth.guest', { defaultValue: 'Guest' })}
+                </div>
             </div>
             <button
                 onClick={() => handleAuthNav('registration')}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-600 hover:text-white"
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-600 bg-slate-900/85 px-3 py-1.5 text-[10px] font-semibold text-slate-100 hover:border-slate-500"
             >
                 {t('layout.auth.register')}
             </button>
             <button
                 onClick={() => handleAuthNav('login')}
-                className="inline-flex items-center gap-1 rounded-full border border-cyan-500/50 bg-cyan-600 px-3 py-1 text-[10px] font-semibold text-white hover:bg-cyan-500"
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-cyan-400/50 bg-cyan-600 px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-cyan-500"
             >
                 {t('layout.auth.login')}
             </button>
@@ -781,7 +916,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         return t('layout.header.defaultTitle');
     })();
     const groupTabs = (() => {
-        const tabs = resolvedGroup?.tabs || [];
+        const tabs = filterTabsByAccess(resolvedGroup?.tabs || [], user);
         if (resolvedGroupId === 'evaluationSources') {
             return tabs.filter((tab) =>
                 tab.id === 'yalla-motor' ||
@@ -868,7 +1003,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 chooseCard('uploading-reports');
                 chooseDomain(item.key);
                 if (item.key === 'equipments') {
-                    const uploadTabs = valueSystemGroups.uploadReports?.tabs || [];
+                    const uploadTabs = filterTabsByAccess(valueSystemGroups.uploadReports?.tabs || [], user);
                     const firstUploadTab = uploadTabs?.[0]?.id || 'submit-reports-quickly';
                     setActiveGroup('uploadReports');
                     setActiveTab(firstUploadTab);
@@ -889,6 +1024,10 @@ const Layout = ({ children, currentView, onViewChange }) => {
                 break;
             case 'group':
                 {
+                    if (!canAccessGroup(item.key, user)) {
+                        onViewChange('apps');
+                        break;
+                    }
                     const owningCard = findCardForGroup(item.key);
                     if (owningCard?.id) {
                         chooseCard(owningCard.id);
@@ -897,7 +1036,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                         chooseDomain(selectedDomain);
                     }
                     setActiveGroup(item.key);
-                    const targetTabs = valueSystemGroups[item.key]?.tabs || [];
+                    const targetTabs = filterTabsByAccess(valueSystemGroups[item.key]?.tabs || [], user);
                     const targetFirstTab = targetTabs?.[0]?.id;
                     if (targetFirstTab) {
                         onViewChange(targetFirstTab);
@@ -924,14 +1063,8 @@ const Layout = ({ children, currentView, onViewChange }) => {
         if (!pageBreadcrumbs || pageBreadcrumbs.length === 0) return null;
         return (
             <div className="mb-0">
-                <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50/50 to-white px-3 py-2 shadow-lg backdrop-blur-sm">
-                    {/* Decorative background blobs */}
-                    <div className="pointer-events-none absolute -top-20 right-8 h-40 w-40 rounded-full bg-gradient-to-br from-emerald-300/30 to-teal-300/20 blur-3xl animate-pulse" />
-                    <div className="pointer-events-none absolute -bottom-16 left-6 h-36 w-36 rounded-full bg-gradient-to-br from-blue-300/25 to-cyan-300/15 blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-                    <div className="pointer-events-none absolute top-1/2 right-1/4 h-24 w-24 rounded-full bg-gradient-to-br from-purple-200/20 to-pink-200/15 blur-2xl" />
-
+                <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm">
                     <div className="relative flex flex-col gap-1">
-                        {/* First Row: Breadcrumb Path */}
                         <div className="flex flex-wrap items-center gap-0.5 px-0">
                             <div className="flex flex-wrap items-center gap-0.5 text-[10px]">
                                 {pageBreadcrumbs.map((item, idx) => {
@@ -940,7 +1073,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                         <React.Fragment key={item.key + idx}>
                                             <button
                                                 onClick={() => handleBreadcrumbClick(item)}
-                                                className={`inline-flex items-center px-0.5 py-0 font-medium transition-colors ${isLast
+                                                className={`inline-flex items-center px-0.5 py-0 font-medium ${isLast
                                                     ? 'text-slate-900'
                                                     : 'text-slate-500 hover:text-slate-900'
                                                     }`}
@@ -956,7 +1089,6 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             </div>
                         </div>
 
-                        {/* Second Row: Tabs - Reduced Size */}
                         {showHeaderTabs && (
                             <div className="flex flex-wrap items-center gap-1">
                                 {groupTabs.map((tab) => {
@@ -969,16 +1101,13 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                             onClick={() => !isBlocked && onViewChange(tab.id)}
                                             disabled={isBlocked}
                                             title={isBlocked && reason ? reason : undefined}
-                                            className={`relative inline-flex items-center justify-center rounded-lg border-2 px-2 py-1 text-[11px] font-semibold transition-all duration-200 transform hover:scale-105 active:scale-95 ${isBlocked
+                                            className={`relative inline-flex items-center justify-center rounded-lg border px-2 py-1 text-[11px] font-semibold ${isBlocked
                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                                                 : isActive
-                                                    ? 'border-emerald-500 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white shadow-[0_4px_12px_rgba(16,185,129,0.3)] hover:shadow-[0_6px_16px_rgba(16,185,129,0.4)] hover:from-emerald-600 hover:via-teal-600 hover:to-emerald-700'
-                                                    : 'border-slate-300 bg-white text-slate-700 shadow-sm hover:border-emerald-400 hover:bg-gradient-to-r hover:from-emerald-50 hover:via-teal-50 hover:to-emerald-50 hover:text-emerald-700 hover:shadow-md'
+                                                    ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                                                    : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700'
                                                 }`}
                                         >
-                                            {isActive && (
-                                                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-yellow-400 border-2 border-white shadow-md animate-pulse" />
-                                            )}
                                             <span className="relative z-10">
                                                 {t(`navigation.tabs.${tab.id}.label`, { defaultValue: tab.label })}
                                             </span>
@@ -994,7 +1123,33 @@ const Layout = ({ children, currentView, onViewChange }) => {
     };
 
     return (
-        <div className="flex h-screen bg-transparent overflow-x-hidden max-w-full">
+        <div dir={uiDir} className="flex h-screen bg-slate-100 overflow-x-hidden max-w-full">
+            {showGuestReloginModal && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white shadow-2xl p-5 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold text-slate-900">
+                                    {guestReloginTitle}
+                                </h3>
+                                <p className="text-[11px] text-slate-600 leading-6">
+                                    {guestReloginMessage}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleGuestRelogin}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow bg-cyan-600 hover:bg-cyan-700"
+                        >
+                            {guestReloginActionLabel}
+                        </button>
+                    </div>
+                </div>
+            )}
             {taqeemConflict && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm px-4">
                     <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white shadow-2xl p-5 space-y-4">
@@ -1004,19 +1159,25 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             </div>
                             <div className="flex-1">
                                 <h3 className="text-sm font-semibold text-slate-900">
-                                    Taqeem username already used
+                                    {t('layout.taqeemConflict.title', {
+                                        defaultValue: 'Taqeem username already used'
+                                    })}
                                 </h3>
                                 <p className="text-[11px] text-slate-600">
                                     {taqeemConflict.message}
                                 </p>
                                 {taqeemConflict.taqeemUser && (
                                     <p className="mt-1 text-[10px] text-slate-500">
-                                        Taqeem Username: {taqeemConflict.taqeemUser}
+                                        {t('layout.taqeemConflict.taqeemUsername', {
+                                            defaultValue: 'Taqeem Username'
+                                        })}: {taqeemConflict.taqeemUser}
                                     </p>
                                 )}
                                 {taqeemConflict.existingUserId && (
                                     <p className="mt-1 text-[10px] text-slate-500">
-                                        User ID: {taqeemConflict.existingUserId}
+                                        {t('layout.taqeemConflict.userId', {
+                                            defaultValue: 'User ID'
+                                        })}: {taqeemConflict.existingUserId}
                                     </p>
                                 )}
                             </div>
@@ -1026,7 +1187,9 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             onClick={handleConflictGoToLogin}
                             className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow bg-rose-600 hover:bg-rose-700"
                         >
-                            Go to Value Tech Login
+                            {t('layout.taqeemConflict.action', {
+                                defaultValue: 'Go to Value Tech Login'
+                            })}
                         </button>
                     </div>
                 </div>
@@ -1082,14 +1245,20 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 <AlertTriangle className="w-5 h-5" />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-sm font-semibold text-slate-900">Select a company to continue</h3>
+                                <h3 className="text-sm font-semibold text-slate-900">
+                                    {t('layout.companyModal.title', { defaultValue: 'Select a company to continue' })}
+                                </h3>
                                 <p className="text-[11px] text-slate-600">
-                                    This selects the active company for now. Change your default company from Settings when needed.
+                                    {t('layout.companyModal.description', {
+                                        defaultValue: 'This selects the active company for now. Change your default company from Settings when needed.'
+                                    })}
                                 </p>
                             </div>
                         </div>
                         <div className="space-y-2">
-                            <label className="text-[11px] font-semibold text-slate-800">Companies</label>
+                            <label className="text-[11px] font-semibold text-slate-800">
+                                {t('layout.companyModal.label', { defaultValue: 'Companies' })}
+                            </label>
                             <select
                                 value={companyModalSelection}
                                 onChange={(e) => setCompanyModalSelection(e.target.value)}
@@ -1099,7 +1268,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 {(companies || []).map((company) => (
                                     <option key={getCompanySelectionKey(company)} value={getCompanySelectionKey(company)}>
                                         {company.name || t('sidebar.company.fallback')}
-                                        {company.officeId ? ` (Office ${company.officeId})` : ''}
+                                        {company.officeId ? ` (${t('sidebar.company.office', { officeId: company.officeId })})` : ''}
                                     </option>
                                 ))}
                             </select>
@@ -1114,7 +1283,9 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 }`}
                         >
                             {companyModalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                            {companyModalBusy ? 'Applying...' : 'Select company & continue'}
+                            {companyModalBusy
+                                ? t('layout.companyModal.applying', { defaultValue: 'Applying...' })
+                                : t('layout.companyModal.action', { defaultValue: 'Select company & continue' })}
                         </button>
                     </div>
                 </div>
@@ -1125,55 +1296,39 @@ const Layout = ({ children, currentView, onViewChange }) => {
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden max-w-full">
                 {/* Header */}
-                <header className="relative overflow-hidden border-b border-slate-800/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 shadow-[0_12px_26px_rgba(2,6,23,0.65)] max-w-full">
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/5 to-transparent" />
-                    <div className="pointer-events-none absolute -left-10 top-6 h-28 w-28 rounded-full bg-cyan-500/20 blur-2xl float-slow" />
-                    <div className="pointer-events-none absolute -right-12 top-6 h-28 w-28 rounded-full bg-blue-500/15 blur-2xl float-slower" />
-                    <div className="relative px-5 py-2.5 flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div className="flex flex-col text-compact">
-                                <span className="text-[9px] font-semibold text-slate-400">{t('layout.header.workspace')}</span>
-                                <h1 className="font-display text-[15px] font-semibold text-slate-100 leading-tight text-compact">
-                                    {headerTitle}
-                                </h1>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap justify-end">
-                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full
-                        border border-slate-600/40 bg-slate-900/50
-                        text-[10px] font-semibold text-slate-200
-                        shadow-[0_6px_14px_rgba(2,6,23,0.35)]">
-                                    <span className="text-slate-400">Frontend version:</span>
-                                    <span className="text-cyan-300">{buildNumber}</span>
-                                    {backendVersion && (
-                                        <>
-                                            <span className="text-slate-400 mx-0.5">|</span>
-                                            <span className="text-slate-400">Backend version:</span>
-                                            <span className="text-emerald-300">{backendVersion}</span>
-                                        </>
-                                    )}
-                                </div>
-                                <LanguageToggle />
-                                <NotificationBell onViewChange={onViewChange} mode="unread" />
-                                <NotificationBell onViewChange={onViewChange} mode="all" />
-                                {userBadge}
-                                {statusBanner}
-                                <button
-                                    type="button"
-                                    onClick={readRam}
-                                    disabled={readingRam || !isRamAvailable}
-                                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-900/70 px-2.5 py-1 text-[10px] font-semibold text-slate-100 shadow-[0_10px_20px_rgba(2,6,23,0.5)] hover:bg-slate-800 disabled:opacity-60"
-                                    title={!isRamAvailable ? t('layout.ram.unavailable') : t('layout.ram.refreshTitle')}
-                                >
-                                    {readingRam ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                        <HardDrive className="w-3.5 h-3.5" />
-                                    )}
-                                    {readingRam ? t('layout.ram.reading') : t('layout.ram.read')}
-                                </button>
-                            </div>
-                        </div>
+                <header className="relative max-w-full overflow-visible border-b border-slate-800/80 bg-slate-950/95 shadow-[0_12px_24px_rgba(2,6,23,0.35)]">
+                    <div className="relative px-3 py-3">
                         <div className="flex flex-wrap items-center gap-2">
+                            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 py-1.5">
+                                <AppWindow className="h-3.5 w-3.5 text-cyan-300" />
+                                <span className="text-[9px] font-semibold text-slate-300">
+                                    {t('layout.header.workspace', { defaultValue: 'Workspace' })}:
+                                </span>
+                                <span className="max-w-[220px] truncate text-[11px] font-semibold text-slate-100">
+                                    {headerTitle}
+                                </span>
+                            </div>
+
+                            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 py-1.5">
+                                <span className="text-[9px] font-semibold text-slate-300">
+                                    {t('layout.status.systemState', {
+                                        defaultValue: currentLangCode === 'ar' ? 'حالة النظام' : 'System Status'
+                                    })}:
+                                </span>
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${mode === 'active'
+                                    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+                                    : mode === 'partial'
+                                        ? 'border-amber-400/40 bg-amber-500/15 text-amber-100'
+                                        : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
+                                    }`}>
+                                    <CircleDot className="h-3 w-3" />
+                                    {modeLabel}
+                                </span>
+                                <span className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-100">
+                                    {betaVersionLabel}
+                                </span>
+                            </div>
+
                             <button
                                 type="button"
                                 onClick={taqeemLoginClickable ? handleReconnectToTaqeem : undefined}
@@ -1181,44 +1336,45 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 title={!taqeemLoggedIn
                                     ? t('taqeemReconnect.action', { defaultValue: 'Connect to Taqeem' })
                                     : t('taqeemReconnect.success', { defaultValue: 'Reconnected to Taqeem successfully.' })}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-semibold shadow-[0_6px_14px_rgba(2,6,23,0.35)] transition-colors ${taqeemLoggedIn
+                                className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold ${taqeemLoggedIn
                                     ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100 cursor-not-allowed opacity-90'
                                     : taqeemLoginClickable
-                                        ? 'border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30'
-                                        : 'border-rose-400/40 bg-rose-500/20 text-rose-100 cursor-not-allowed opacity-90'
+                                        ? 'border-cyan-400/45 bg-cyan-500/20 text-cyan-100 hover:bg-cyan-500/30'
+                                        : 'border-slate-600/70 bg-slate-700/30 text-slate-300 cursor-not-allowed opacity-90'
                                     }`}
                             >
                                 {!taqeemLoggedIn && reconnectState === 'opening' ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : null}
-                                <span>Taqeem login:</span>
-                                <span className="uppercase">{taqeemLoggedIn ? 'On' : 'Off'}</span>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <ShieldCheck className="h-3.5 w-3.5" />
+                                )}
+                                {t('layout.status.taqeem', { defaultValue: 'Taqeem' })}
+                                <span className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 text-[9px] font-semibold uppercase ${taqeemLoggedIn
+                                    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+                                    : 'border-rose-400/40 bg-rose-500/15 text-rose-100'
+                                    }`}>
+                                    <CircleDot className="h-2.5 w-2.5" />
+                                    {taqeemLoggedIn
+                                        ? t('layout.status.on', { defaultValue: 'On' })
+                                        : t('layout.status.off', { defaultValue: 'Off' })}
+                                </span>
                             </button>
 
-                            <div
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-semibold shadow-[0_6px_14px_rgba(2,6,23,0.35)] ${selectedCompany
-                                    ? 'border-emerald-400/80 bg-emerald-500/15 text-emerald-100'
-                                    : 'border-rose-400/60 bg-rose-500/15 text-rose-100'
-                                    }`}
-                            >
-                                <span className="font-semibold">Company:</span>
+                            <div className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5">
+                                <Building2 className="h-3.5 w-3.5 text-cyan-200" />
+                                <span className="text-[9px] font-semibold text-slate-300">
+                                    {t('layout.status.company', { defaultValue: 'Company' })}:
+                                </span>
                                 <select
                                     value={getCompanySelectionKey(selectedCompany)}
                                     onChange={(e) => handleCompanyChange(e.target.value)}
-                                    className="bg-transparent text-[10px] font-semibold focus:outline-none border-none px-1 py-0.5 rounded"
-                                    style={{ color: selectedCompany ? '#22c55e' : '#ef4444' }} // lighter green when selected, lighter red otherwise
+                                    className="min-w-[170px] bg-transparent text-[10px] font-semibold text-slate-100 outline-none"
                                 >
-                                    <option
-                                        value=""
-                                        style={{ color: '#ef4444', fontWeight: 700 }}
-                                    >
-                                        {t('layout.status.companyDefault', { defaultValue: 'No company selected' })}
-                                    </option>
+                                    <option value="">{t('layout.status.companyDefault', { defaultValue: 'No company selected' })}</option>
                                     {(companies || []).map((company) => (
                                         <option
                                             key={getCompanySelectionKey(company)}
                                             value={getCompanySelectionKey(company)}
-                                            style={{ color: '#22c55e', fontWeight: 600 }}
                                         >
                                             {company.name || t('sidebar.company.fallback')}
                                         </option>
@@ -1226,99 +1382,176 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 </select>
                             </div>
 
+                            <div ref={deviceMenuRef} className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsDeviceMenuOpen((prev) => !prev);
+                                        setIsLanguageMenuOpen(false);
+                                    }}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
+                                >
+                                    <HardDrive className="h-3.5 w-3.5 text-cyan-200" />
+                                    {t('layout.nav.deviceCapability', { defaultValue: 'قدرة الجهاز' })}
+                                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isDeviceMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {isDeviceMenuOpen && (
+                                    <div
+                                        className="absolute z-40 mt-1 w-[320px] rounded-xl border border-slate-700/80 bg-slate-950/95 p-2 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
+                                        style={uiDir === 'rtl' ? { right: 0 } : { left: 0 }}
+                                    >
+                                        <div className="mb-2 flex items-center justify-between">
+                                            <span className="text-[10px] font-semibold text-slate-100">
+                                                {t('layout.nav.deviceCapability', { defaultValue: 'قدرة الجهاز' })}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={readRam}
+                                                disabled={readingRam || !isRamAvailable}
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-600/80 bg-slate-800/80 text-slate-100 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                                title={!isRamAvailable ? t('layout.ram.unavailable') : t('layout.ram.refreshTitle')}
+                                            >
+                                                {readingRam ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                ) : (
+                                                    <HardDrive className="h-3.5 w-3.5" />
+                                                )}
+                                            </button>
+                                        </div>
+                                        {ramError ? (
+                                            <div className="rounded-lg border border-rose-400/35 bg-rose-500/15 px-2 py-1 text-[10px] text-rose-100">
+                                                {ramError}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1 text-[10px] text-slate-100">
+                                                <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
+                                                    {t('layout.nav.memoryRead', { defaultValue: 'قراءة الذاكرة' })}: {' '}
+                                                    {ramInfo
+                                                        ? `${formatNumber(ramInfo.usedGb)}/${formatNumber(ramInfo.totalGb)} GB`
+                                                        : t('layout.ram.unavailable')}
+                                                    {ramInfo && typeof ramInfo.freeGb === 'number'
+                                                        ? ` | ${formatNumber(ramInfo.freeGb)} GB`
+                                                        : ''}
+                                                    {ramInfo?.usagePercentage
+                                                        ? ` | ${formatNumber(ramInfo.usagePercentage)}%`
+                                                        : ''}
+                                                </div>
+                                                <div className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2 py-1">
+                                                    {t('layout.ram.recommendedTabs', { defaultValue: 'المهام الموصى بها' })}: {' '}
+                                                    {ramInfo?.recommendedTabs != null
+                                                        ? formatNumber(ramInfo.recommendedTabs)
+                                                        : '--'}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             {taqeemLoggedIn && companies && companies.length > 0 && !selectedCompany && (
-                                <div className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold">
+                                <div className="inline-flex h-9 items-center rounded-lg border border-amber-400/35 bg-amber-500/15 px-2 text-[10px] font-semibold text-amber-100">
                                     {t('sidebar.company.selectToContinue', { defaultValue: 'Select a company to complete uploading.' })}
                                 </div>
                             )}
 
-                            {(ramInfo || ramError) && (
-                                <div
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] shadow-[0_6px_14px_rgba(2,6,23,0.35)] ${ramError
-                                        ? 'border-rose-400/30 bg-rose-500/15 text-rose-200'
-                                        : 'border-slate-600/40 bg-slate-900/50 text-slate-200'
-                                        }`}
+                            <div ref={languageMenuRef} className="relative" style={{ marginInlineStart: 'auto' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsLanguageMenuOpen((prev) => !prev);
+                                        setIsDeviceMenuOpen(false);
+                                    }}
+                                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 hover:border-slate-600"
                                 >
-                                    <HardDrive className="w-3.5 h-3.5" />
-                                    {ramError ? (
-                                        <span>{ramError}</span>
-                                    ) : (
-                                        <span>
-                                            {t('layout.ram.usedOf', {
-                                                used: formatNumber(ramInfo.usedGb),
-                                                total: formatNumber(ramInfo.totalGb)
-                                            })}
-                                            {typeof ramInfo.freeGb === 'number'
-                                                ? ` (${t('layout.ram.free', { free: formatNumber(ramInfo.freeGb) })})`
-                                                : ''}
-                                            {ramInfo.usagePercentage
-                                                ? ` (${t('layout.ram.usage', { usage: formatNumber(ramInfo.usagePercentage) })})`
-                                                : ''}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            {ramInfo?.recommendedTabs != null && (
-                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] shadow-[0_6px_14px_rgba(2,6,23,0.35)] border-slate-600/40 bg-slate-900/50 text-slate-200">
-                                    <AppWindow className="w-3.5 h-3.5" />
-                                    <span className="font-semibold">Recommended Tabs:</span>
-                                    <span>{formatNumber(ramInfo.recommendedTabs)}</span>
-                                </div>
-                            )}
+                                    {currentLangCode.toUpperCase()}
+                                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isLanguageMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {isLanguageMenuOpen && (
+                                    <div
+                                        className="absolute z-40 mt-1 min-w-[120px] rounded-xl border border-slate-700/80 bg-slate-950/95 p-1.5 shadow-[0_14px_28px_rgba(2,6,23,0.5)]"
+                                        style={uiDir === 'rtl' ? { left: 0 } : { right: 0 }}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => handleLanguageChange('ar')}
+                                            className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'ar'
+                                                ? 'bg-cyan-500/20 text-cyan-100'
+                                                : 'text-slate-200 hover:bg-slate-800/80'
+                                                }`}
+                                        >
+                                            <span>AR</span>
+                                            <span>{t('common.arabic', { defaultValue: 'العربية' })}</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleLanguageChange('en')}
+                                            className={`mt-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-semibold ${currentLangCode === 'en'
+                                                ? 'bg-cyan-500/20 text-cyan-100'
+                                                : 'text-slate-200 hover:bg-slate-800/80'
+                                                }`}
+                                        >
+                                            <span>EN</span>
+                                            <span>{t('common.english', { defaultValue: 'English' })}</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/85 px-1.5">
+                                <NotificationBell onViewChange={onViewChange} mode="unread" />
+                                <NotificationBell onViewChange={onViewChange} mode="all" />
+                            </div>
+
+                            {userBadge}
                         </div>
+
+                        {updateNotice}
+
                         {isAuthenticated && !isAdmin && mode === 'inactive' && (
-                            <div className="flex items-center gap-2 text-[10px] text-rose-200 bg-rose-500/15 border border-rose-400/30 px-3 py-1.5 rounded-xl">
-                                <AlertTriangle className="w-4 h-4" />
+                            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-500/15 px-2 py-1 text-[10px] text-rose-100">
+                                <AlertTriangle className="h-3.5 w-3.5" />
                                 <span>{t('layout.messages.inactive')}</span>
                             </div>
                         )}
                         {isAuthenticated && !isAdmin && mode === 'partial' && (
-                            <div className="flex items-center gap-2 text-[10px] text-amber-200 bg-amber-500/15 border border-amber-400/30 px-3 py-1.5 rounded-xl">
-                                <AlertTriangle className="w-4 h-4" />
+                            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/15 px-2 py-1 text-[10px] text-amber-100">
+                                <AlertTriangle className="h-3.5 w-3.5" />
                                 <span>{systemState?.partialMessage || t('layout.messages.partialFallback')}</span>
                             </div>
                         )}
                         {isAuthenticated && !isAdmin && mode === 'inactive' && downtimeParts && (
-                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-200 bg-slate-900/70 border border-slate-700/60 px-3 py-1.5 rounded-2xl shadow-sm">
-                                <div className="flex items-center gap-2">
-                                    <AlertTriangle className="w-4 h-4 text-cyan-300" />
-                                    <span className="font-semibold text-slate-100">{t('layout.messages.downtimeEnds')}</span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {[
-                                        { label: t('layout.time.days'), value: downtimeParts.days },
-                                        { label: t('layout.time.hours'), value: downtimeParts.hours },
-                                        { label: t('layout.time.minutes'), value: downtimeParts.minutes },
-                                        { label: t('layout.time.seconds'), value: downtimeParts.seconds }
-                                    ].map((item) => (
-                                        <div
-                                            key={item.label}
-                                            className="px-2 py-1 rounded-lg bg-slate-900/80 border border-slate-700/70 text-center shadow-sm"
-                                        >
-                                            <div className="text-[12px] font-semibold text-slate-100 leading-tight">{item.value}</div>
-                                            <div className="text-[8px] uppercase text-slate-400">{item.label}</div>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1 rounded-lg border border-slate-700/70 bg-slate-900/75 px-2 py-1 text-[10px] text-slate-200">
+                                <AlertTriangle className="h-3.5 w-3.5 text-cyan-300" />
+                                <span className="font-semibold text-slate-100">{t('layout.messages.downtimeEnds')}</span>
+                                {[
+                                    { label: t('layout.time.days'), value: downtimeParts.days },
+                                    { label: t('layout.time.hours'), value: downtimeParts.hours },
+                                    { label: t('layout.time.minutes'), value: downtimeParts.minutes },
+                                    { label: t('layout.time.seconds'), value: downtimeParts.seconds }
+                                ].map((item) => (
+                                    <div
+                                        key={item.label}
+                                        className="rounded-md border border-slate-700/70 bg-slate-950/80 px-1.5 py-0.5 text-center"
+                                    >
+                                        <span className="font-semibold text-slate-100">{item.value}</span>
+                                        <span className="ms-1 text-[9px] text-slate-400">{item.label}</span>
+                                    </div>
+                                ))}
                             </div>
                         )}
                         {isAuthenticated && !isAdmin && updateBlocked() && (
-                            <div className="flex items-center gap-2 text-[10px] text-orange-200 bg-orange-500/15 border border-orange-400/30 px-3 py-1.5 rounded-xl">
-                                <AlertTriangle className="w-4 h-4" />
+                            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-orange-400/30 bg-orange-500/15 px-2 py-1 text-[10px] text-orange-100">
+                                <AlertTriangle className="h-3.5 w-3.5" />
                                 <span>{blockMessage || t('layout.messages.updateBlocked')}</span>
                             </div>
                         )}
-                        {updateNotice}
                     </div>
                 </header>
 
                 {/* Page Content */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-0 pb-5 bg-transparent relative max-w-full">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-1 pb-5 bg-transparent relative max-w-full">
                     <div className="pointer-events-none absolute inset-0 z-0">
-                        <div className="absolute -top-20 left-1/3 h-48 w-48 rounded-full bg-cyan-200/30 blur-3xl float-slow" />
-                        <div className="absolute top-32 right-[-80px] h-56 w-56 rounded-full bg-emerald-200/20 blur-3xl float-slower" />
-                        <div className="absolute bottom-12 left-[-80px] h-44 w-44 rounded-full bg-sky-200/25 blur-3xl float-slow" />
-                        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(255,255,255,0.55))]" />
+                        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.95),rgba(241,245,249,0.9))]" />
                     </div>
                     {blocked && (
                         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[radial-gradient(circle,rgba(255,255,255,0.95),rgba(240,249,255,0.9))] backdrop-blur-sm text-center px-6">
@@ -1344,3 +1577,5 @@ const Layout = ({ children, currentView, onViewChange }) => {
 };
 
 export default Layout;
+
+

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
@@ -316,6 +316,37 @@ function createWindow() {
     icon: path.join(__dirname, "../assets/icon.png"),
     backgroundColor: "#0b0f17",
     show: false,
+  });
+
+  // Capture renderer runtime failures to avoid silent white-screen issues.
+  mainWindow.webContents.on(
+    "console-message",
+    (_event, level, message, line, sourceId) => {
+      console.log(
+        `[RENDERER:${level}] ${message} (${sourceId || "unknown"}:${line || 0})`,
+      );
+    },
+  );
+
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      console.error(
+        "[MAIN] Renderer did-fail-load:",
+        errorCode,
+        errorDescription,
+        validatedURL,
+      );
+    },
+  );
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[MAIN] Renderer process gone:", details);
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("[MAIN] Preload error:", preloadPath, error);
   });
 
   mainWindow.webContents.once("did-finish-load", () => {

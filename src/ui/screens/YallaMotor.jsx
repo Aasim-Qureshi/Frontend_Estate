@@ -680,7 +680,7 @@ const YallaMotor = () => {
                                         </td>
                                         <td className="px-4 py-3 text-[11px] text-slate-600">
                                             <div>Mileage: {ad.mileageNum ? `${formatNumber(ad.mileageNum)} KM` : 'N/A'}</div>
-                                            <div>Images: {ad.imagesCount != null ? ad.imagesCount : '�'}</div>
+                                            <div>Images: {ad.imagesCount != null ? ad.imagesCount : '-'}</div>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-col gap-2">
@@ -711,7 +711,7 @@ const YallaMotor = () => {
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50">
                         <span className="text-[11px] text-slate-500">
-                            Showing {ads.length} of {total.toLocaleString()} results � Limit {PAGE_LIMIT} per page
+                            Showing {ads.length} of {total.toLocaleString()} results - Limit {PAGE_LIMIT} per page
                         </span>
                         <div className="flex items-center gap-2">
                             <button

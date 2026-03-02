@@ -32,8 +32,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
-  Download,
 } from "lucide-react";
+import excelIconFallback from "../../../public/images/excelicon.png";
 
 import {
   multiExcelUpload,
@@ -972,6 +972,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const [validationTableTab, setValidationTableTab] = useState("report-info");
   const [isValidationTableCollapsed, setIsValidationTableCollapsed] =
     useState(false);
+  const [focusedValidationIssue, setFocusedValidationIssue] = useState(null);
   const [reports, setReports, resetReports] = usePersistentState(
     "multiExcel:reports",
     [],
@@ -1006,6 +1007,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [validationModalStep, setValidationModalStep] =
     useState("validation");
+  const [validationFlowStage, setValidationFlowStage] = useState("valuers");
   const [overrideCompanyValuers, setOverrideCompanyValuers] = useState(null);
   const [fetchingCompanyValuers, setFetchingCompanyValuers] = useState(false);
   const [assetEdit, setAssetEdit] = useState(null);
@@ -1019,6 +1021,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const [actionStatus, setActionStatus] = useState(null);
   const [updatingReport, setUpdatingReport] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [excelIconSrc, setExcelIconSrc] = useState(excelIconFallback);
   const [pendingSubmit, setPendingSubmit, resetPendingSubmit] =
     usePersistentState("multiExcel:pendingSubmit", null, {
       storage: "session",
@@ -1115,6 +1118,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
   const pdfInputRef = useRef(null);
   const editPdfInputRef = useRef(null);
+  const validationConsoleRef = useRef(null);
   const selectedCompanyRef = useRef(selectedCompany);
   const selectedValuersRef = useRef(selectedValuers);
   const fetchCompanyValuersPromiseRef = useRef(null);
@@ -1415,6 +1419,40 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const excelInputRef = useRef(null);
 
   useEffect(() => {
+    let objectUrl = null;
+    let disposed = false;
+
+    const loadIconFromPublic = async () => {
+      try {
+        if (!window?.electronAPI?.readTemplateFile) return;
+        const result = await window.electronAPI.readTemplateFile(
+          "images/excelicon.png",
+        );
+        if (!result?.success || !Array.isArray(result.arrayBuffer)) return;
+        const bytes = Uint8Array.from(result.arrayBuffer);
+        if (!bytes.length) return;
+
+        objectUrl = URL.createObjectURL(
+          new Blob([bytes], { type: "image/png" }),
+        );
+        if (!disposed) {
+          setExcelIconSrc(objectUrl);
+        }
+      } catch (err) {
+        // Keep fallback icon from webpack bundle.
+      }
+    };
+
+    loadIconFromPublic();
+    return () => {
+      disposed = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     setSelectedValuers([]);
     selectedValuersRef.current = [];
     setValuerModalOpen(false);
@@ -1424,6 +1462,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(false);
     setShowValidationModal(false);
     setValidationModalStep("validation");
+    setValidationFlowStage("valuers");
     if (valuerModalResolveRef.current) {
       valuerModalResolveRef.current(false);
       valuerModalResolveRef.current = null;
@@ -1460,8 +1499,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
     }
   }, []);
 
-  const openValidationModal = useCallback(() => {
-    setValidationModalStep("validation");
+  const openValidationModal = useCallback((options = {}) => {
+    const { step = "validation", flowStage = "valuers" } = options;
+    setValidationModalStep(step);
+    setValidationFlowStage(flowStage);
     setShowValidationModal(true);
   }, []);
 
@@ -1469,16 +1510,21 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const handleExcelChange = async (e) => {
     const files = Array.from(e.target.files || []);
     setExcelFiles(files);
+    setPdfFiles([]);
+    setWantsPdfUpload(false);
     resetMessages();
     resetValidation();
     setShowValidationModal(false);
     setValidationModalStep("validation");
+    setValidationFlowStage("valuers");
+    setDraftValuers([]);
+    selectedValuersRef.current = [];
+    setSelectedValuers([]);
     setUseDefaultValuers(false);
+    setValuerModalError("");
     if (files.length) {
-      const ok = await ensureCompanyValuersLoaded();
-      if (ok) {
-        await openValuerModal();
-      }
+      await ensureCompanyValuersLoaded();
+      openValidationModal({ step: "pdf-upload", flowStage: "valuers" });
     }
   };
 
@@ -1490,7 +1536,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     if (files.length && excelFiles.length) {
       setValidationTableTab("pdf-assets");
       if (!showValidationModal) {
-        setShowValidationModal(true);
+        openValidationModal({ step: "pdf-upload", flowStage: "pdf" });
       }
     }
   };
@@ -1517,6 +1563,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const resetValidation = () => {
     setValidationItems([]);
     setValidationMessage(null);
+    setFocusedValidationIssue(null);
   };
 
   // Update the resetAll function to clear file inputs
@@ -1537,6 +1584,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(false);
     setShowValidationModal(false);
     setValidationModalStep("validation");
+    setValidationFlowStage("valuers");
     resetPendingSubmit();
     resetPendingBatch();
     resetReturnView();
@@ -2811,11 +2859,123 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const closeValidationModal = () => {
     setShowValidationModal(false);
     setValidationModalStep("validation");
+    setValidationFlowStage("valuers");
+    setFocusedValidationIssue(null);
   };
 
   const handleValidationContinue = () => {
     setValidationModalStep("pdf-upload");
+    setValidationFlowStage("valuers");
   };
+
+  const handleContinueToPdfStep = () => {
+    const total = sumValuerPercentages(draftValuers);
+
+    if (draftValuers.length === 0) {
+      setUseDefaultValuers(true);
+      selectedValuersRef.current = [];
+      setSelectedValuers([]);
+      setValuerModalError("");
+      setValidationModalStep("pdf-upload");
+      setValidationFlowStage("pdf");
+      return;
+    }
+
+    if (Math.abs(total - 100) > 0.001) {
+      setValuerModalError(`Total must be 100%. Currently ${total}%.`);
+      return;
+    }
+
+    const cleaned = draftValuers.map((v) => ({
+      valuerId: v.valuerId || "",
+      valuerName: v.valuerName || "",
+      percentage: Number(v.percentage) || 0,
+    }));
+    selectedValuersRef.current = cleaned;
+    setSelectedValuers(cleaned);
+    setUseDefaultValuers(false);
+    setValuerModalError("");
+    setValidationModalStep("pdf-upload");
+    setValidationFlowStage("pdf");
+  };
+
+  const handleContinueToReviewStep = () => {
+    setValidationModalStep("pdf-upload");
+    setValidationFlowStage("review");
+  };
+
+  const handleSkipStep2UseDefault = () => {
+    setDraftValuers([]);
+    selectedValuersRef.current = [];
+    setSelectedValuers([]);
+    setUseDefaultValuers(true);
+    setValuerModalError("");
+    setValidationModalStep("pdf-upload");
+    setValidationFlowStage("pdf");
+  };
+
+  const buildIssueFocusKey = useCallback(
+    (issue = {}, fileName = "", section = "asset") =>
+      [
+        section,
+        String(fileName || "").trim(),
+        String(issue?.field || "").trim(),
+        String(issue?.location || "").trim(),
+        String(issue?.message || "").trim(),
+      ].join("::"),
+    [],
+  );
+
+  const openIssueInValidationConsole = useCallback((issuePayload) => {
+    if (!issuePayload) return;
+    setValidationModalStep("validation");
+    setValidationTableTab(issuePayload.tab || "report-info");
+    setIsValidationTableCollapsed(false);
+    setFocusedValidationIssue(issuePayload);
+  }, []);
+
+  useEffect(() => {
+    if (
+      !showValidationModal ||
+      validationModalStep !== "validation" ||
+      !focusedValidationIssue ||
+      isValidationTableCollapsed
+    ) {
+      return;
+    }
+
+    const scrollToFocusedIssue = () => {
+      const root = validationConsoleRef.current;
+      if (!root) return;
+      const target = root.querySelector(".validation-focus-target");
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      }
+    };
+
+    const rafId =
+      typeof window !== "undefined" && window.requestAnimationFrame
+        ? window.requestAnimationFrame(scrollToFocusedIssue)
+        : null;
+    const timeoutId = setTimeout(scrollToFocusedIssue, 120);
+
+    return () => {
+      if (rafId !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(rafId);
+      }
+      clearTimeout(timeoutId);
+    };
+  }, [
+    showValidationModal,
+    validationModalStep,
+    validationTableTab,
+    focusedValidationIssue,
+    isValidationTableCollapsed,
+  ]);
 
   const executeUploadModalAction = async (mode) => {
     closeValidationModal();
@@ -3262,10 +3422,30 @@ const MultiExcelUpload = ({ onViewChange }) => {
   };
 
   const ensureValuerSelection = async () => {
-    if (useDefaultValuers || (selectedValuersRef.current || []).length)
+    if (useDefaultValuers || (selectedValuersRef.current || []).length) {
       return true;
-    const result = await openValuerModal({ waitForSelection: true });
-    return result === true;
+    }
+
+    const total = sumValuerPercentages(draftValuers);
+    if (draftValuers.length && Math.abs(total - 100) < 0.001) {
+      const cleaned = draftValuers.map((v) => ({
+        valuerId: v.valuerId || "",
+        valuerName: v.valuerName || "",
+        percentage: Number(v.percentage) || 0,
+      }));
+      selectedValuersRef.current = cleaned;
+      setSelectedValuers(cleaned);
+      setUseDefaultValuers(false);
+      setValuerModalError("");
+      return true;
+    }
+
+    // Step 2 is optional; if no explicit selection is made, use default valuer.
+    setUseDefaultValuers(true);
+    selectedValuersRef.current = [];
+    setSelectedValuers([]);
+    setValuerModalError("");
+    return true;
   };
 
   const toggleDraftValuer = (valuer, checked) => {
@@ -3321,7 +3501,9 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(true);
     setValuerModalError("");
     closeValuerModal(true);
-    openValidationModal();
+    if (!showValidationModal) {
+      openValidationModal({ step: "pdf-upload", flowStage: "pdf" });
+    }
   };
 
   const applyValuerDraft = () => {
@@ -3344,8 +3526,59 @@ const MultiExcelUpload = ({ onViewChange }) => {
     setUseDefaultValuers(false);
     setValuerModalError("");
     closeValuerModal(true);
-    openValidationModal();
+    if (!showValidationModal) {
+      openValidationModal({ step: "pdf-upload", flowStage: "pdf" });
+    }
   };
+
+  const initializeDraftValuersForStep = useCallback(() => {
+    const availableValuers = normalizeValuerList(displayCompanyValuers || []);
+    if (!availableValuers.length) {
+      setDraftValuers([]);
+      return;
+    }
+
+    setDraftValuers((prev) => {
+      if (prev.length) return prev;
+
+      const currentSelected = normalizeSelectedValuers(
+        selectedValuersRef.current || selectedValuers,
+      );
+      const initialDraft = currentSelected.length
+        ? currentSelected.map((v) => {
+            const match = availableValuers.find(
+              (item) =>
+                (v.valuerId && item.valuerId === v.valuerId) ||
+                (v.valuerName && item.valuerName === v.valuerName),
+            );
+            return {
+              valuerId: v.valuerId || match?.valuerId || "",
+              valuerName: v.valuerName || match?.valuerName || "",
+              percentage: Number(v.percentage) || 0,
+            };
+          })
+        : availableValuers.length === 1
+          ? [{ ...availableValuers[0], percentage: 100 }]
+          : [];
+
+      return initialDraft;
+    });
+  }, [displayCompanyValuers, selectedValuers]);
+
+  useEffect(() => {
+    if (
+      showValidationModal &&
+      validationModalStep === "pdf-upload" &&
+      validationFlowStage === "valuers"
+    ) {
+      initializeDraftValuersForStep();
+    }
+  }, [
+    showValidationModal,
+    validationModalStep,
+    validationFlowStage,
+    initializeDraftValuersForStep,
+  ]);
 
   const buildValuersPayload = () => {
     const cleaned = normalizeSelectedValuers(
@@ -4124,7 +4357,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
   ) : null;
 
   const validationConsole = (
-    <div className="space-y-2">
+    <div ref={validationConsoleRef} className="space-y-2">
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden card-animate">
         <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 px-3 py-2.5 text-white">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4378,6 +4611,15 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               {reportFields.map((field) => {
                                 const fieldIssues =
                                   reportInfoIssuesByField[field.label] || [];
+                                const focusedFieldRow = fieldIssues.some(
+                                  (issue) =>
+                                    focusedValidationIssue?.key ===
+                                    buildIssueFocusKey(
+                                      issue,
+                                      item.fileName,
+                                      "report-info",
+                                    ),
+                                );
                                 const hasIssue = fieldIssues.length > 0;
                                 const hasFieldValue = hasValue(field.value);
                                 const statusLabel = hasIssue
@@ -4406,7 +4648,11 @@ const MultiExcelUpload = ({ onViewChange }) => {
                                 return (
                                   <tr
                                     key={field.label}
-                                    className="border-b border-slate-200 hover:bg-slate-50/50"
+                                    className={`border-b border-slate-200 hover:bg-slate-50/50 ${
+                                      focusedFieldRow
+                                        ? "validation-focus-target bg-amber-50/70 ring-1 ring-inset ring-amber-300"
+                                        : ""
+                                    }`}
                                   >
                                     <td className="px-2 py-1.5 bg-white font-semibold text-slate-800">
                                       {field.label}
@@ -4435,7 +4681,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               {extraIssues.map((issue, idx) => (
                                 <tr
                                   key={`issue-extra-${idx}`}
-                                  className="border-b border-slate-200 hover:bg-slate-50/50"
+                                  className={`border-b border-slate-200 hover:bg-slate-50/50 ${
+                                    focusedValidationIssue?.key ===
+                                    buildIssueFocusKey(
+                                      issue,
+                                      item.fileName,
+                                      "report-info",
+                                    )
+                                      ? "validation-focus-target bg-amber-50/70 ring-1 ring-inset ring-amber-300"
+                                      : ""
+                                  }`}
                                 >
                                     <td className="px-2 py-1.5 bg-white font-semibold text-slate-800">
                                     {issue.field ||
@@ -4502,14 +4757,25 @@ const MultiExcelUpload = ({ onViewChange }) => {
                       )}
                       {pdfMatchInfo.unmatchedPdfs.length > 0 && (
                         <div className="font-medium">
-                          {quickTranslate(
-                            "validationModal.pdfMatchingIssues.unmatched",
-                            "Unmatched PDFs: {{files}}",
-                            { files: pdfMatchInfo.unmatchedPdfs.join(", ") },
+                                    {quickTranslate(
+                                      "validationModal.pdfMatchingIssues.unmatched",
+                                      "Unmatched PDFs: {{files}}",
+                                      { files: pdfMatchInfo.unmatchedPdfs.join(", ") },
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           )}
-                        </div>
-                      )}
-                    </div>
+              {wantsPdfUpload &&
+                focusedValidationIssue?.section === "pdf-match" &&
+                (pdfMatchInfo.excelsMissingPdf.length ||
+                  pdfMatchInfo.unmatchedPdfs.length) && (
+                  <div className="validation-focus-target rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {translate(
+                      "validationConsole.step4IssueFocusedHint",
+                      "Selected issue is highlighted in this section.",
+                    )}
                   </div>
                 )}
               {validationItems.length ? (
@@ -4677,7 +4943,16 @@ const MultiExcelUpload = ({ onViewChange }) => {
                               return assetIssues.map((issue, idx) => (
                                 <tr
                                   key={`issue-${item.fileName}-${idx}`}
-                                  className="border-b border-slate-200 hover:bg-slate-50/50"
+                                  className={`border-b border-slate-200 hover:bg-slate-50/50 ${
+                                    focusedValidationIssue?.key ===
+                                    buildIssueFocusKey(
+                                      issue,
+                                      item.fileName,
+                                      "asset",
+                                    )
+                                      ? "validation-focus-target bg-amber-50/70 ring-1 ring-inset ring-amber-300"
+                                      : ""
+                                  }`}
                                 >
                                   <td className="px-2 py-1.5 text-slate-800 font-medium">
                                     {item.fileName}
@@ -4718,18 +4993,127 @@ const MultiExcelUpload = ({ onViewChange }) => {
   const draftValuerTotal = sumValuerPercentages(draftValuers);
   const draftValuerValid =
     draftValuers.length > 0 && Math.abs(draftValuerTotal - 100) < 0.001;
+  const validationIssueCount = useMemo(
+    () =>
+      validationItems.reduce(
+        (acc, item) => acc + ((item?.issues || []).length || 0),
+        0,
+      ),
+    [validationItems],
+  );
+  const hasPdfMatchIssues =
+    wantsPdfUpload &&
+    (pdfMatchInfo.excelsMissingPdf.length > 0 ||
+      pdfMatchInfo.unmatchedPdfs.length > 0);
+  const hasValidationIssues = validationIssueCount > 0 || hasPdfMatchIssues;
+  const detailedValidationIssues = useMemo(() => {
+    const details = [];
+
+    validationItems.forEach((item) => {
+      (item.issues || []).forEach((issue) => {
+        const reportInfo = isReportInfoIssue(issue);
+        const section = reportInfo ? "report-info" : "asset";
+        const tab = reportInfo ? "report-info" : "pdf-assets";
+        details.push({
+          ...issue,
+          fileName: item.fileName,
+          section,
+          tab,
+          key: buildIssueFocusKey(issue, item.fileName, section),
+        });
+      });
+    });
+
+    if (wantsPdfUpload) {
+      pdfMatchInfo.excelsMissingPdf.forEach((name) => {
+        const issue = {
+          field: "PDF Match",
+          location: "Files",
+          message: quickTranslate(
+            "validationModal.pdfMatchingIssues.missing",
+            "Excel files missing PDF: {{files}}",
+            { files: name },
+          ),
+        };
+        details.push({
+          ...issue,
+          fileName: name,
+          section: "pdf-match",
+          tab: "pdf-assets",
+          key: buildIssueFocusKey(issue, name, "pdf-match"),
+        });
+      });
+
+      pdfMatchInfo.unmatchedPdfs.forEach((name) => {
+        const issue = {
+          field: "PDF Match",
+          location: "Files",
+          message: quickTranslate(
+            "validationModal.pdfMatchingIssues.unmatched",
+            "Unmatched PDFs: {{files}}",
+            { files: name },
+          ),
+        };
+        details.push({
+          ...issue,
+          fileName: name,
+          section: "pdf-match",
+          tab: "pdf-assets",
+          key: buildIssueFocusKey(issue, name, "pdf-match"),
+        });
+      });
+    }
+
+    return details;
+  }, [
+    validationItems,
+    wantsPdfUpload,
+    pdfMatchInfo.excelsMissingPdf,
+    pdfMatchInfo.unmatchedPdfs,
+    quickTranslate,
+    buildIssueFocusKey,
+  ]);
+  const totalDetailedIssueCount = detailedValidationIssues.length;
+  const visiblePdfNames = useMemo(
+    () => pdfFiles.map((file) => file.name).filter(Boolean),
+    [pdfFiles],
+  );
+  const isStep2Active =
+    validationModalStep === "pdf-upload" && validationFlowStage === "valuers";
+  const isStep3Active =
+    validationModalStep === "pdf-upload" && validationFlowStage === "pdf";
+  const isStep4Active =
+    validationModalStep === "pdf-upload" && validationFlowStage === "review";
+  const stepChipClass = (isActive) =>
+    `rounded-full border px-2 py-0.5 ${
+      isActive
+        ? "border-blue-300 bg-blue-50 text-blue-700"
+        : "border-slate-200 bg-white text-slate-600"
+    }`;
 
   const valuerModal = (
     <Modal
       open={valuerModalOpen}
       onClose={closeValuerModal}
-      title="Select valuers"
+      title={translate(
+        "validationConsole.step2OptionalValuers",
+        "Step 2 (Optional): Add valuers",
+      )}
       maxWidth="max-w-3xl"
     >
       <div className="space-y-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+          <div className="mb-1 inline-flex items-center rounded-full border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+            {translate(
+              "validationConsole.step2OptionalValuers",
+              "Step 2 (Optional): Add valuers",
+            )}
+          </div>
           <div className="text-xs font-semibold text-slate-800">
-            Choose valuers and set contribution percentages (total 100%).
+            {translate(
+              "validationConsole.step2Hint",
+              "Optionally assign valuers and contribution percentages, or keep the Taqeem default valuer.",
+            )}
           </div>
         </div>
         {!selectedCompany && (
@@ -4833,7 +5217,10 @@ const MultiExcelUpload = ({ onViewChange }) => {
               onClick={skipValuerSelection}
               className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Skip (use Taqeem default)
+              {translate(
+                "validationConsole.skipStep2UseDefault",
+                "Skip Step 2 (use default)",
+              )}
             </button>
             <button
               type="button"
@@ -4849,7 +5236,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
               disabled={!draftValuerValid}
               className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
             >
-              Save valuers
+              {translate("validationConsole.continueStep3", "Continue to Step 3")}
             </button>
           </div>
         </div>
@@ -4864,34 +5251,49 @@ const MultiExcelUpload = ({ onViewChange }) => {
       title={
         validationModalStep === "validation"
           ? translate("validationConsole.title", "Validation Console")
-          : quickTranslate(
-              "validationModal.step2.title",
-              "Step 2: PDF upload and actions",
-            )
+          : validationFlowStage === "review"
+            ? translate(
+                "validationConsole.step4Action",
+                "Step 4: How to continue with uploaded reports",
+              )
+            : validationFlowStage === "pdf"
+              ? translate(
+                  "validationConsole.step3OptionalPdf",
+                  "Step 3 (Optional): Attach PDF files",
+                )
+              : translate(
+                  "validationConsole.step2OptionalValuers",
+                  "Step 2 (Optional): Add valuers",
+                )
       }
       maxWidth="max-w-6xl"
     >
       <div className="space-y-3">
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span
-              className={`rounded-full border px-2 py-0.5 ${
-                validationModalStep === "validation"
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-200 bg-white text-slate-600"
-              }`}
-            >
-              {translate("validationConsole.step1", "Step 1: Validation")}
+            <span className={stepChipClass(validationModalStep === "validation")}>
+              {translate("validationConsole.step1", "Step 1: Upload Excel")}
             </span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            <span
-              className={`rounded-full border px-2 py-0.5 ${
-                validationModalStep === "pdf-upload"
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-200 bg-white text-slate-600"
-              }`}
-            >
-              {translate("validationConsole.step2", "Step 2: PDF & Actions")}
+            <span className={stepChipClass(isStep2Active)}>
+              {translate(
+                "validationConsole.step2OptionalValuers",
+                "Step 2 (Optional): Add valuers",
+              )}
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <span className={stepChipClass(isStep3Active)}>
+              {translate(
+                "validationConsole.step3OptionalPdf",
+                "Step 3 (Optional): Attach PDF files",
+              )}
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <span className={stepChipClass(isStep4Active)}>
+              {translate(
+                "validationConsole.step4Action",
+                "Step 4: How to continue with uploaded reports",
+              )}
             </span>
           </div>
         </div>
@@ -4903,7 +5305,7 @@ const MultiExcelUpload = ({ onViewChange }) => {
               <span className="text-xs text-slate-600">
                 {translate(
                   "validationConsole.step1Hint",
-                  "Review validation results, then continue to Step 2 for PDF upload and action selection.",
+                  "Review validation results, then continue to Step 2 (optional valuers), Step 3 (optional PDF), and Step 4 action.",
                 )}
               </span>
               <div className="flex flex-wrap items-center gap-2">
@@ -4926,21 +5328,179 @@ const MultiExcelUpload = ({ onViewChange }) => {
               </div>
             </div>
           </>
-        ) : (
+        ) : validationFlowStage === "valuers" ? (
           <>
             <div className="space-y-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
+                  <span className="mb-1 inline-flex items-center rounded-full border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                    {translate(
+                      "validationConsole.step2OptionalValuers",
+                      "Step 2 (Optional): Add valuers",
+                    )}
+                  </span>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    {translate(
+                      "validationConsole.step2Hint",
+                      "Optionally assign valuers and contribution percentages, or keep the Taqeem default valuer.",
+                    )}
+                  </p>
+                </div>
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                  {valuerSummary}
+                </span>
+              </div>
+              {!selectedCompany && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Select a company to load valuers.
+                </div>
+              )}
+              {fetchingCompanyValuers && (
+                <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Retrieving valuers from Taqeem...
+                </div>
+              )}
+              {!fetchingCompanyValuers &&
+                selectedCompany &&
+                !displayCompanyValuers.length && (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    No valuers found for the selected company.
+                  </div>
+                )}
+              <div className="max-h-[320px] overflow-y-auto rounded-xl border border-slate-200">
+                {fetchingCompanyValuers ? (
+                  <div className="flex items-center gap-2 px-3 py-4 text-xs text-slate-600">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Fetching valuers from Taqeem...
+                  </div>
+                ) : displayCompanyValuers.length ? (
+                  displayCompanyValuers.map((valuer) => {
+                    const key = valuer.valuerId || valuer.valuerName;
+                    const selected = draftValuers.find(
+                      (v) => (v.valuerId || v.valuerName) === key,
+                    );
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-3 px-3 py-2 border-b last:border-b-0"
+                      >
+                        <label className="flex items-center gap-2 text-xs text-slate-800">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={!!selected}
+                            onChange={(e) =>
+                              toggleDraftValuer(valuer, e.target.checked)
+                            }
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-semibold">
+                              {valuer.valuerName || "Valuer"}
+                            </span>
+                            {valuer.valuerId ? (
+                              <span className="text-[10px] text-slate-500">
+                                ID: {valuer.valuerId}
+                              </span>
+                            ) : null}
+                          </div>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-600">
+                            Contribution
+                          </span>
+                          <select
+                            className="rounded-md border border-slate-300 px-2 py-1 text-[10px] text-slate-800"
+                            disabled={!selected}
+                            value={selected?.percentage || ""}
+                            onChange={(e) =>
+                              updateDraftPercentage(valuer, e.target.value)
+                            }
+                          >
+                            <option value="">Select</option>
+                            {CONTRIBUTION_OPTIONS.map((pct) => (
+                              <option key={pct} value={pct}>
+                                {pct}%
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-3 py-4 text-xs text-slate-600">
+                    {fetchingCompanyValuers
+                      ? "Fetching valuers from Taqeem..."
+                      : "No valuers found for the selected company."}
+                  </div>
+                )}
+              </div>
+              {valuerModalError && (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {valuerModalError}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="text-xs text-slate-600 font-semibold">
+                  Selected: {draftValuers.length || 0} | Total: {draftValuerTotal}%
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSkipStep2UseDefault}
+                    className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    {translate(
+                      "validationConsole.skipStep2UseDefault",
+                      "Skip Step 2 (use default)",
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={autoSplitDraft}
+                    disabled={draftValuers.length < 2}
+                    className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Auto split
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleContinueToPdfStep}
+                    disabled={validating || !excelFiles.length}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                    {translate(
+                      "validationConsole.continueStep3",
+                      "Continue to Step 3",
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : validationFlowStage === "pdf" ? (
+          <>
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <span className="mb-1 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    {translate(
+                      "validationConsole.step3OptionalPdf",
+                      "Step 3 (Optional): Attach PDF files",
+                    )}
+                  </span>
                   <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                     <Files className="w-4 h-4 text-blue-600" />
-                    {quickTranslate(
-                      "validationModal.step2.pdfSection.title",
-                      "Attach PDF files (optional)",
+                    {translate(
+                      "validationConsole.step3OptionalPdf",
+                      "Step 3 (Optional): Attach PDF files",
                     )}
                   </div>
                   <p className="mt-1 text-[11px] text-slate-600">
-                    {quickTranslate(
-                      "validationModal.step2.pdfSection.subtitle",
+                    {translate(
+                      "validationConsole.step3Hint",
                       "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
                     )}
                   </p>
@@ -5088,6 +5648,185 @@ const MultiExcelUpload = ({ onViewChange }) => {
               )}
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-600">
+                {translate(
+                  "validationConsole.step3Hint",
+                  "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
+                )}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setValidationFlowStage("valuers")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+                >
+                  {translate("validationConsole.backStep2", "Back to Step 2")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleContinueToReviewStep}
+                  disabled={validating || !excelFiles.length}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                  {translate(
+                    "validationConsole.continueStep4",
+                    "Continue to Step 4",
+                  )}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <span className="mb-1 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                    {translate(
+                      "validationConsole.step4Action",
+                      "Step 4: How to continue with uploaded reports",
+                    )}
+                  </span>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    {translate(
+                      "validationConsole.step4Hint",
+                      "Step 4: Choose how to continue with the uploaded reports.",
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                  <div className="text-[10px] font-semibold text-indigo-700 mb-1">
+                    {translate(
+                      "validationConsole.step2OptionalValuers",
+                      "Step 2 (Optional): Add valuers",
+                    )}
+                  </div>
+                  <div className="text-xs font-semibold text-slate-800 break-words">
+                    {valuerSummary}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                  <div className="text-[10px] font-semibold text-blue-700 mb-1">
+                    {translate(
+                      "validationConsole.step3OptionalPdf",
+                      "Step 3 (Optional): Attach PDF files",
+                    )}
+                  </div>
+                  {wantsPdfUpload ? (
+                    <div className="text-xs text-slate-800">
+                      {visiblePdfNames.length > 0 ? (
+                        <div className="space-y-1">
+                          {visiblePdfNames.slice(0, 4).map((name) => (
+                            <div key={name} className="truncate" title={name}>
+                              {name}
+                            </div>
+                          ))}
+                          {visiblePdfNames.length > 4 && (
+                            <div className="text-[10px] text-slate-600">
+                              {quickTranslate(
+                                "validationModal.step2.pdfSection.moreFiles",
+                                "+{{count}} more file(s)",
+                                { count: visiblePdfNames.length - 4 },
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>{quickTranslate("filePicker.choosePdfFiles", "Choose PDF files")}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-emerald-700">
+                      {quickTranslate(
+                        "filePicker.willUseDummyPdf",
+                        "Will use {{placeholder}}",
+                        { placeholder: DUMMY_PDF_NAME },
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div
+                  className={`rounded-lg border px-3 py-2 ${
+                    hasValidationIssues
+                      ? "border-amber-200 bg-amber-50"
+                      : "border-emerald-200 bg-emerald-50"
+                  }`}
+                >
+                  <div
+                    className={`text-[10px] font-semibold mb-1 ${
+                      hasValidationIssues ? "text-amber-700" : "text-emerald-700"
+                    }`}
+                  >
+                    {translate("validationConsole.title", "Validation Console")}
+                  </div>
+                  <div
+                    className={`text-xs ${
+                      hasValidationIssues ? "text-amber-800" : "text-emerald-800"
+                    }`}
+                  >
+                    {hasValidationIssues
+                      ? translate(
+                          "validationConsole.issueCount",
+                          "{{count}} issue(s)",
+                          { count: totalDetailedIssueCount },
+                        )
+                      : quickTranslate("validationModal.noIssues", "No issues detected")}
+                  </div>
+                </div>
+              </div>
+
+              {detailedValidationIssues.length > 0 && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-2">
+                  <div className="mb-1 text-xs font-semibold text-rose-800">
+                    {translate(
+                      "validationConsole.step4IssuesTitle",
+                      "Detailed issues (click any issue to open exact location)",
+                    )}
+                  </div>
+                  <div className="mb-2 text-[10px] text-rose-700">
+                    {translate(
+                      "validationConsole.step4IssuesHint",
+                      "Click an issue to jump to Validation Console and see where to fix it in your Excel data.",
+                    )}
+                  </div>
+                  <div className="max-h-[220px] space-y-1 overflow-y-auto pr-1">
+                    {detailedValidationIssues.map((issue, index) => (
+                      <button
+                        key={`${issue.key}-${index}`}
+                        type="button"
+                        onClick={() => openIssueInValidationConsole(issue)}
+                        className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                          focusedValidationIssue?.key === issue.key
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-rose-200 bg-white hover:bg-rose-50"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-1">
+                          <span className="text-[10px] font-semibold text-slate-800">
+                            {issue.fileName || "-"}
+                          </span>
+                          <span className="text-[10px] font-semibold text-rose-700">
+                            {issue.field || translate("validationConsole.issue", "Issue")}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-slate-600">
+                          {issue.location || "-"}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-slate-700">
+                          {issue.message}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {!isReadyToUpload && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 {quickTranslate(
@@ -5099,18 +5838,18 @@ const MultiExcelUpload = ({ onViewChange }) => {
 
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="text-xs text-slate-600">
-                {quickTranslate(
-                  "validationModal.step2.actionHint",
-                  "Choose how to continue with the uploaded reports.",
+                {translate(
+                  "validationConsole.step4Hint",
+                  "Step 4: Choose how to continue with the uploaded reports.",
                 )}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setValidationModalStep("validation")}
+                  onClick={() => setValidationFlowStage("pdf")}
                   className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                 >
-                  {quickTranslate("validationModal.step2.back", "Back to validation")}
+                  {translate("validationConsole.backStep3", "Back to Step 3")}
                 </button>
                 <button
                   type="button"
@@ -5175,94 +5914,121 @@ const MultiExcelUpload = ({ onViewChange }) => {
           </div>
         </div>
       )}
-      {valuerModal}
       {validationModal}
 
       <div className="space-y-2">
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border-2 border-dashed border-slate-300 bg-slate-50 cursor-pointer hover:bg-blue-50 hover:border-blue-400 transition-all min-w-[180px] flex-[0.85] group">
-              <div className="flex items-center gap-2 text-xs text-slate-700">
-                <FileSpreadsheet className="w-4 h-4 text-blue-600 group-hover:text-blue-700" />
-                <span className="font-semibold">
-                  {excelFiles.length ? (
-                    excelFiles.length === 1 ? (
-                      <span
-                        className="truncate max-w-[150px]"
-                        title={excelFiles[0].name}
-                      >
-                        {excelFiles[0].name}
-                      </span>
-                    ) : (
-                      quickTranslate("filePicker.selectedFiles", "{{count}} file(s) selected", {
-                        count: excelFiles.length,
-                      })
-                    )
-                  ) : (
-                    quickTranslate("filePicker.chooseExcel", "Choose Excel file")
-                  )}
-                </span>
-              </div>
-              <input
-                type="file"
-                multiple
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleExcelChange}
-                ref={excelInputRef}
-              />
-              <span className="text-xs font-semibold text-blue-600 group-hover:text-blue-700 whitespace-nowrap">
-                {quickTranslate("filePicker.browse", "Browse")}
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/25 shadow-[0_12px_32px_rgba(15,23,42,0.1)] p-2.5">
+          <div className="pointer-events-none absolute -top-12 -left-12 h-28 w-28 rounded-full bg-blue-200/20 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-14 -right-10 h-32 w-32 rounded-full bg-emerald-200/20 blur-2xl" />
+          <div
+            className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] items-stretch gap-1.5"
+            style={{ direction: isArabicUi ? "rtl" : "ltr" }}
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 text-[9px] font-semibold text-blue-700 whitespace-nowrap">
+                {translate("validationConsole.step1", "Step 1: Upload Excel")}
               </span>
-            </label>
+              <label
+                className={`group relative flex min-h-[44px] flex-1 items-center gap-2 rounded-xl border border-slate-300/90 bg-white/90 px-2 py-1.5 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-400 hover:bg-blue-50/70 cursor-pointer ${
+                  isArabicUi ? "text-right" : "text-left"
+                }`}
+              >
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 ring-1 ring-blue-200/70">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-blue-700" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[10px] font-semibold text-slate-800">
+                    {excelFiles.length ? (
+                      excelFiles.length === 1 ? (
+                        <span title={excelFiles[0].name}>{excelFiles[0].name}</span>
+                      ) : (
+                        quickTranslate(
+                          "filePicker.selectedFiles",
+                          "{{count}} file(s) selected",
+                          { count: excelFiles.length },
+                        )
+                      )
+                    ) : (
+                      quickTranslate("filePicker.chooseExcel", "Choose Excel file")
+                    )}
+                  </span>
+                  <span className="block text-[8px] font-medium text-slate-500">
+                    .xlsx / .xls
+                  </span>
+                </span>
+                <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm transition-colors group-hover:bg-blue-700">
+                  {quickTranslate("filePicker.browse", "Browse")}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleExcelChange}
+                  ref={excelInputRef}
+                />
+              </label>
+            </div>
 
             <button
               type="button"
-              onClick={downloadExcelTemplate}
-              disabled={downloadingTemplate}
-              className="inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              onClick={() =>
+                openValidationModal({
+                  step: "pdf-upload",
+                  flowStage: "valuers",
+                })
+              }
+              disabled={!excelFiles.length}
+              className="inline-flex min-h-[44px] min-w-[120px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-900 px-2 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {downloadingTemplate ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
+              <Table className="h-3.5 w-3.5" />
+              {translate(
+                "actions.openValidation",
+                "Open Validation & Actions",
               )}
-              {downloadingTemplate
-                ? quickTranslate("filePicker.downloading", "Downloading...")
-                : quickTranslate(
-                    "filePicker.exportTemplate",
-                    "Export Excel Template",
-                  )}
             </button>
 
             <button
               type="button"
               onClick={resetAll}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+              className="group inline-flex min-h-[44px] min-w-[94px] w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2 text-[10px] font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-[1px] hover:border-slate-400 hover:bg-slate-50"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200 transition-colors group-hover:bg-slate-200">
+                <RefreshCw className="h-3 w-3" />
+              </span>
               {quickTranslate("filePicker.reset", "Reset")}
             </button>
+
+            <button
+              type="button"
+              onClick={downloadExcelTemplate}
+              disabled={downloadingTemplate}
+              title={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              aria-label={quickTranslate("filePicker.exportTemplate", "Export Excel Template")}
+              className="group inline-flex min-h-[44px] min-w-[122px] w-auto items-center justify-center gap-1.5 rounded-xl border border-emerald-300/90 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 px-2 text-emerald-800 shadow-sm transition-all hover:-translate-y-[1px] hover:from-emerald-50 hover:to-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloadingTemplate ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-700" />
+              ) : (
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/80 ring-1 ring-emerald-200/90">
+                  <img
+                    src={excelIconSrc}
+                    alt="Excel icon"
+                    onError={() => setExcelIconSrc(excelIconFallback)}
+                    className="h-3.5 w-3.5 pointer-events-none object-contain"
+                  />
+                </span>
+              )}
+              <span className="text-[10px] font-semibold leading-tight">
+                {downloadingTemplate
+                  ? quickTranslate("filePicker.downloading", "Downloading...")
+                  : quickTranslate(
+                      "filePicker.exportTemplate",
+                      "Export Excel Template",
+                    )}
+              </span>
+            </button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={openValidationModal}
-            disabled={!excelFiles.length}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                bg-slate-900 hover:bg-slate-800
-                                text-white text-xs font-semibold
-                                shadow-md hover:shadow-lg hover:scale-[1.01]
-                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                                transition-all"
-          >
-            <Table className="w-4 h-4" />
-            {translate(
-              "actions.openValidation",
-              "Open Validation & Actions",
-            )}
-          </button>
         </div>
       </div>
 
@@ -5484,86 +6250,77 @@ const MultiExcelUpload = ({ onViewChange }) => {
       )}
 
       <Section title={quickTranslate("reports.title", "Reports")}>
-        <div className="space-y-2 mb-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => loadReports(false)}
-              disabled={reportsLoading}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${reportsLoading ? "animate-spin" : ""}`}
-              />
-              {reportsLoading
-                ? quickTranslate("reports.refresh.refreshing", "Refreshing...")
-                : quickTranslate("reports.refresh.refresh", "Refresh")}
-            </button>
-
-            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-              {quickTranslate("reports.filter.label", "Filter:")}
-              <select
-                value={reportSelectFilter}
-                onChange={(e) => setReportSelectFilter(e.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+        <div className="mb-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="w-full" dir={isArabicUi ? "rtl" : "ltr"}>
+            <div className="flex w-full flex-wrap items-center gap-1.5 text-[11px] md:flex-nowrap">
+              <button
+                type="button"
+                onClick={() => loadReports(false)}
+                disabled={reportsLoading}
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <option value="all">
-                  {quickTranslate("reports.filter.all", "All statuses")}
-                </option>
-                <option value="new">
-                  {quickTranslate("reports.filter.new", "New")}
-                </option>
-                <option value="complete">
-                  {quickTranslate("reports.filter.complete", "Complete")}
-                </option>
-                <option value="incomplete">
-                  {quickTranslate("reports.filter.incomplete", "Incomplete")}
-                </option>
-                <option value="sent">
-                  {quickTranslate("reports.filter.sent", "Sent")}
-                </option>
-                <option value="approved">
-                  {quickTranslate("reports.filter.approved", "Approved")}
-                </option>
-              </select>
-            </label>
+                <RefreshCw
+                  className={`w-3 h-3 ${reportsLoading ? "animate-spin" : ""}`}
+                />
+                {reportsLoading
+                  ? quickTranslate("reports.refresh.refreshing", "Refreshing...")
+                  : quickTranslate("reports.refresh.refresh", "Refresh")}
+              </button>
 
-            {/* ADD SEARCH INPUT HERE */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={quickTranslate(
-                  "reports.searchPlaceholder",
-                  "Search reports...",
-                )}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 rounded-md border border-slate-300 bg-white px-3 py-1.5 pl-9 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-              />
-              <div className="absolute left-2.5 top-1/2 transform -translate-y-1/2">
-                <svg
-                  className="w-4 h-4 text-slate-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
+              <label className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                {quickTranslate("reports.filter.label", "Filter:")}
+                <select
+                  value={reportSelectFilter}
+                  onChange={(e) => {
+                    setReportSelectFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-6 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  ></path>
-                </svg>
-              </div>
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  <option value="all">
+                    {quickTranslate("reports.filter.all", "All statuses")}
+                  </option>
+                  <option value="new">
+                    {quickTranslate("reports.filter.new", "New")}
+                  </option>
+                  <option value="complete">
+                    {quickTranslate("reports.filter.complete", "Complete")}
+                  </option>
+                  <option value="incomplete">
+                    {quickTranslate("reports.filter.incomplete", "Incomplete")}
+                  </option>
+                  <option value="sent">
+                    {quickTranslate("reports.filter.sent", "Sent")}
+                  </option>
+                  <option value="approved">
+                    {quickTranslate("reports.filter.approved", "Approved")}
+                  </option>
+                </select>
+              </label>
+
+              <div className="relative min-w-[260px] flex-1">
+                <input
+                  type="text"
+                  placeholder={quickTranslate(
+                    "reports.searchPlaceholder",
+                    "Search by client, report ID, or value...",
+                  )}
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`h-7 w-full rounded-md border border-slate-300 bg-white text-[11px] text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 ${
+                    isArabicUi ? "pr-8 pl-7 text-right" : "pl-8 pr-7 text-left"
+                  }`}
+                />
+                <div
+                  className={`absolute top-1/2 -translate-y-1/2 ${
+                    isArabicUi ? "right-2" : "left-2"
+                  }`}
                 >
                   <svg
-                    className="w-4 h-4"
+                    className="w-3 h-3 text-slate-400"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -5573,64 +6330,85 @@ const MultiExcelUpload = ({ onViewChange }) => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth="2"
-                      d="M6 18L18 6M6 6l12 12"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                     ></path>
                   </svg>
-                </button>
-              )}
-            </div>
-            {/* END SEARCH INPUT */}
-
-            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-              {quickTranslate("reports.itemsPerPageLabel", "Items per page:")}
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setCurrentPage(1);
-                  setItemsPerPage(Number(e.target.value));
-                }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
-              >
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </label>
-
-            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5 ml-auto">
-              {translate("reports.pageLabel", "Page:")}
-              <input
-                type="number"
-                min="1"
-                max={reportsPagination.totalPages || 1}
-                value={currentPage}
-                onChange={(e) => {
-                  const page = parseInt(e.target.value) || 1;
-                  if (
-                    page >= 1 &&
-                    page <= (reportsPagination.totalPages || 1)
-                  ) {
-                    handlePageChange(page);
-                  }
-                }}
-                className="w-16 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-              />
-              <span className="text-xs text-slate-600">
-                {translate("reports.of", "of")} {reportsPagination.totalPages || 1}
-              </span>
-            </label>
-            {searchQuery.trim() && (
-              <div className="text-xs text-slate-600">
-                {translate(
-                  "reports.searchResult",
-                  'Found {{count}} report(s) matching "{{query}}" on this page',
-                  { count: visibleReports.length, query: searchQuery },
+                </div>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className={`absolute top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 ${
+                      isArabicUi ? "left-2" : "right-2"
+                    }`}
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M6 18L18 6M6 6l12 12"
+                      ></path>
+                    </svg>
+                  </button>
                 )}
               </div>
-            )}
+
+              <label className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                {quickTranslate("reports.itemsPerPageLabel", "Items per page:")}
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setCurrentPage(1);
+                    setItemsPerPage(Number(e.target.value));
+                  }}
+                  className="h-6 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+
+              <label className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 whitespace-nowrap">
+                {translate("reports.pageLabel", "Page:")}
+                <input
+                  type="number"
+                  min="1"
+                  max={reportsPagination.totalPages || 1}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = parseInt(e.target.value) || 1;
+                    if (page >= 1 && page <= (reportsPagination.totalPages || 1)) {
+                      handlePageChange(page);
+                    }
+                  }}
+                  className="h-6 w-16 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                />
+                <span className="text-[10px] text-slate-600 whitespace-nowrap">
+                  {translate("reports.of", "of")} {reportsPagination.totalPages || 1}
+                </span>
+              </label>
+            </div>
           </div>
+
+          {searchQuery.trim() && (
+            <div className="mt-1 text-[10px] text-slate-600">
+              {translate(
+                "reports.searchResult",
+                'Found {{count}} report(s) matching "{{query}}" on this page',
+                { count: visibleReports.length, query: searchQuery },
+              )}
+            </div>
+          )}
         </div>
 
         {actionAlert}

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useSession } from './SessionContext';
 import navigation from '../constants/navigation';
 import { useTranslation } from 'react-i18next';
+import { ADMIN_ONLY_VIEW_IDS } from '../utils/viewAccess';
 
 const { valueSystemGroups } = navigation;
 
@@ -262,8 +263,11 @@ export const SystemControlProvider = ({ children }) => {
     }, [systemState, token, autoActivating, updateSystemState, fetchSystemState, isAdmin]);
 
     const hasPermission = (viewId) => {
-        const alwaysAllowed = ['apps', 'login', 'registration', 'taqeem-login', 'profile', 'coming-soon'];
+        const alwaysAllowed = ['apps', 'login', 'registration', 'taqeem-login', 'profile', 'coming-soon', 'deleteReport', 'delete-report'];
         if (alwaysAllowed.includes(viewId)) return true;
+        if (viewId === 'uploadSingleReport' || ADMIN_ONLY_VIEW_IDS.has(viewId)) {
+            return isAdmin;
+        }
         if (!user) return true;
         if (isAdmin) return true;
 

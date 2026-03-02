@@ -18,7 +18,7 @@ const buildInitialForm = () => ({
     batch_id: "",
     purpose_id: "",
     value_premise_id: "",
-    report_type: "????? ????",
+    report_type: "تقرير مفصل",
     valued_at: "",
     submitted_at: "",
     inspection_date: "",
@@ -131,7 +131,7 @@ const EditReportModal = ({ report, isOpen, onClose, onSave, refreshData }) => {
         next.batch_id = data.batch_id || data.batchId || "";
         next.purpose_id = data.purpose_id?.toString() || "";
         next.value_premise_id = data.value_premise_id?.toString() || "";
-        next.report_type = data.report_type || "????? ????";
+        next.report_type = data.report_type || "تقرير مفصل";
         next.valued_at = formatDate(data.valued_at);
         next.submitted_at = formatDate(data.submitted_at);
         next.inspection_date = formatDate(data.inspection_date);
@@ -399,10 +399,10 @@ const EditReportModal = ({ report, isOpen, onClose, onSave, refreshData }) => {
                                 value={formData.report_type}
                                 onChange={(e) => handleFieldChange("report_type", e.target.value)}
                                 options={[
-                                    { value: "????? ????", label: "Detailed Report" },
-                                    { value: "???? ???????", label: "Report Summary" },
-                                    { value: "?????? ?? ???? ?????", label: "Review with New Value" },
-                                    { value: "?????? ???? ???? ?????", label: "Review without New Value" },
+                                    { value: "تقرير مفصل", label: "Detailed Report" },
+                                    { value: "ملخص التقرير", label: "Report Summary" },
+                                    { value: "مراجعة مع قيمة جديدة", label: "Review with New Value" },
+                                    { value: "مراجعة بدون قيمة جديدة", label: "Review without New Value" },
                                 ]}
                             />
                             <SelectField

@@ -48,6 +48,7 @@ import ComingSoon from './screens/ComingSoon';
 import { useValueNav } from './context/ValueNavContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { AUTH_EXPIRED_EVENT, installAuthExpiryInterceptor } from './utils/authInterceptor';
+import { canAccessView } from './utils/viewAccess';
 
 
 const DEFAULT_VIEW = 'apps';
@@ -55,7 +56,7 @@ const DEFAULT_VIEW = 'apps';
 const AppContent = () => {
     const [currentView, setCurrentView] = useState(DEFAULT_VIEW);
     const [pendingProtectedView, setPendingProtectedView] = useState(null);
-    const { isAuthenticated, logout } = useSession();
+    const { isAuthenticated, logout, user } = useSession();
     const { syncNavForView, setActiveTab, selectedCompany, resetAll, resetNavigation } = useValueNav();
 
     useEffect(() => {
@@ -77,6 +78,14 @@ const AppContent = () => {
             return;
         }
 
+        if (!canAccessView(nextView, user)) {
+            setPendingProtectedView(null);
+            setActiveTab(null);
+            resetNavigation();
+            setCurrentView(DEFAULT_VIEW);
+            return;
+        }
+
         const protectedViews = ['get-companies'];
         if (!isAuthenticated && protectedViews.includes(nextView)) {
             setPendingProtectedView(nextView);
@@ -93,7 +102,8 @@ const AppContent = () => {
         setCurrentView(nextView);
     };
 
-    // Redirect to Apps once a company is auto-selected after login
+    // Redirect to Apps once a company is auto-selected after login.
+    // Keep the login page stable when a flow explicitly navigates to it.
     const hasRedirectedAfterLogin = React.useRef(false);
     React.useEffect(() => {
         if (!isAuthenticated) {
@@ -101,7 +111,7 @@ const AppContent = () => {
             return;
         }
         if (!selectedCompany || hasRedirectedAfterLogin.current) return;
-        const canRedirect = currentView === 'login' || currentView === 'apps';
+        const canRedirect = currentView === 'apps';
         if (!canRedirect) return;
         setActiveTab(null);
         setCurrentView('apps');
@@ -110,13 +120,18 @@ const AppContent = () => {
 
     useEffect(() => {
         if (isAuthenticated && pendingProtectedView) {
+            if (!canAccessView(pendingProtectedView, user)) {
+                setPendingProtectedView(null);
+                setCurrentView(DEFAULT_VIEW);
+                return;
+            }
             if (syncNavForView) {
                 syncNavForView(pendingProtectedView);
             }
             setCurrentView(pendingProtectedView);
             setPendingProtectedView(null);
         }
-    }, [isAuthenticated, pendingProtectedView, syncNavForView]);
+    }, [isAuthenticated, pendingProtectedView, syncNavForView, user]);
 
     useEffect(() => {
         try {
@@ -126,6 +141,13 @@ const AppContent = () => {
             // ignore navigation errors in desktop shell
         }
     }, [currentView]);
+
+    useEffect(() => {
+        if (canAccessView(currentView, user)) return;
+        setActiveTab(null);
+        resetNavigation();
+        setCurrentView(DEFAULT_VIEW);
+    }, [currentView, resetNavigation, setActiveTab, user]);
 
     useEffect(() => {
         const cleanupInterceptor = installAuthExpiryInterceptor();

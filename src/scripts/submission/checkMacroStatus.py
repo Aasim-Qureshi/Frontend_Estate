@@ -25,7 +25,7 @@ from scripts.core.utils import (
 
 # Status detection markers (similar to ElRajhi checker)
 SENT_BUTTON_MARKER = 'id="reject"'
-CONFIRMED_BUTTON_TEXT = "Ø´ÙØ§Ø¯Ø©"  # Certificate button text
+CONFIRMED_BUTTON_TEXT = "شهادة"  # Certificate button text
 INCOMPLETE_STATUS_MARKERS = (
     "\u063a\u064a\u0631 \u0645\u0643\u062a\u0645\u0644\u0629",
     "incomplete",

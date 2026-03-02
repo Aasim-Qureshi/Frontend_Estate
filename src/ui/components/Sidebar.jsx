@@ -22,6 +22,12 @@ import { useValueNav } from "../context/ValueNavContext";
 import { useSession } from "../context/SessionContext";
 import { useNavStatus } from "../context/NavStatusContext";
 import navigation from "../constants/navigation";
+import {
+  canAccessGroup,
+  filterTabsByAccess,
+  getFirstAccessibleTabId,
+  isSuperAdminUser,
+} from "../utils/viewAccess";
 import { useTranslation } from "react-i18next";
 import {
   emitTaqeemConflict,
@@ -43,7 +49,10 @@ const getCompanyIdentity = (company) => {
 };
 
 const Sidebar = ({ currentView, onViewChange }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dir = i18n?.dir?.(i18n?.resolvedLanguage || i18n?.language) || "ltr";
+  const railEdgeClass = dir === "rtl" ? "right-1" : "left-1";
+  const sidebarBorderClass = dir === "rtl" ? "border-l" : "border-r";
   const { isFeatureBlocked, isAdmin } = useSystemControl();
   const { user, isAuthenticated, token, login } = useSession();
   const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
@@ -73,6 +82,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const ticketsBlocked = isFeatureBlocked("tickets");
   const isCompanyHead =
     user?.type === "company" || user?.role === "company-head";
+  const isUser000 = isSuperAdminUser(user);
   const clickDelayMs = 160;
   const delayViewChange = (nextView) => {
     if (!onViewChange) return;
@@ -85,17 +95,20 @@ const Sidebar = ({ currentView, onViewChange }) => {
   ];
 
   const defaultUploadTab =
-    valueSystemGroups.uploadReports?.tabs?.[0]?.id || "submit-reports-quickly";
+    getFirstAccessibleTabId(valueSystemGroups.uploadReports?.tabs || [], user) ||
+    "submit-reports-quickly";
 
   const mainLinks = [
     { id: "uploadReports", label: "Upload Reports" },
-    { id: "uploadSingleReport", label: "Upload Single Report" },
+    ...(isUser000
+      ? [{ id: "uploadSingleReport", label: "Upload Single Report" }]
+      : []),
     ...(isAdmin
       ? [
           { id: "taqeemInfo", label: "Taqeem Info" },
-          { id: "deleteReport", label: "Delete Report" },
         ]
       : []),
+    { id: "deleteReport", label: "Delete Report" },
     { id: "myReports", label: "My Reports" },
   ];
 
@@ -399,8 +412,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     if (selectedCard !== "uploading-reports") return null;
     return (
       <div
-        className="rounded-lg border border-slate-800/70 bg-slate-900/45 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)] sidebar-animate"
-        style={{ animationDelay: "80ms" }}
+        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 "
+        
       >
         <ul className="space-y-1">
           {domainButtons.map((item, index) => {
@@ -409,8 +422,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
             return (
               <li
                 key={item.id}
-                className="sidebar-animate"
-                style={{ animationDelay: `${120 + index * 40}ms` }}
               >
                 <button
                   onClick={async () => {
@@ -429,14 +440,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
                     delayViewChange("apps");
                   }}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 ${
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none ${
                     isActive
-                      ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                      : "bg-slate-900/40 text-slate-200 hover:bg-slate-800/70"
+                      ? "bg-cyan-600 text-white border border-cyan-500/70"
+                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
                   }`}
                 >
                   <span
-                    className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                       isActive
                         ? "bg-cyan-200"
                         : "bg-transparent group-hover:bg-cyan-300/50"
@@ -470,8 +481,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
       !isAuthenticated || taqeemStatus?.state !== "success";
     return (
       <div
-        className="rounded-lg border border-slate-800/70 bg-slate-900/45 px-2 py-1.5 space-y-1.5 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)] sidebar-animate"
-        style={{ animationDelay: "160ms" }}
+        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 space-y-1.5 "
+        
       >
         {loadingCompanies && (
           <div className="flex items-center gap-2 text-[10px] text-slate-100 bg-slate-900/70 border border-slate-800 rounded-md px-2 py-1">
@@ -486,10 +497,10 @@ const Sidebar = ({ currentView, onViewChange }) => {
           </div>
         )}
         {showPlaceholder && (
-          <div className="space-y-2 bg-gradient-to-br from-slate-950/70 via-slate-900/70 to-slate-900/50 border border-slate-800 rounded-md px-2.5 py-2 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
+          <div className="space-y-2 bg-gradient-to-br from-slate-950/70 via-slate-900/70 to-slate-900/50 border border-slate-800 rounded-md px-2.5 py-2 ">
             {showLoginPrompt && (
               <>
-                <div className="flex items-start gap-2 rounded-md border border-cyan-400/20 bg-cyan-950/40 px-2 py-1.5 text-[10px] text-cyan-100">
+                <div className="flex items-start gap-2 rounded-md border border-cyan-400/20 bg-cyan-950/40 px-2.5 py-2 text-[10px] text-cyan-100">
                   <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-cyan-200" />
                   <div className="text-[9px] font-semibold text-cyan-100">
                     {t("sidebar.company.loginPrompt", {
@@ -500,7 +511,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 <button
                   type="button"
                   onClick={handleTaqeemLogin}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 px-3 py-2 text-[10px] font-semibold text-white shadow-[0_12px_24px_rgba(16,185,129,0.35)] hover:from-emerald-400 hover:via-green-400 hover:to-emerald-500 transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-[10px] font-semibold text-white shadow-[0_12px_24px_rgba(16,185,129,0.35)] hover:bg-emerald-700"
                 >
                   {t("sidebar.company.loginButton", {
                     defaultValue: "Login to Taqeem to get companies",
@@ -524,21 +535,19 @@ const Sidebar = ({ currentView, onViewChange }) => {
               return (
                 <li
                   key={`${getCompanyIdentity(company) || company.name || "company"}-${index}`}
-                  className="sidebar-animate"
-                  style={{ animationDelay: `${200 + index * 35}ms` }}
                 >
                   <button
                     onClick={async () => {
                       await setSelectedCompany(company);
                     }}
-                    className={`group relative w-full text-left px-2.5 py-1.5 rounded-md flex flex-col gap-0.5 ${
+                    className={`group relative w-full text-start px-2.5 py-1.5 rounded-md flex flex-col gap-0.5 ${
                       isActive
                         ? "bg-cyan-600/25 text-white shadow-[0_8px_20px_rgba(14,116,144,0.2)]"
-                        : "bg-slate-900/50 text-slate-100 hover:bg-slate-800/80"
+                        : "bg-slate-900/80 text-slate-100 hover:bg-slate-800"
                     }`}
                   >
                     <span
-                      className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                      className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                         isActive
                           ? "bg-cyan-200"
                           : "bg-transparent group-hover:bg-cyan-300/50"
@@ -563,8 +572,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     if (hasCompanies && !selectedCompany) {
       return (
         <div
-          className="rounded-lg border border-amber-400/30 bg-amber-900/30 px-3 py-2 text-[11px] text-amber-100 shadow-[inset_0_1px_0_rgba(248,180,0,0.12)] sidebar-animate"
-          style={{ animationDelay: "220ms" }}
+          className="rounded-xl border border-amber-500/40 bg-amber-900/35 px-3 py-2 text-[11px] text-amber-100 "
+          
         >
           {t("sidebar.company.selectToContinue", {
             defaultValue: "Select a company to view main links.",
@@ -574,20 +583,22 @@ const Sidebar = ({ currentView, onViewChange }) => {
     }
     return (
       <div
-        className="rounded-lg border border-slate-800/70 bg-slate-900/45 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)] sidebar-animate"
-        style={{ animationDelay: "240ms" }}
+        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 "
+        
       >
         <ul className="space-y-1">
           {mainLinks.map((item, index) => {
+            if (!canAccessGroup(item.id, user)) return null;
             const blocked = isFeatureBlocked(item.id);
             const isActive = activeGroup === item.id;
-            const groupTabs = valueSystemGroups[item.id]?.tabs || [];
+            const groupTabs = filterTabsByAccess(
+              valueSystemGroups[item.id]?.tabs || [],
+              user,
+            );
             const firstTab = groupTabs?.[0]?.id;
             return (
               <li
                 key={item.id}
-                className="sidebar-animate"
-                style={{ animationDelay: `${280 + index * 35}ms` }}
               >
                 <button
                   onClick={() => {
@@ -610,14 +621,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     }
                   }}
                   disabled={blocked}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
                     isActive
-                      ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                      : "bg-slate-900/40 text-slate-200 hover:bg-slate-800/70"
+                      ? "bg-cyan-600 text-white border border-cyan-500/70"
+                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
                   } ${blocked ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span
-                    className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                       isActive
                         ? "bg-cyan-200"
                         : "bg-transparent group-hover:bg-cyan-300/50"
@@ -649,8 +660,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     ];
     return (
       <div
-        className="rounded-lg border border-emerald-400/30 bg-gradient-to-br from-emerald-950/35 via-slate-950/60 to-slate-900/70 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(52,211,153,0.08)] sidebar-animate"
-        style={{ animationDelay: "240ms" }}
+        className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2.5 py-2 "
+        
       >
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-200">
           {t("sidebar.evaluationSources.title", {
@@ -667,8 +678,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
             return (
               <li
                 key={item.id}
-                className="sidebar-animate"
-                style={{ animationDelay: `${280 + index * 35}ms` }}
               >
                 <button
                   onClick={() => {
@@ -677,14 +686,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     delayViewChange(item.id);
                   }}
                   disabled={blocked}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
                     isActive
-                      ? "bg-gradient-to-r from-emerald-500/90 to-teal-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]"
-                      : "bg-slate-900/40 text-slate-200 hover:bg-slate-800/70"
+                      ? "bg-emerald-600 text-white border border-emerald-500/70"
+                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
                   } ${blocked ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span
-                    className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                       isActive
                         ? "bg-emerald-200"
                         : "bg-transparent group-hover:bg-emerald-300/50"
@@ -709,8 +718,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     if (!isAdmin || selectedCard !== "admin-console") return null;
     return (
       <div
-        className="rounded-lg border border-amber-400/30 bg-gradient-to-br from-amber-950/40 via-slate-950/60 to-slate-900/70 px-2 py-2 shadow-[inset_0_1px_0_rgba(252,211,77,0.08)] sidebar-animate"
-        style={{ animationDelay: "200ms" }}
+        className="rounded-xl border border-amber-500/35 bg-slate-900/80 px-2 py-2 "
+        
       >
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
           {t("sidebar.admin.title")}
@@ -723,8 +732,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
             return (
               <li
                 key={item.id}
-                className="sidebar-animate"
-                style={{ animationDelay: `${240 + index * 35}ms` }}
               >
                 <button
                   onClick={() => {
@@ -732,14 +739,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     delayViewChange(item.id);
                   }}
                   disabled={blocked}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
                     isActive
-                      ? "bg-gradient-to-r from-amber-500/90 to-orange-500 text-white shadow-[0_8px_20px_rgba(251,146,60,0.35)]"
-                      : "bg-slate-900/40 text-slate-200 hover:bg-slate-800/70"
+                      ? "bg-amber-600 text-white border border-amber-500/70"
+                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
                   } ${blocked ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span
-                    className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                       isActive
                         ? "bg-amber-200"
                         : "bg-transparent group-hover:bg-amber-300/50"
@@ -764,8 +771,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     if (!isCompanyHead || selectedCard !== "company-console") return null;
     return (
       <div
-        className="rounded-lg border border-emerald-400/30 bg-gradient-to-br from-emerald-950/35 via-slate-950/60 to-slate-900/70 px-2 py-2 shadow-[inset_0_1px_0_rgba(52,211,153,0.08)] sidebar-animate"
-        style={{ animationDelay: "200ms" }}
+        className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2 py-2 "
+        
       >
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-200">
           {t("sidebar.company.title")}
@@ -778,8 +785,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
             return (
               <li
                 key={item.id}
-                className="sidebar-animate"
-                style={{ animationDelay: `${240 + index * 35}ms` }}
               >
                 <button
                   onClick={() => {
@@ -787,14 +792,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                     delayViewChange(item.id);
                   }}
                   disabled={blocked}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
                     isActive
-                      ? "bg-gradient-to-r from-emerald-500/90 to-teal-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]"
-                      : "bg-slate-900/40 text-slate-200 hover:bg-slate-800/70"
+                      ? "bg-emerald-600 text-white border border-emerald-500/70"
+                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
                   } ${blocked ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span
-                    className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                       isActive
                         ? "bg-emerald-200"
                         : "bg-transparent group-hover:bg-emerald-300/50"
@@ -819,8 +824,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
     if (dashboardLinks.length === 0) return null;
     return (
       <div
-        className="px-2 py-1.5 sidebar-animate"
-        style={{ animationDelay: "260ms" }}
+        className="px-2.5 py-2"
+        
       >
         <div className="px-1 pb-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
           {t("sidebar.dashboards.title")}
@@ -848,15 +853,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
                   }
                 }}
                 disabled={blocked}
-                className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+                className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
                   isActive
-                    ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                    : "bg-slate-900/50 text-slate-100 hover:bg-slate-800/80"
+                    ? "bg-cyan-600 text-white border border-cyan-500/70"
+                    : "bg-slate-900/80 text-slate-100 hover:bg-slate-800"
                 } ${blocked ? "opacity-50 cursor-not-allowed" : ""}`}
-                style={{ animationDelay: `${300 + index * 35}ms` }}
               >
                 <span
-                  className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+                  className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                     isActive
                       ? "bg-cyan-200"
                       : "bg-transparent group-hover:bg-cyan-300/50"
@@ -877,19 +881,20 @@ const Sidebar = ({ currentView, onViewChange }) => {
   };
 
   return (
-    <div className="relative w-[218px] min-w-[218px] h-screen text-white text-[11px] overflow-hidden border-r border-slate-800/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/5 to-transparent" />
-      <div className="pointer-events-none absolute -left-10 top-16 h-32 w-32 rounded-full bg-cyan-500/20 blur-2xl" />
-      <div className="pointer-events-none absolute -right-12 bottom-20 h-32 w-32 rounded-full bg-blue-500/10 blur-2xl" />
+    <div
+      dir={dir}
+      className={`relative w-[228px] min-w-[228px] h-screen text-white text-[11px] overflow-hidden ${sidebarBorderClass} border-slate-800 bg-slate-950`}
+    >
+      
 
       <div className="relative flex h-full flex-col">
         <div
-          className="px-2.5 py-2 border-b border-slate-800/80 bg-slate-950/50 backdrop-blur-sm sidebar-animate"
-          style={{ animationDelay: "0ms" }}
+          className="px-3 py-3 border-b border-slate-800 bg-slate-950"
+          
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-gradient-to-tr from-cyan-300 to-blue-500 shadow-[0_0_12px_rgba(56,189,248,0.45)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
               <div>
                 <h1 className="text-[12px] font-semibold tracking-wide">
                   {t("sidebar.brand.name")}
@@ -911,10 +916,10 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 chooseCard(null);
                 delayViewChange("apps");
               }}
-              className={`flex-1 inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-all duration-150 ${
+              className={`flex-1 inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 text-start transition-none ${
                 isAppsActive
-                  ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                  : "bg-slate-900/60 text-slate-100 hover:bg-slate-800/80"
+                  ? "bg-cyan-600 text-white border border-cyan-500/70"
+                  : "bg-slate-900/80 text-slate-100 hover:bg-slate-800"
               }`}
             >
               <AppWindow className="w-3.5 h-3.5" />
@@ -930,7 +935,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
           </div>
         </div>
 
-        <nav className="flex-1 px-2 py-1.5 overflow-y-auto space-y-1.5">
+        <nav className="flex-1 px-2.5 py-2 overflow-y-auto space-y-2">
           {renderDomains()}
           {renderCompanyList()}
           {renderCompanyLinks()}
@@ -942,8 +947,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
         {renderDashboardLinks()}
 
         <div
-          className="px-2 py-1.5 sidebar-animate"
-          style={{ animationDelay: "300ms" }}
+          className="px-2.5 py-2"
+          
         >
           <button
             onClick={() => {
@@ -953,14 +958,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
               if (onViewChange) onViewChange("tickets");
             }}
             disabled={ticketsBlocked}
-            className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+            className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
               currentView === "tickets"
-                ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                : "bg-slate-900/50 text-slate-100 hover:bg-slate-800/80"
+                ? "bg-cyan-600 text-white border border-cyan-500/70"
+                : "bg-slate-900/80 text-slate-100 hover:bg-slate-800"
             } ${ticketsBlocked ? "opacity-50 cursor-not-allowed" : ""}`}
           >
             <span
-              className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+              className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                 currentView === "tickets"
                   ? "bg-cyan-200"
                   : "bg-transparent group-hover:bg-cyan-300/50"
@@ -984,14 +989,14 @@ const Sidebar = ({ currentView, onViewChange }) => {
               }
             }}
             disabled={settingsBlocked}
-            className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 text-[11px] ${
+            className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none text-[11px] ${
               isSettingsActive
-                ? "bg-gradient-to-r from-cyan-600/90 to-blue-600 text-white shadow-[0_8px_20px_rgba(14,116,144,0.35)]"
-                : "bg-slate-900/50 text-slate-100 hover:bg-slate-800/80"
+                ? "bg-cyan-600 text-white border border-cyan-500/70"
+                : "bg-slate-900/80 text-slate-100 hover:bg-slate-800"
             } ${settingsBlocked ? "opacity-50 cursor-not-allowed" : ""}`}
           >
             <span
-              className={`absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
+              className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
                 isSettingsActive
                   ? "bg-cyan-200"
                   : "bg-transparent group-hover:bg-cyan-300/50"
@@ -1002,10 +1007,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
           </button>
         </div>
 
-        <div
-          className="px-2.5 py-1.5 border-t border-slate-800/80 text-[9px] text-slate-400 flex items-center gap-1.5 bg-slate-950/60 sidebar-animate"
-          style={{ animationDelay: "320ms" }}
-        >
+        <div className="px-3 py-2 border-t border-slate-800 text-[9px] text-slate-400 flex items-center gap-1.5 bg-slate-950">
           <CircleDot className="w-3 h-3 text-emerald-400" />
           <span>{t("sidebar.systemOnline")}</span>
         </div>
@@ -1015,3 +1017,4 @@ const Sidebar = ({ currentView, onViewChange }) => {
 };
 
 export default Sidebar;
+

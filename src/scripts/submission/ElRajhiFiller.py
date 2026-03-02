@@ -116,7 +116,7 @@ def extract_asset_from_report(report_record):
         formatted_date = ""
 
     return {
-        "asset_type": "ÙØ±ÙØ¨Ù",
+        "asset_type": "مركبه",
         "production_capacity": "0",
         "production_capacity_measuring_unit": "0",
         "product_type": "0",

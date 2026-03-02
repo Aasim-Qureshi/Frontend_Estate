@@ -126,7 +126,7 @@ function writeDocumentTree(zip, docTree) {
 
 function ensureImageContentTypes(zip) {
     const contentFile = zip.file('[Content_Types].xml');
-    if (!contentFile) throw new Error('??? [Content_Types].xml ????? ???? ??? DOCX.');
+    if (!contentFile) throw new Error('[Content_Types].xml غير موجود داخل ملف DOCX.');
     const obj = parseXmlCompact(contentFile.asText());
     obj.Types = obj.Types || {};
     const defaults = toArray(obj.Types?.Default);
@@ -197,7 +197,7 @@ function validateDocxBuffer(buffer) {
     try {
         const checkZip = new PizZip(buffer);
         const docFile = checkZip.file('word/document.xml');
-        if (!docFile) throw new Error('document.xml ??? ????? ??? ???????.');
+        if (!docFile) throw new Error('document.xml غير موجود أثناء التحقق.');
         parseXmlTree(docFile.asText());
         const relsFile = checkZip.file('word/_rels/document.xml.rels');
         if (relsFile) parseXmlCompact(relsFile.asText());

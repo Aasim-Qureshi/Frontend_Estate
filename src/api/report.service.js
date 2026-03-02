@@ -1,16 +1,34 @@
 const httpClient = require("./httpClient");
 
-const getMyReports = async ({ page = 1, limit = 20, companyOfficeId = null }) => {
+const getMyReports = async ({
+  page = 1,
+  limit = 20,
+  companyOfficeId = null,
+  userId = null,
+  taqeemUser = null,
+}) => {
   const params = { page, limit };
   if (companyOfficeId) params.companyOfficeId = companyOfficeId;
+  if (userId) params.userId = userId;
+  if (taqeemUser) params.taqeemUser = taqeemUser;
   return await httpClient.get("/report-lookup/mine", {
     params,
   });
 };
 
-const searchReports = async ({ q, page = 1, limit = 20, source = "ALL", companyOfficeId = null }) => {
+const searchReports = async ({
+  q,
+  page = 1,
+  limit = 20,
+  source = "ALL",
+  companyOfficeId = null,
+  userId = null,
+  taqeemUser = null,
+}) => {
   const params = { q, page, limit, source };
   if (companyOfficeId) params.companyOfficeId = companyOfficeId;
+  if (userId) params.userId = userId;
+  if (taqeemUser) params.taqeemUser = taqeemUser;
   return await httpClient.get("/report-lookup/search", {
     params,
   });

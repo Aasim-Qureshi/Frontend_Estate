@@ -67,11 +67,19 @@
             "refreshTitle": "Refresh status",
             "refresh": "Refresh",
             "taqeem": "Taqeem",
+            "taqeemLogin": "Taqeem login",
             "company": "Company",
-            "companyDefault": "No company selected"
+            "companyDefault": "No company selected",
+            "on": "On",
+            "off": "Off"
+        },
+        "version": {
+            "frontend": "Frontend version",
+            "backend": "Backend version"
         },
         "auth": {
             "userFallback": "User",
+            "guest": "Guest",
             "logout": "Logout",
             "register": "Register",
             "login": "Login"
@@ -87,7 +95,8 @@
             "read": "Read RAM",
             "usedOf": "Used {{used}} GB of {{total}} GB",
             "free": "Free {{free}} GB",
-            "usage": "{{usage}}%"
+            "usage": "{{usage}}%",
+            "recommendedTabs": "Recommended Tabs"
         },
         "messages": {
             "inactive": "The system is currently inactive. Access to features is disabled.",
@@ -96,6 +105,24 @@
             "updateBlocked": "A mandatory update must be applied before continuing.",
             "featureUnavailable": "This feature is unavailable right now.",
             "refreshOrUpdate": "Please refresh status or apply the latest update to continue."
+        },
+        "guestRelogin": {
+            "title": "Login required",
+            "message": "Your account is already registered. Please log in again to upload reports and take actions.",
+            "action": "Login with phone"
+        },
+        "taqeemConflict": {
+            "title": "Taqeem username already used",
+            "taqeemUsername": "Taqeem Username",
+            "userId": "User ID",
+            "action": "Go to Value Tech Login"
+        },
+        "companyModal": {
+            "title": "Select a company to continue",
+            "description": "This selects the active company for now. Change your default company from Settings when needed.",
+            "label": "Companies",
+            "applying": "Applying...",
+            "action": "Select company & continue"
         },
         "time": {
             "days": "Days",
@@ -907,6 +934,59 @@
             "deleteMultipleReports": "Are you sure you want to delete {{count}} report(s)?"
         }
     },
+    "myReportsPage": {
+        "title": "My Reports",
+        "summary": "Showing {{count}} rows (page {{page}})",
+        "pagination": {
+            "perPage": "{{count}}/page"
+        },
+        "filters": {
+            "reportId": "Report ID",
+            "searchPlaceholder": "Search for anything...",
+            "source": "Source",
+            "submitState": "Submit State",
+            "allSources": "All Sources",
+            "allStates": "All States"
+        },
+        "sources": {
+            "UrgentReport": "Upload Report (ElRajhi)",
+            "DuplicateReport": "Upload Manual Report",
+            "MultiApproachReport": "Multi Excel Upload",
+            "SubmitReportsQuickly": "Submit Reports Quickly",
+            "Reports": "Upload Assets",
+            "ElrajhiReport": "Elrajhi Reports"
+        },
+        "states": {
+            "SENT": "Sent",
+            "COMPLETE": "Complete",
+            "CONFIRMED": "Confirmed",
+            "EDITED": "Edited",
+            "INCOMPLETE": "Incomplete",
+            "NOT_AVAILABLE": "Not Available",
+            "PENDING": "Pending",
+            "FAILED": "Failed"
+        },
+        "actions": {
+            "search": "Search",
+            "searching": "Searching...",
+            "reset": "Reset"
+        },
+        "table": {
+            "index": "#",
+            "reportId": "Report ID",
+            "clientName": "Client Name",
+            "source": "Source",
+            "status": "Status"
+        },
+        "messages": {
+            "loading": "Loading...",
+            "noRecords": "No records",
+            "notCreated": "Not Created",
+            "noTitle": "No Title",
+            "searchPrompt": "Please enter something to search",
+            "searchFailed": "Search failed"
+        }
+    },
     "uploadAssets": {
         "commonFields": {
             "title": "Common Fields",
@@ -1019,10 +1099,27 @@
             "revalidate": "Re-validate",
             "tableHidden": "Table hidden.",
             "empty": "Validation results will appear here after reading the Excel.",
-            "step1": "Step 1: Validation",
-            "step2": "Step 2: PDF & Actions",
-            "step1Hint": "Review validation results, then continue to Step 2 for PDF upload and action selection.",
+            "stepFlowTitle": "Step 2-4: Valuers, PDF, and actions",
+            "step1": "Step 1: Upload Excel",
+            "step2": "Step 2 (Optional): Add valuers",
+            "step2OptionalValuers": "Step 2 (Optional): Add valuers",
+            "step3OptionalPdf": "Step 3 (Optional): Attach PDF files",
+            "step4Action": "Step 4: How to continue with uploaded reports",
+            "step1Hint": "Review validation results, then continue to Step 2 (optional valuers), Step 3 (optional PDF), and Step 4 action.",
             "continueStep2": "Continue to Step 2",
+            "continueStep3": "Continue to Step 3",
+            "continueStep4": "Continue to Step 4",
+            "skipStep2UseDefault": "Skip Step 2 (use default)",
+            "backStep2": "Back to Step 2",
+            "backStep3": "Back to Step 3",
+            "step2Hint": "Optionally assign valuers and contribution percentages, or keep the Taqeem default valuer.",
+            "manageValuers": "Add/Update valuers",
+            "useDefaultValuers": "Use default valuer",
+            "step3Hint": "You can upload matching PDF files now, or skip and use the placeholder PDF automatically.",
+            "step4Hint": "Step 4: Choose how to continue with the uploaded reports.",
+            "step4IssuesTitle": "Detailed issues (click any issue to open exact location)",
+            "step4IssuesHint": "Click an issue to jump to Validation Console and see where to fix it in your Excel data.",
+            "step4IssueFocusedHint": "Selected issue is highlighted in this section.",
             "issue": "Issue",
             "issueCount": "{{count}} issue(s)",
             "allFieldsOk": "All fields OK",

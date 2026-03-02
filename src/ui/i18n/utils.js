@@ -40,7 +40,7 @@ const getStoredLanguage = () => {
     }
 };
 
-const detectInitialLanguage = () => getUrlLanguage() || getStoredLanguage() || 'en';
+const detectInitialLanguage = () => getUrlLanguage() || getStoredLanguage() || 'ar';
 
 const persistLanguage = (lang) => {
     if (typeof window === 'undefined') return;

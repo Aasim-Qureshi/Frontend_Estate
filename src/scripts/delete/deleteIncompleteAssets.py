@@ -26,7 +26,7 @@ TBODY_XPATH_FALLBACK = (
     "/html/body/div/div[5]/div[2]/div/div[8]/div/div/div/div[2]/div[2]/table/tbody"
 )
 
-INCOMPLETE_AR = "ØºÙØ± ÙÙØªÙÙØ©"
+INCOMPLETE_AR = "غير مكتملة"
 macro_link_re = re.compile(r"/report/macro/(\d+)/(?:show|edit|delete)")
 
 # DataTables subpage pagination
@@ -46,7 +46,7 @@ DATATABLE_PREV_SEL = (
 # Main (outer) pagination
 MAIN_NEXT_SEL = 'a.page-link[rel="next"]'
 
-DRAFT_STATUS_AR = "ÙØ³ÙØ¯Ø©"
+DRAFT_STATUS_AR = "مسودة"
 DRAFT_STATUS_EN = "draft"
 
 
@@ -118,7 +118,7 @@ async def _try_click_inline_confirm(page):
     try:
         await page.evaluate("""
         () => {
-          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","Ø­Ø°Ù","ØªØ£ÙÙØ¯"];
+          const labels = ["OK","Ok","Confirm","CONFIRM","Yes","Delete","حذف","تأكيد"];
           const els = Array.from(document.querySelectorAll('button, [type=button], [type=submit], a'));
           for (const el of els) {
             const t = (el.innerText || el.value || "").trim();
@@ -193,7 +193,7 @@ async def _parse_asset_rows(page):
             continue
 
         if idx <= preview_cap:
-            log(f"[row {idx} preview] {html[:200].replace(chr(10), ' ')}â¦", "INFO")
+            log(f"[row {idx} preview] {html[:200].replace(chr(10), ' ')}…", "INFO")
 
         m = re.search(
             r'href="https?://[^"]*/report/macro/(\d+)/(?:show|edit|delete)"', html
@@ -810,7 +810,7 @@ async def delete_incomplete_assets_flow(
             log(f"Report {report_id}: cleanup round #{round_idx}", "STEP")
             await asyncio.sleep(2.0)
 
-            log(f"Report {report_id}: Deleting assets across pagesâ¦", "INFO")
+            log(f"Report {report_id}: Deleting assets across pages…", "INFO")
             if total_assets_remaining is None:
                 assets_info = await calculate_total_assets(page)
                 total_assets_remaining = assets_info.get("assets_exact") or 0
@@ -867,7 +867,7 @@ async def delete_incomplete_assets_flow(
 
             # total_deleted == 0 --> no assets were removed anywhere.
             log(
-                f"Report {report_id}: No assets deleted in this round (total_deleted=0). Checking if any assets remainâ¦",
+                f"Report {report_id}: No assets deleted in this round (total_deleted=0). Checking if any assets remain…",
                 "INFO",
             )
 

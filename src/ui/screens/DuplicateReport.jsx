@@ -3539,6 +3539,12 @@ const DuplicateReport = ({ onViewChange }) => {
                                   "Retry incomplete assets",
                                 )}
                               </option>
+                              <option value="send">
+                                {quickTranslate(
+                                  "reports.row.submitToTaqeem",
+                                  "Submit to Taqeem",
+                                )}
+                              </option>
                               <option value="delete">
                                 {quickTranslate("reports.row.delete", "Delete")}
                               </option>
