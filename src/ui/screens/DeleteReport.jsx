@@ -1550,26 +1550,55 @@ const DeleteReport = () => {
     ];
   };
 
-  const runWithConcurrency = async (items, limit, worker) => {
-    const results = new Array(items.length);
-    let idx = 0;
+ // ✅ Queue-based async pool (hard cap = 5 parallel "browser" jobs)
+// Drop-in replacement for your current runWithConcurrency.
+// Keeps your current calls the same (even if you pass 10, it will run max 5).
 
-    const runners = Array.from({ length: Math.max(1, limit) }, async () => {
-      while (true) {
-        const current = idx++;
-        if (current >= items.length) break;
+const MAX_PARALLEL_JOBS = 5;
 
-        try {
-          results[current] = await worker(items[current], current);
-        } catch (e) {
-          results[current] = { ok: false, error: String(e) };
-        }
+const runWithConcurrency = async (items, limit, worker) => {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+
+  if (total === 0) return [];
+
+  // Hard cap to prevent multiple browser instances freezing the app
+  const concurrency = Math.min(
+    MAX_PARALLEL_JOBS,
+    Math.max(1, Number(limit) || MAX_PARALLEL_JOBS),
+    total,
+  );
+
+  const results = new Array(total);
+
+  // shared index pointer
+  let nextIndex = 0;
+
+  // worker runner: grabs next item when finished
+  const runner = async () => {
+    while (true) {
+      const currentIndex = nextIndex++;
+      if (currentIndex >= total) return;
+
+      const item = list[currentIndex];
+
+      try {
+        results[currentIndex] = await worker(item, currentIndex);
+      } catch (e) {
+        results[currentIndex] = {
+          ok: false,
+          error: e?.message ? String(e.message) : String(e),
+        };
       }
-    });
-
-    await Promise.all(runners);
-    return results;
+    }
   };
+
+  // Start N runners
+  const runners = Array.from({ length: concurrency }, () => runner());
+  await Promise.all(runners);
+
+  return results;
+};
 
   // ✅ Replace your handleCheckReportInTaqeem with this version
 
