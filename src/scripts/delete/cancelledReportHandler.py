@@ -74,7 +74,7 @@ async def _create_single_macro(report_id: str) -> bool:
     navigate to the last page where the new asset appears,
     then delete it.
     """
-    create_url = f"https://qima.taqeem.sa/report/asset/create/{report_id}"
+    create_url = f"https://qima.taqeem.gov.sa/report/asset/create/{report_id}"
     log(f"Navigating to asset-create page: {create_url}", "STEP")
     page = await new_tab(create_url)
     await asyncio.sleep(1.5)

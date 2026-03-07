@@ -257,7 +257,7 @@ async def get_all_macro_ids_parallel(browser, report_id, tabs_num=3):
             tabs_num=tabs_num,
         )
 
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = browser.tabs[0]
         await main_page.get(base_url)
         await asyncio.sleep(2)
@@ -436,7 +436,7 @@ async def retry_get_missing_macro_ids(browser, report_id, tabs_num=3):
             }
 
         # Determine total pages from live site
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = browser.tabs[0]
         await main_page.get(base_url)
         await asyncio.sleep(2)
@@ -695,7 +695,7 @@ async def get_macro_count(browser, report_id):
         int: Total count of macro IDs, or 0 if failed
     """
     try:
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = browser.tabs[0]
         await main_page.get(base_url)
         await asyncio.sleep(2)

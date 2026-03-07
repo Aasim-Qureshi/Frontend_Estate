@@ -241,7 +241,7 @@ def is_dummy_pdf(report_record):
 async def finalize_report_submission(page, report_id):
     """Open the report page, accept policy checkbox, and send the report."""
     try:
-        report_url = f"https://qima.taqeem.sa/report/{report_id}"
+        report_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         await page.get(report_url)
         await asyncio.sleep(1)
 
@@ -824,7 +824,7 @@ async def ElrajhiRetry(
                 )
 
                 # Navigate to the report page
-                report_url = f"https://qima.taqeem.sa/report/{report_id}"
+                report_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
                 await main_page.get(report_url)
                 await asyncio.sleep(2)
 
@@ -845,7 +845,7 @@ async def ElrajhiRetry(
                     log(f"Found existing macro: {macro_id}", "INFO")
                 else:
                     asset_create_url = (
-                        f"https://qima.taqeem.sa/report/asset/create/{report_id}"
+                        f"https://qima.taqeem.gov.sa/report/asset/create/{report_id}"
                     )
                     main_page = await new_browser.get(asset_create_url)
                     await asyncio.sleep(1)
@@ -1367,7 +1367,7 @@ async def ElrajhiRetryByReportIds(
 
             try:
                 report_id = rec["report_id"]
-                report_url = f"https://qima.taqeem.sa/report/{report_id}"
+                report_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
 
                 await main_page.get(report_url)
                 await asyncio.sleep(2)
@@ -1617,7 +1617,7 @@ async def ElrajhiRetryByRecordIds(
 
             try:
                 report_id = rec["report_id"]
-                report_url = f"https://qima.taqeem.sa/report/{report_id}"
+                report_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
 
                 await main_page.get(report_url)
                 await asyncio.sleep(2)

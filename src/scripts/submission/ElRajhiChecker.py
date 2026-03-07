@@ -70,7 +70,7 @@ async def _check_single_report(page, report):
         }
 
     try:
-        url = f"https://qima.taqeem.sa/report/{report_id}"
+        url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         await page.get(url)
         await asyncio.sleep(1)
 
@@ -248,7 +248,7 @@ async def reupload_elrajhi_report(browser, report_id):
         }
 
     try:
-        page = await browser.get(f"https://qima.taqeem.sa/report/{report_id}")
+        page = await browser.get(f"https://qima.taqeem.gov.sa/report/{report_id}")
         await asyncio.sleep(1)
 
         macro_link = await wait_for_element(

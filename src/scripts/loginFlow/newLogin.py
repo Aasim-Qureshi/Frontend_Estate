@@ -7,7 +7,7 @@ from scripts.core.browser import closeBrowser, get_browser, switch_to_headless
 async def wait_until_logged_in(page, timeout=340, poll=2):
     import time
 
-    target_host = "https://qima.taqeem.sa/"
+    target_host = "https://qima.taqeem.gov.sa/"
     start = time.time()
 
     while time.time() - start < timeout:

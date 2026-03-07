@@ -91,7 +91,7 @@ async def delete_latest_asset(report_id: str, page) -> bool:
         return False
 
     # Open the delete URL
-    delete_url = f"https://qima.taqeem.sa/report/macro/{macro_id}/delete"
+    delete_url = f"https://qima.taqeem.gov.sa/report/macro/{macro_id}/delete"
     log(f"Opening delete URL: {delete_url}", "STEP")
     del_page = await new_tab(delete_url)
     await asyncio.sleep(0.8)

@@ -33,7 +33,7 @@ from .macroFiller import handle_macro_edits
 
 
 async def navigate_to_existing_report_assets(browser, report_id):
-    asset_creation_url = f"https://qima.taqeem.sa/report/asset/create/{report_id}"
+    asset_creation_url = f"https://qima.taqeem.gov.sa/report/asset/create/{report_id}"
 
     main_page = await browser.get(asset_creation_url)
     await asyncio.sleep(2)
@@ -57,7 +57,7 @@ async def get_all_macro_ids_parallel(
         if collection_name is None:
             collection_name = "multiapproachreports"
 
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = browser.tabs[0]
         await main_page.get(base_url)
         await asyncio.sleep(2)

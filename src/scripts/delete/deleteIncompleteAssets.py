@@ -280,7 +280,7 @@ async def _delete_assets_by_macro_list(
                 log(f"[deleter] Process {process_id} stopped by user request", "INFO")
                 break
 
-        delete_url = f"https://qima.taqeem.sa/report/macro/{mid}/delete"
+        delete_url = f"https://qima.taqeem.gov.sa/report/macro/{mid}/delete"
         log(f"[deleter] ({idx}/{len(pending_macros)}) deleting macro_id={mid}", "INFO")
 
         page2 = None

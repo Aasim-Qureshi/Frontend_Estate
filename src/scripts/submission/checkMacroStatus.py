@@ -156,7 +156,7 @@ async def check_incomplete_macros(browser, report_id, browsers_num=3):
         record_id = report["_id"]
         macro_index_map, macro_state_map = build_asset_maps(report)
 
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = await browser.get(base_url)
         await asyncio.sleep(MAIN_PAGE_LOAD_WAIT_SECONDS)
 
@@ -482,7 +482,7 @@ async def half_check_incomplete_macros(browser, report_id, browsers_num=3):
         record_id = report["_id"]
 
         # Enhanced status detection
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = await browser.get(base_url)
         await asyncio.sleep(1)
 

@@ -647,7 +647,7 @@ async def resolve_registration_url(page, target):
 
     href = (href or "").strip()
     if href.startswith("/"):
-        href = urljoin("https://qima.taqeem.sa", href)
+        href = urljoin("https://qima.taqeem.gov.sa", href)
     return href
 
 
@@ -727,7 +727,7 @@ def download_pdf_with_cookies(url, dest_dir, preferred_name, cookie_header, head
 
 async def download_single_certificate(page, browser, report_id, asset_name, download_path):
     try:
-        await page.get(f"https://qima.taqeem.sa/report/{report_id}")
+        await page.get(f"https://qima.taqeem.gov.sa/report/{report_id}")
         await page.sleep(1)
 
         asset_name_page = repair_mojibake((await get_asset_name_from_report_table(page)).strip())
@@ -749,7 +749,7 @@ async def download_single_certificate(page, browser, report_id, asset_name, down
 
         headers = {
             "Accept": "application/pdf",
-            "Referer": f"https://qima.taqeem.sa/report/{report_id}",
+            "Referer": f"https://qima.taqeem.gov.sa/report/{report_id}",
         }
         if user_agent:
             headers["User-Agent"] = user_agent

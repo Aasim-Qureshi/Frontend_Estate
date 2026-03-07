@@ -41,7 +41,7 @@ def _extract_field_by_hint(fields, hints):
 
 async def get_profile():
     try:
-        page = await navigate("https://qima.taqeem.sa/valuer/profile")
+        page = await navigate("https://qima.taqeem.gov.sa/valuer/profile")
         await asyncio.sleep(2)
 
         data = await page.evaluate(

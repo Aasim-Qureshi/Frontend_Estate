@@ -354,8 +354,8 @@ async def fetch_company_valuers(page, office_id, sector_id="4"):
 
 async def get_companies():
     try:
-        start_url = "https://qima.taqeem.sa/"
-        final_home_url = "https://qima.taqeem.sa/valuer/home"
+        start_url = "https://qima.taqeem.gov.sa/"
+        final_home_url = "https://qima.taqeem.gov.sa/valuer/home"
 
         page = await navigate(start_url)
         await asyncio.sleep(3)

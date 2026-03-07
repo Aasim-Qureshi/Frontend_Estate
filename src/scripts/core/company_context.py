@@ -31,7 +31,7 @@ def _to_absolute_url(url: str) -> str:
     if not clean.startswith("/"):
         clean = f"/{clean}"
 
-    return f"https://qima.taqeem.sa{clean}"
+    return f"https://qima.taqeem.gov.sa{clean}"
 
 
 def parse_company_url(url: str) -> dict:
@@ -120,10 +120,10 @@ def get_sector_id(default: str = "4") -> str:
 
 def build_report_url(report_id: str, office_id: str | int | None = None) -> str:
     office = str(office_id or get_office_id())
-    return f"https://qima.taqeem.sa/report/{report_id}?office={office}"
+    return f"https://qima.taqeem.gov.sa/report/{report_id}?office={office}"
 
 
 def build_report_create_url(sector_id: str | int | None = None, office_id: str | int | None = None) -> str:
     office = str(office_id or get_office_id())
     sector = str(sector_id or get_sector_id())
-    return f"https://qima.taqeem.sa/report/create/{sector}/{office}"
+    return f"https://qima.taqeem.gov.sa/report/create/{sector}/{office}"

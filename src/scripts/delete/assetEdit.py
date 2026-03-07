@@ -376,7 +376,7 @@ async def set_location_select2s(page, values: dict) -> None:
 
 
 async def edit_macro_and_save(page, macro_id: str, values: dict):
-    url = f"https://qima.taqeem.sa/report/macro/{macro_id}/edit"
+    url = f"https://qima.taqeem.gov.sa/report/macro/{macro_id}/edit"
     log(f"Editing macro #{macro_id} -> {url}", "STEP")
     await page.get(url)
     await wait_for_element(page, "#region", timeout=60)

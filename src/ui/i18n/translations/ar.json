@@ -609,7 +609,7 @@
             "step1UploadExcel": "الخطوة 1: رفع ملف إكسل",
             "step2UploadPdfOptional": "الخطوة 2: رفع ملف PDF (اختياري)",
             "step3StoreSubmitAction": "الخطوة 3: إجراء الحفظ والإرسال",
-            "openValidationModal": "فتح نافذة التحقق واستكمال الخطوات"
+            "openValidationModal": "عرض التحقق واستكمال الخطوات"
         },
         "editModal": {
             "title": "تعديل التقرير",

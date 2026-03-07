@@ -435,7 +435,7 @@ async def _delete_assets_by_macro_list(
                 log(f"[deleter] Process {process_id} stopped by user request", "INFO")
                 break
 
-        delete_url = f"https://qima.taqeem.sa/report/macro/{mid}/delete"
+        delete_url = f"https://qima.taqeem.gov.sa/report/macro/{mid}/delete"
         log(f"[deleter] ({idx}/{len(pending_macros)}) deleting macro_id={mid}", "INFO")
 
         page2 = None
@@ -938,7 +938,7 @@ async def _has_any_assets(page) -> bool:
 async def create_one_asset_and_get_macro(
     page, report_id: str, process_id: str = None
 ) -> str | None:
-    create_url = f"https://qima.taqeem.sa/report/asset/create/{report_id}"
+    create_url = f"https://qima.taqeem.gov.sa/report/asset/create/{report_id}"
     log(f"[create-asset] Opening create page: {create_url}", "STEP")
 
     await page.get(create_url)

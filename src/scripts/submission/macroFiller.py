@@ -112,7 +112,7 @@ async def update_report_completion_status(record_id):
 
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types):
-    await page.get(f"https://qima.taqeem.sa/report/macro/{macro_id}/edit")
+    await page.get(f"https://qima.taqeem.gov.sa/report/macro/{macro_id}/edit")
     await wait_for_element(page, "#asset_usage_id", timeout=30)
     # Reduced delay - element is already loaded by wait_for_element
     await asyncio.sleep(0.1)

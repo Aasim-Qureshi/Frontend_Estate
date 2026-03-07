@@ -432,7 +432,7 @@ async def validate_report(cmd):
             "reportId": report_id,
         }
 
-    url = f"https://qima.taqeem.sa/report/{report_id}"
+    url = f"https://qima.taqeem.gov.sa/report/{report_id}"
 
     print(
         json.dumps({"event": "checking_report", "reportId": report_id, "url": url}),
@@ -621,7 +621,7 @@ async def check_report_existence(page, report_id=None):
     ERROR_TEXT_NOT_FOUND = "هذه الصفحة غير موجودة!"
 
     if report_id:
-        url = f"https://qima.taqeem.sa/report/{report_id}"
+        url = f"https://qima.taqeem.gov.sa/report/{report_id}"
 
         print(
             json.dumps(
@@ -735,7 +735,7 @@ async def validate_report_simple(browser, report_id: str):
     if not report_id:
         return {"status": "FAILED", "error": "Missing reportId"}
 
-    url = f"https://qima.taqeem.sa/report/{report_id}"
+    url = f"https://qima.taqeem.gov.sa/report/{report_id}"
     page = None
 
     try:

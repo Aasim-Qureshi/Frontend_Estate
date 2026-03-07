@@ -133,7 +133,7 @@ async def go_to_last_asset_page(report_id: str, page) -> bool:
         href = await page.evaluate("location.href")
     except Exception:
         href = ""
-    expected_prefix = f"https://qima.taqeem.sa/report/{report_id}"
+    expected_prefix = f"https://qima.taqeem.gov.sa/report/{report_id}"
     if not href or expected_prefix not in href:
         url = build_report_url(report_id)
         log(f"Re-opening report to paginate: {url}", "STEP")

@@ -23,7 +23,7 @@ from .grabMacroIds import (
 )
 from .macroFiller import handle_macro_edits
 
-HOME_URL = "https://qima.taqeem.sa/report"
+HOME_URL = "https://qima.taqeem.gov.sa/report"
 
 
 def build_form_payload(record):
@@ -88,7 +88,7 @@ async def get_all_macro_ids_parallel(
             print("[MACRO_ID] No report_id provided", file=sys.stderr)
             return {"status": "FAILED", "error": "Missing report_id"}
 
-        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        base_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
         main_page = browser.tabs[0]
         await main_page.get(base_url)
         await asyncio.sleep(2)

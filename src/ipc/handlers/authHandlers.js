@@ -11,7 +11,7 @@ function delay(ms) {
 }
 
 async function confirmSingleReport(win, reportId) {
-    const targetUrl = `https://qima.taqeem.sa/report/${reportId}`;
+    const targetUrl = `https://qima.taqeem.gov.sa/report/${reportId}`;
     try {
         await win.loadURL(targetUrl);
     } catch (err) {
@@ -82,7 +82,7 @@ async function waitForSecondaryLogin(win, timeoutMs = 180000, intervalMs = 1500)
             throw new Error('Secondary login window closed.');
         }
         const currentUrl = String(win.webContents.getURL() || '').toLowerCase();
-        if (currentUrl.startsWith('https://qima.taqeem.sa/')) {
+        if (currentUrl.startsWith('https://qima.taqeem.gov.sa/')) {
             return true;
         }
         await delay(intervalMs);

@@ -85,7 +85,7 @@ async def create_macros_multi_tab(
             file=sys.stderr,
         )
 
-        asset_url = f"https://qima.taqeem.sa/report/asset/create/{report_id}"
+        asset_url = f"https://qima.taqeem.gov.sa/report/asset/create/{report_id}"
 
         main_page = await browser.get(asset_url)
         await asyncio.sleep(2)
