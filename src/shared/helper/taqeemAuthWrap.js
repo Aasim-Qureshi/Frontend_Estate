@@ -419,6 +419,11 @@ async function ensureTaqeemAuthorized(
         const browserExplicitlyNotLoggedIn = Boolean(
             browserStatus?.browserOpen && browserStatusCode.includes("NOT_LOGGED_IN")
         );
+        const browserSessionLikelyAlive = Boolean(
+            browserStatus?.browserOpen &&
+            !browserExplicitlyNotLoggedIn &&
+            !browserStatusCode.includes("CLOSED")
+        );
 
         if (browserConfirmedLoggedIn) {
             // Automation uses the live Taqeem browser session. Do not gate on app account,
@@ -432,6 +437,14 @@ async function ensureTaqeemAuthorized(
 
         if (browserExplicitlyNotLoggedIn) {
             setTaqeemStatus?.("info", "Taqeem login: Off");
+        }
+
+        if (browserSessionLikelyAlive && isTaqeemLoggedIn) {
+            console.info(
+                "[taqeemAuth] Browser session is still open; preserving current Taqeem ON state."
+            );
+            setTaqeemStatus?.("success", "Taqeem login: On");
+            return true;
         }
 
         if ((browserStatusFailed || !browserStatus) && isTaqeemLoggedIn) {
@@ -482,7 +495,7 @@ async function ensureTaqeemAuthorized(
 
         const needsFreshTaqeemLogin =
             authStatus?.status === "AUTHORIZED" &&
-            (browserExplicitlyNotLoggedIn || (!browserConfirmedLoggedIn && !isTaqeemLoggedIn));
+            (browserExplicitlyNotLoggedIn || (!browserSessionLikelyAlive && !isTaqeemLoggedIn));
 
         if (needsFreshTaqeemLogin) {
             const result = await bootstrapAndSync({

@@ -153,13 +153,19 @@ const authHandlers = {
         try {
             console.log('[MAIN] Received check status request');
             result = await pythonAPI.auth.checkStatus();
-            if (!result) return { status: 'ERROR', error: 'Browser status check failed' };
+            if (!result) {
+                return {
+                    status: 'ERROR',
+                    error: 'Browser status check failed',
+                    browserOpen: null
+                };
+            }
 
             console.log("Result at handler:", result);
 
             return {
                 status: result.status,
-                browserOpen: result.browserOpen,
+                browserOpen: result?.browserOpen ?? null,
                 message: result.message,
                 error: result.error
             };
@@ -169,7 +175,7 @@ const authHandlers = {
             return {
                 status: 'ERROR',
                 error: error.message,
-                browserOpen: result?.browserOpen || false,
+                browserOpen: result?.browserOpen ?? null,
                 message: result?.message || 'Status check failed'
             };
         }

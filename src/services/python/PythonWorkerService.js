@@ -378,7 +378,8 @@ class PythonWorkerService {
             if (response.commandId !== undefined) {
                 const handler = this.pendingCommands.get(response.commandId);
                 if (handler) {
-                    if (this.isResolvedStatus(response.status)) {
+                    const allowFailure = handler.allowFailure === true;
+                    if (this.isResolvedStatus(response.status) || allowFailure) {
                         handler.resolve(response);
                     } else {
                         handler.reject(new Error(response.error || 'Command failed'));
@@ -412,7 +413,11 @@ class PythonWorkerService {
         const commandWithId = { ...command, commandId };
 
         return new Promise((resolve, reject) => {
-            this.pendingCommands.set(commandId, { resolve, reject });
+            this.pendingCommands.set(commandId, {
+                resolve,
+                reject,
+                allowFailure: options.allowFailure === true
+            });
 
             try {
                 this.worker.stdin.write(JSON.stringify(commandWithId) + '\n');

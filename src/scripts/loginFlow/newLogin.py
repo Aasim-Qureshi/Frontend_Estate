@@ -67,6 +67,29 @@ async def public_login_flow(login_url, is_auth=False):
         flush=True,
     )
 
+    # For manual browser-based Taqeem login flows we keep the visible browser session as-is.
+    # Switching to headless here adds delay and can leave the browser in a half-switched state.
+    if not is_auth:
+        print(
+            json.dumps(
+                {
+                    "type": "DEBUG",
+                    "message": "headless_switch",
+                    "result": {
+                        "status": "SKIPPED",
+                        "message": "Headless switch skipped for manual Taqeem session",
+                    },
+                }
+            ),
+            flush=True,
+        )
+        return {
+            "status": "CHECK",
+            "user_id": None,
+            "headless": False,
+            "skippedHeadlessSwitch": True,
+        }
+
     # Step 3: optional switch to headless (can time out on Windows; automation still works without it).
     skip_headless = os.getenv("TAQEEM_SKIP_HEADLESS_SWITCH", "").lower() in (
         "1",
@@ -94,10 +117,5 @@ async def public_login_flow(login_url, is_auth=False):
         if not is_auth:
             return {"status": "CHECK", "user_id": None, **fallback_result}
         return {"status": "SUCCESS", **fallback_result}
-
-    if not is_auth:
-        # Keep the user on home page after manual login and avoid profile scraping.
-        # Username resolution is handled on the frontend from cached linked account data.
-        return {"status": "CHECK", "user_id": None, "headless": True}
 
     return {"status": "SUCCESS", "headless": True}

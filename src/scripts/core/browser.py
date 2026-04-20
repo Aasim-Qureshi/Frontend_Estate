@@ -24,6 +24,61 @@ TAQEEM_AUTH_URL_MARKERS = (
     "/login-actions/authenticate",
     "/protocol/openid-connect/auth",
 )
+_last_known_taqeem_session = {
+    "authenticated": False,
+    "url": "",
+}
+
+
+def _remember_taqeem_authenticated(url: str = ""):
+    global _last_known_taqeem_session
+    _last_known_taqeem_session["authenticated"] = True
+    if url:
+        _last_known_taqeem_session["url"] = str(url).strip()
+
+
+def _remember_taqeem_logged_out():
+    global _last_known_taqeem_session
+    _last_known_taqeem_session["authenticated"] = False
+    _last_known_taqeem_session["url"] = ""
+
+
+def _has_last_known_taqeem_session() -> bool:
+    return bool(_last_known_taqeem_session.get("authenticated"))
+
+
+def _build_preserved_session_result(message: str, checked_urls=None):
+    preserved_url = str(_last_known_taqeem_session.get("url") or "").strip()
+    result = {
+        "status": "SUCCESS",
+        "message": message,
+        "browserOpen": True,
+        "checkedUrls": checked_urls or [],
+        "preservedSession": True,
+    }
+    if preserved_url:
+        result["url"] = preserved_url
+    return result
+
+
+def _browser_transport_alive(browser_instance) -> bool:
+    if browser_instance is None:
+        return False
+
+    try:
+        if getattr(browser_instance, "stopped", False):
+            return False
+    except Exception:
+        return False
+
+    try:
+        connection = getattr(browser_instance, "connection", None)
+        if connection is not None and getattr(connection, "closed", False):
+            return False
+    except Exception:
+        return False
+
+    return True
 
 
 def get_profile_dir():
@@ -267,21 +322,39 @@ async def inspect_taqeem_browser_session(browser_instance=None):
             "checkedUrls": [],
         }
 
-    try:
-        pages = _collect_browser_tabs(active_browser)
-    except Exception as e:
+    if not _browser_transport_alive(active_browser):
         return {
             "status": "FAILED",
-            "error": str(e),
+            "error": "Browser transport is closed",
             "browserOpen": False,
             "checkedUrls": [],
         }
 
-    if not pages:
+    try:
+        pages = _collect_browser_tabs(active_browser)
+    except Exception as e:
+        if _has_last_known_taqeem_session():
+            return _build_preserved_session_result(
+                "Keeping last known Taqeem session while browser targets refresh",
+                [],
+            )
         return {
             "status": "FAILED",
-            "error": "No browser tabs",
-            "browserOpen": False,
+            "error": str(e),
+            "browserOpen": True,
+            "checkedUrls": [],
+        }
+
+    if not pages:
+        if _has_last_known_taqeem_session():
+            return _build_preserved_session_result(
+                "Keeping last known Taqeem session while browser tabs are reloading",
+                [],
+            )
+        return {
+            "status": "FAILED",
+            "error": "Browser is open but no page targets are ready yet",
+            "browserOpen": True,
             "checkedUrls": [],
         }
 
@@ -299,6 +372,7 @@ async def inspect_taqeem_browser_session(browser_instance=None):
         current_url = url.lower()
 
         if current_url.startswith(TAQEEM_APP_PREFIX):
+            _remember_taqeem_authenticated(url)
             return {
                 "status": "SUCCESS",
                 "message": "User is logged in",
@@ -311,7 +385,8 @@ async def inspect_taqeem_browser_session(browser_instance=None):
         if any(marker in current_url for marker in TAQEEM_AUTH_URL_MARKERS):
             found_auth_page = True
 
-    if found_auth_page or found_any_page:
+    if found_auth_page:
+        _remember_taqeem_logged_out()
         return {
             "status": "NOT_LOGGED_IN",
             "error": "User not logged in",
@@ -319,9 +394,23 @@ async def inspect_taqeem_browser_session(browser_instance=None):
             "checkedUrls": checked_urls,
         }
 
+    if _has_last_known_taqeem_session():
+        return _build_preserved_session_result(
+            "Keeping last known Taqeem session while current page is not readable yet",
+            checked_urls,
+        )
+
+    if found_any_page:
+        return {
+            "status": "FAILED",
+            "error": "Browser is open but no authenticated Taqeem page was detected yet",
+            "browserOpen": True,
+            "checkedUrls": checked_urls,
+        }
+
     return {
-        "status": "NOT_LOGGED_IN",
-        "error": "Browser is open but no readable Taqeem page was detected yet",
+        "status": "FAILED",
+        "error": "Browser is open but the current page is still loading",
         "browserOpen": True,
         "checkedUrls": checked_urls,
     }
@@ -330,6 +419,7 @@ async def inspect_taqeem_browser_session(browser_instance=None):
 async def check_browser_status():
     global browser
     if browser is None:
+        _remember_taqeem_logged_out()
         return {
             "status": "FAILED",
             "error": "No browser instance",
@@ -337,12 +427,33 @@ async def check_browser_status():
         }
 
     try:
+        if not _browser_transport_alive(browser):
+            _remember_taqeem_logged_out()
+            await closeBrowser()
+            return {
+                "status": "FAILED",
+                "error": "Browser transport is closed",
+                "browserOpen": False,
+            }
+
         result = await inspect_taqeem_browser_session(browser)
         if result.get("status") == "FAILED" and result.get("browserOpen") is False:
+            _remember_taqeem_logged_out()
             await closeBrowser()
+        elif result.get("status") == "NOT_LOGGED_IN":
+            _remember_taqeem_logged_out()
+        elif result.get("status") == "SUCCESS":
+            _remember_taqeem_authenticated(result.get("url", ""))
         return {key: value for key, value in result.items() if key != "page"}
     except Exception as e:
+        if _browser_transport_alive(browser) and _has_last_known_taqeem_session():
+            return _build_preserved_session_result(
+                f"Keeping last known Taqeem session after transient status error: {e}",
+                [],
+            )
+
         # Browser instance exists but is not actually running
+        _remember_taqeem_logged_out()
         await closeBrowser()
         return {"status": "FAILED", "error": str(e), "browserOpen": False}
 
@@ -380,6 +491,7 @@ async def closeBrowser():
         except Exception:
             pass
     browser, page = None, None
+    _remember_taqeem_logged_out()
 
 
 def set_page(new_page):

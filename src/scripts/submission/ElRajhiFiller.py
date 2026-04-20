@@ -3,6 +3,7 @@ import os
 import sys
 import traceback
 from datetime import datetime
+from urllib.parse import urlparse
 
 from scripts.core.browser import spawn_new_browser
 from scripts.core.company_context import (
@@ -139,8 +140,20 @@ async def create_report_and_collect_macro(page, report_record, create_url):
     """Create a single report and collect its macro ID without filling it"""
     try:
         # Navigate to create report page
-        await page.get(create_url)
-        await asyncio.sleep(1)
+        nav_result = await navigate_page_resilient(
+            page,
+            create_url,
+            label="report creation page",
+            timeout=40,
+            settle_seconds=1,
+        )
+        if nav_result.get("status") != "SUCCESS":
+            return {
+                "status": "FAILED",
+                "step": "navigate_create",
+                "error": nav_result.get("error") or "Failed to open create report page",
+                "record_id": str(report_record["_id"]),
+            }
 
         # Fill form steps with report data (steps 1 and 2)
         for step_num, step_config in enumerate(form_steps, 1):
@@ -241,12 +254,142 @@ def is_dummy_pdf(report_record):
     return isinstance(pdf_path, str) and pdf_path.endswith(DUMMY_PDF_NAME)
 
 
+async def get_page_url(page, timeout=6):
+    try:
+        return str(
+            await asyncio.wait_for(page.evaluate("window.location.href"), timeout=timeout)
+            or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
+def urls_match(current_url, target_url):
+    current = str(current_url or "").strip()
+    target = str(target_url or "").strip()
+    if not current or not target:
+        return False
+    if current == target:
+        return True
+
+    try:
+        current_parts = urlparse(current)
+        target_parts = urlparse(target)
+        return (
+            current_parts.scheme == target_parts.scheme
+            and current_parts.netloc == target_parts.netloc
+            and current_parts.path == target_parts.path
+        )
+    except Exception:
+        return False
+
+
+async def navigate_page_resilient(
+    page,
+    target_url,
+    *,
+    label="page",
+    timeout=35,
+    settle_seconds=1.5,
+):
+    last_error = None
+    for attempt in range(2):
+        try:
+            await asyncio.wait_for(page.get(target_url), timeout=timeout)
+            if settle_seconds:
+                await asyncio.sleep(settle_seconds)
+            current_url = await get_page_url(page)
+            if not current_url or urls_match(current_url, target_url):
+                return {"status": "SUCCESS", "url": current_url or target_url}
+            return {"status": "SUCCESS", "url": current_url}
+        except Exception as err:
+            last_error = err
+            current_url = await get_page_url(page)
+            if urls_match(current_url, target_url):
+                return {"status": "SUCCESS", "url": current_url}
+
+            try:
+                await asyncio.wait_for(
+                    page.evaluate(
+                        """(url) => {
+                            window.location.href = url;
+                            return window.location.href;
+                        }""",
+                        target_url,
+                    ),
+                    timeout=5,
+                )
+                if settle_seconds:
+                    await asyncio.sleep(settle_seconds)
+                current_url = await get_page_url(page)
+                if urls_match(current_url, target_url):
+                    return {"status": "SUCCESS", "url": current_url}
+            except Exception as fallback_err:
+                last_error = fallback_err
+
+        await asyncio.sleep(1)
+
+    return {
+        "status": "FAILED",
+        "error": f"Timed out opening {label}: {last_error}",
+        "url": await get_page_url(page),
+    }
+
+
+async def open_workflow_page(browser, force_spawn=False):
+    new_browser = None
+    workflow_browser = None
+    page = None
+
+    if not force_spawn and browser:
+        try:
+            page = await browser.get("about:blank", new_tab=True)
+            if page is not None:
+                workflow_browser = browser
+                print(
+                    "[PY] ElRajhiFiller: using a dedicated automation tab in the existing Taqeem browser session.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        except Exception as existing_err:
+            print(
+                f"[PY] ElRajhiFiller: failed to open automation tab in existing browser: {existing_err}",
+                file=sys.stderr,
+                flush=True,
+            )
+            page = None
+
+    if workflow_browser is None:
+        new_browser = await spawn_new_browser(browser, headless=False)
+        workflow_browser = new_browser
+        page = getattr(new_browser, "main_tab", None)
+        if page is None:
+            page = await new_browser.get("about:blank")
+        print(
+            "[PY] ElRajhiFiller: using spawned browser (fallback).",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    return workflow_browser, page, new_browser
+
+
 async def finalize_report_submission(page, report_id):
     """Open the report page, accept policy checkbox, and send the report."""
     try:
         report_url = f"https://qima.taqeem.gov.sa/report/{report_id}"
-        await page.get(report_url)
-        await asyncio.sleep(1)
+        nav_result = await navigate_page_resilient(
+            page,
+            report_url,
+            label=f"report {report_id}",
+            timeout=35,
+            settle_seconds=1,
+        )
+        if nav_result.get("status") != "SUCCESS":
+            return {
+                "status": "FAILED",
+                "error": nav_result.get("error") or f"Failed to open report {report_id}",
+            }
 
         checkbox_selector = "input#agree"
         agree_checkbox = await wait_for_element(page, checkbox_selector, timeout=20)
@@ -410,31 +553,10 @@ async def ElRajhiFiller(
             "true",
             "yes",
         )
-        if not force_spawn and browser:
-            try:
-                main_page = getattr(browser, "main_tab", None)
-                if main_page is None:
-                    tabs = list(getattr(browser, "tabs", None) or [])
-                    main_page = tabs[0] if tabs else None
-            except Exception:
-                main_page = None
-            if main_page is not None:
-                workflow_browser = browser
-                print(
-                    "[PY] ElRajhiFiller: using existing worker browser tab (same Taqeem login). "
-                    "Set ELRAJHI_FORCE_SPAWN_BROWSER=1 to use a spawned window instead.",
-                    file=sys.stderr,
-                    flush=True,
-                )
-        if workflow_browser is None:
-            new_browser = await spawn_new_browser(browser, headless=False)
-            workflow_browser = new_browser
-            main_page = new_browser.main_tab
-            print(
-                "[PY] ElRajhiFiller: using spawned browser (fallback).",
-                file=sys.stderr,
-                flush=True,
-            )
+        workflow_browser, main_page, new_browser = await open_workflow_page(
+            browser,
+            force_spawn=force_spawn,
+        )
 
         if main_page is None:
             return {
@@ -449,10 +571,26 @@ async def ElRajhiFiller(
             if org_url:
                 emit_progress(
                     process_id,
-                    message="Opening company page in automation browser…",
+                    message="Opening company page in automation browser...",
                 )
-                await main_page.get(org_url)
-                await asyncio.sleep(2)
+                nav_result = await navigate_page_resilient(
+                    main_page,
+                    org_url,
+                    label="company page",
+                    timeout=35,
+                    settle_seconds=2,
+                )
+                if nav_result.get("status") == "SUCCESS":
+                    emit_progress(
+                        process_id,
+                        message="Company page ready. Starting report creation phase...",
+                    )
+                else:
+                    emit_progress(
+                        process_id,
+                        message=nav_result.get("error")
+                        or "Failed to open company page in automation browser.",
+                    )
         except Exception as nav_err:
             log(
                 f"ElRajhi: optional company page navigation failed: {nav_err}",
@@ -566,7 +704,7 @@ async def ElRajhiFiller(
             # Create additional tabs for parallel macro filling
             tabs_num = max(1, min(int(tabs_num or 1), len(macros_to_fill)))
             pages = [main_page] + [
-                await workflow_browser.get("", new_tab=True)
+                await workflow_browser.get("about:blank", new_tab=True)
                 for _ in range(tabs_num - 1)
             ]
 
@@ -697,6 +835,12 @@ async def ElRajhiFiller(
                 f"Phase 2 complete: Filled {completed_macros} macros ({failed_macros} failed)",
                 "INFO",
             )
+
+            for page in pages[1:]:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
 
         # Clear process state after completion
         clear_process(process_id)
@@ -1145,7 +1289,8 @@ async def ElrajhiRetry(
 
             tabs_num = max(1, min(int(tabs_num or 1), len(macros_to_fill)))
             pages = [main_page] + [
-                await new_browser.get("", new_tab=True) for _ in range(tabs_num - 1)
+                await new_browser.get("about:blank", new_tab=True)
+                for _ in range(tabs_num - 1)
             ]
 
             macro_chunks = balanced_chunks(macros_to_fill, tabs_num)
@@ -1499,7 +1644,7 @@ async def ElrajhiRetryByReportIds(
         if macros_to_fill:
             process_state.total += len(macros_to_fill)
             pages = [main_page] + [
-                await new_browser.get("", new_tab=True)
+                await new_browser.get("about:blank", new_tab=True)
                 for _ in range(min(tabs_num, len(macros_to_fill)) - 1)
             ]
 
@@ -1749,7 +1894,7 @@ async def ElrajhiRetryByRecordIds(
         if macros_to_fill:
             process_state.total += len(macros_to_fill)
             pages = [main_page] + [
-                await new_browser.get("", new_tab=True)
+                await new_browser.get("about:blank", new_tab=True)
                 for _ in range(min(tabs_num, len(macros_to_fill)) - 1)
             ]
 

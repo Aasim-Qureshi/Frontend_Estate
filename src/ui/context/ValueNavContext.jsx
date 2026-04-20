@@ -373,17 +373,18 @@ export const ValueNavProvider = ({ children }) => {
             if (cancelled) return;
             try {
                 const res = await window.electronAPI.checkStatus();
-                const browserClosed = res?.browserOpen === false || String(res?.status || '').toUpperCase().includes('CLOSED');
-                const notLogged = String(res?.status || '').toUpperCase().includes('NOT_LOGGED_IN');
+                const statusCode = String(res?.status || '').toUpperCase();
+                const browserClosed = res?.browserOpen === false || statusCode.includes('CLOSED');
+                const notLogged = statusCode.includes('NOT_LOGGED_IN');
+                const sessionLikelyAlive = res?.browserOpen === true && !browserClosed && !notLogged;
                 if (browserClosed || notLogged) {
                     setTaqeemStatus('info', 'Taqeem login: Off');
                     setCompanyStatus('info', t('layout.status.companyDefault', { defaultValue: 'No company selected' }));
-                } else if (res?.browserOpen && String(res?.status || '').toUpperCase().includes('SUCCESS')) {
+                } else if (sessionLikelyAlive) {
                     setTaqeemStatus('success', 'Taqeem login: On');
                 }
             } catch (err) {
-                setTaqeemStatus('info', 'Taqeem login: Off');
-                setCompanyStatus('info', t('layout.status.companyDefault', { defaultValue: 'No company selected' }));
+                console.warn('Taqeem heartbeat check failed; keeping current session state.', err);
             } finally {
                 if (!cancelled) {
                     setTimeout(heartbeat, 8000);

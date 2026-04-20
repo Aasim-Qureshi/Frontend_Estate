@@ -6,8 +6,8 @@ class AuthCommands {
         this.worker = workerService;
     }
 
-    async _sendCommand(command) {
-        return await this.worker.sendCommand(command);
+    async _sendCommand(command, options = {}) {
+        return await this.worker.sendCommand(command, options);
     }
 
     async login(email, password, method, autoOtp = false) {
@@ -35,9 +35,14 @@ class AuthCommands {
     }
 
     async checkStatus() {
-        return this._sendCommand({
-            action: 'check-status'
-        });
+        return this._sendCommand(
+            {
+                action: 'check-status'
+            },
+            {
+                allowFailure: true
+            }
+        );
     }
 
     async getCompanies() {
