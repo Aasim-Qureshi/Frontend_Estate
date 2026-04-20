@@ -250,14 +250,54 @@ export const ValueNavProvider = ({ children }) => {
             setCompanyError(t('navigation.companyFetchUnavailable'));
             return [];
         }
-        if (!user) {
-            setCompanies([]);
-            setCompanyError('');
-            return [];
-        }
+        // No app token: still try Taqeem automation (Python) so guests / manual Taqeem sessions get offices.
         if (!token) {
+            if (!window?.electronAPI?.getCompanies) {
+                setCompanyError('');
+                return companiesRef.current || [];
+            }
+            setLoadingCompanies(true);
             setCompanyError('');
-            return companiesRef.current || [];
+            try {
+                const data = await window.electronAPI.getCompanies();
+                if (data?.status === 'SUCCESS') {
+                    const fetched = (data.data || []).map(normalizeCompany);
+                    if (fetched.length) {
+                        setCompanies(fetched);
+                    }
+                    return fetched;
+                }
+                setCompanyError(data?.error || t('navigation.loadCompaniesFailed'));
+                return [];
+            } catch (err) {
+                const msg = err?.message || t('navigation.loadCompaniesFailed');
+                setCompanyError(msg);
+                return [];
+            } finally {
+                setLoadingCompanies(false);
+            }
+        }
+        if (!user) {
+            setCompanyError('');
+            if (!window?.electronAPI?.getCompanies) {
+                return [];
+            }
+            setLoadingCompanies(true);
+            try {
+                const data = await window.electronAPI.getCompanies();
+                if (data?.status === 'SUCCESS') {
+                    const fetched = (data.data || []).map(normalizeCompany);
+                    if (fetched.length) {
+                        setCompanies(fetched);
+                    }
+                    return fetched;
+                }
+                return [];
+            } catch {
+                return [];
+            } finally {
+                setLoadingCompanies(false);
+            }
         }
 
         setLoadingCompanies(true);
@@ -317,10 +357,10 @@ export const ValueNavProvider = ({ children }) => {
     }, [user, loadSavedCompanies]);
 
     useEffect(() => {
-        if (taqeemStatus?.state === 'success' && user && (!companies || companies.length === 0)) {
+        if (taqeemStatus?.state === 'success' && (!companies || companies.length === 0)) {
             loadSavedCompanies(selectedDomain || 'equipment');
         }
-    }, [companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state, user]);
+    }, [companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
 
     useEffect(() => {
         if (taqeemStatus?.state !== 'success') {
@@ -503,7 +543,6 @@ export const ValueNavProvider = ({ children }) => {
     useEffect(() => {
         const shouldAutoFetch =
             taqeemStatus?.state === 'success' &&
-            user &&
             !loadingCompanies &&
             !autoLoadedCompanies &&
             (!companies || companies.length === 0);
@@ -540,7 +579,7 @@ export const ValueNavProvider = ({ children }) => {
                 setLoadingCompanies(false);
             }
         })();
-    }, [autoLoadedCompanies, companies, loadingCompanies, replaceCompanies, setCompanyStatus, syncCompanies, taqeemStatus?.state, t, user]);
+    }, [autoLoadedCompanies, companies, loadingCompanies, replaceCompanies, setCompanyStatus, syncCompanies, taqeemStatus?.state, t]);
 
     useEffect(() => {
         if (taqeemStatus?.state !== 'success') {
@@ -587,11 +626,10 @@ export const ValueNavProvider = ({ children }) => {
     }, [companies, defaultCompanyOfficeId, ensureCompaniesLoaded, preferredCompanyMatches, setSelectedCompany]);
 
     useEffect(() => {
-        if (!user) return;
         if (!companies || companies.length === 0) return;
         if (selectedCompany) return;
         autoSelectDefaultCompany({ skipNavigation: true, quiet: true }).catch(() => {});
-    }, [autoSelectDefaultCompany, companies, selectedCompany, user]);
+    }, [autoSelectDefaultCompany, companies, selectedCompany]);
 
     const syncNavForView = useCallback((viewId) => {
         const info = findTabInfo(viewId);

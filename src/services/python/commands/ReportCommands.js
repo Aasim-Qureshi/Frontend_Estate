@@ -80,13 +80,14 @@ class ReportCommands {
         });
     }
 
-    async ElRajhiUploadReport(batchId, tabsNum, pdfOnly, finalizeSubmission = true) {
+    async ElRajhiUploadReport(batchId, tabsNum, pdfOnly, finalizeSubmission = true, company = null) {
         return this._sendCommand({
             action: 'elrajhi-filler',
             batchId,
             tabsNum,
             pdfOnly,
-            finalizeSubmission
+            finalizeSubmission,
+            company
         });
     }
 

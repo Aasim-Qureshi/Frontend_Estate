@@ -16,7 +16,7 @@ def _strip(url: str) -> str:
 def _to_absolute_url(url: str) -> str:
     """
     Ensure we always work with an absolute https URL so browser.get is happy.
-    Falls back to qima.taqeem.sa when we get a relative path.
+    Falls back to qima.taqeem.gov.sa when we get a relative path.
     """
     clean = _strip(url)
     if not clean:

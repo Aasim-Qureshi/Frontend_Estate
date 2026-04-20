@@ -127,8 +127,9 @@ export default function GetCompanies({ onViewChange }) {
             const payload = {
                 name: repairMojibake(selectedCompany.name),
                 url: selectedCompany.url,
-                officeId: selectedCompany.officeId,
-                sectorId: selectedCompany.sectorId
+                officeId: selectedCompany.officeId || selectedCompany.office_id,
+                sectorId: selectedCompany.sectorId || selectedCompany.sector_id,
+                skipNavigation: false,
             };
             const data = await window.electronAPI.navigateToCompany(payload);
 

@@ -440,10 +440,46 @@ const reportHandlers = {
         }
     },
 
-    async handleElRajhiUploadReport(event, batchId, tabsNum, pdfOnly, finalizeSubmission = true) {
+    async handleElRajhiUploadReport(event, batchId, tabsNum, pdfOnly, finalizeSubmission = true, company = null) {
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const processId = `elrajhi-filler-${batchId}`;
+        const unregisterProgress = () => {
+            pythonAPI.workerService.unregisterProgressCallback(processId);
+        };
+
         try {
-            return await pythonAPI.report.ElRajhiUploadReport(batchId, tabsNum, pdfOnly, finalizeSubmission);
+            if (senderWindow && !senderWindow.isDestroyed()) {
+                pythonAPI.workerService.registerProgressCallback(processId, (progressData) => {
+                    if (!senderWindow || senderWindow.isDestroyed()) {
+                        unregisterProgress();
+                        return;
+                    }
+
+                    senderWindow.webContents.send('submit-reports-quickly-progress', {
+                        ...progressData,
+                        batchId,
+                        processId,
+                    });
+                });
+            }
+
+            const result = await pythonAPI.report.ElRajhiUploadReport(batchId, tabsNum, pdfOnly, finalizeSubmission, company);
+            unregisterProgress();
+            return result;
         } catch (err) {
+            unregisterProgress();
+            if (senderWindow && !senderWindow.isDestroyed()) {
+                senderWindow.webContents.send('submit-reports-quickly-progress', {
+                    batchId,
+                    processId,
+                    status: 'FAILED',
+                    error: err.message || String(err),
+                    current: 0,
+                    total: 1,
+                    percentage: 0,
+                    message: err.message || 'ElRajhi batch failed to start',
+                });
+            }
             console.error('[MAIN] ElRajhiUploadReport error:', err && err.stack ? err.stack : err);
             return { status: 'FAILED', error: err.message || String(err) };
         }

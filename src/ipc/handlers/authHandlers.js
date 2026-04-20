@@ -340,7 +340,7 @@ const authHandlers = {
         const loginUrl = opts.url || (
             'https://sso.taqeem.gov.sa/realms/REL_TAQEEM/protocol/openid-connect/auth'
             + '?client_id=cli-qima-valuers'
-            + '&redirect_uri=https%3A%2F%2Fqima.taqeem.sa%2Fkeycloak%2Flogin%2Fcallback'
+            + '&redirect_uri=https%3A%2F%2Fqima.taqeem.gov.sa%2Fkeycloak%2Flogin%2Fcallback'
             + '&scope=openid&response_type=code'
         );
         const batchId = opts.batchId;

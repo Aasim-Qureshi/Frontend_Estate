@@ -298,11 +298,12 @@ const Sidebar = ({ currentView, onViewChange }) => {
       }
 
       if (snapshot?.status === "TAQEEM_ALREADY_USED") {
-        const message =
-          snapshot?.message ||
-          "This Taqeem user is already linked. Please login with your phone.";
-        setTaqeemStatus("error", message);
-        setCompanyStatus("error", message);
+        // Server may reject linking, but the Taqeem browser session is still valid.
+        // Continue to local getCompanies so the sidebar can list offices from automation.
+        console.warn(
+          "[Sidebar] syncTaqeemSnapshot returned TAQEEM_ALREADY_USED; continuing with local company fetch.",
+          snapshot,
+        );
         emitTaqeemConflict({
           ...snapshot,
           taqeemUser:
@@ -311,7 +312,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
             user?.taqeem?.username ||
             null,
         });
-        return;
       }
 
       if (snapshot?.user && activeToken) {

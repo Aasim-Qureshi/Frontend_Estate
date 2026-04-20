@@ -113,8 +113,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   macroFillRetry: (reportId, tabsNum, recordId = null, assetData = null) =>
     safeInvoke("run-macro-edit-retry", reportId, tabsNum, recordId, assetData),
 
-  elrajhiUploadReport: (batchId, tabsNum, pdfOnly, finalizeSubmission = true) =>
-    safeInvoke("elrajhi-filler", batchId, tabsNum, pdfOnly, finalizeSubmission),
+  elrajhiUploadReport: (batchId, tabsNum, pdfOnly, finalizeSubmission = true, company = null) =>
+    safeInvoke("elrajhi-filler", batchId, tabsNum, pdfOnly, finalizeSubmission, company),
 
   pauseElrajiBatch: (batchId) => safeInvoke("pause-elrajhi-batch", batchId),
   resumeElrajiBatch: (batchId) => safeInvoke("resume-elrajhi-batch", batchId),

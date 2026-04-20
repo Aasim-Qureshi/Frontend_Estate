@@ -1,10 +1,13 @@
 import asyncio
+import os
+import sys
 import traceback
 from datetime import datetime
 
 from scripts.core.browser import spawn_new_browser
 from scripts.core.company_context import (
     build_report_create_url,
+    get_selected_company,
     require_selected_company,
     set_selected_company,
 )
@@ -294,7 +297,7 @@ async def finalize_report_submission(page, report_id):
 async def finalize_multiple_reports(browser, report_ids):
     new_browser = None
     try:
-        new_browser = await spawn_new_browser(browser)
+        new_browser = await spawn_new_browser(browser, headless=False)
         page = new_browser.main_tab
         finalized_reports = 0
         failed_reports = 0
@@ -334,6 +337,12 @@ async def ElRajhiFiller(
 
         record_data = await http_get(f"/new-scripts/batch/{batch_id}")
         raw_records = record_data.get("reports", [])
+        print(
+            f"[PY] ElRajhiFiller fetched batch {batch_id}: "
+            f"success={record_data.get('success', True)} raw_count={len(raw_records)}",
+            file=sys.stderr,
+            flush=True,
+        )
 
         # Deduplicate in case the batch contains repeated IDs
         seen_ids = set()
@@ -390,9 +399,65 @@ async def ElRajhiFiller(
 
         await http_patch(f"/new-scripts/set-start-time-by-batch-id/{batch_id}")
 
-        # Use single tab for report creation
-        new_browser = await spawn_new_browser(browser)
-        main_page = new_browser.main_tab
+        # Use the SAME worker browser session as manual Taqeem login (visible tab).
+        # spawn_new_browser() starts a separate Chrome profile; cookies/session often
+        # do not carry over → user stays on home in the "main" window while nothing works.
+        new_browser = None
+        workflow_browser = None
+        main_page = None
+        force_spawn = os.environ.get("ELRAJHI_FORCE_SPAWN_BROWSER", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if not force_spawn and browser:
+            try:
+                main_page = getattr(browser, "main_tab", None)
+                if main_page is None:
+                    tabs = list(getattr(browser, "tabs", None) or [])
+                    main_page = tabs[0] if tabs else None
+            except Exception:
+                main_page = None
+            if main_page is not None:
+                workflow_browser = browser
+                print(
+                    "[PY] ElRajhiFiller: using existing worker browser tab (same Taqeem login). "
+                    "Set ELRAJHI_FORCE_SPAWN_BROWSER=1 to use a spawned window instead.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        if workflow_browser is None:
+            new_browser = await spawn_new_browser(browser, headless=False)
+            workflow_browser = new_browser
+            main_page = new_browser.main_tab
+            print(
+                "[PY] ElRajhiFiller: using spawned browser (fallback).",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        if main_page is None:
+            return {
+                "status": "FAILED",
+                "error": "No browser tab available for El Rajhi automation.",
+            }
+
+        # Land on the selected office first (visible window + correct session scope)
+        try:
+            company_ctx = get_selected_company()
+            org_url = (company_ctx.get("url") or "").strip()
+            if org_url:
+                emit_progress(
+                    process_id,
+                    message="Opening company page in automation browser…",
+                )
+                await main_page.get(org_url)
+                await asyncio.sleep(2)
+        except Exception as nav_err:
+            log(
+                f"ElRajhi: optional company page navigation failed: {nav_err}",
+                "WARN",
+            )
 
         # Array to collect macro IDs and their data
         macros_to_fill = []
@@ -501,7 +566,8 @@ async def ElRajhiFiller(
             # Create additional tabs for parallel macro filling
             tabs_num = max(1, min(int(tabs_num or 1), len(macros_to_fill)))
             pages = [main_page] + [
-                await new_browser.get("", new_tab=True) for _ in range(tabs_num - 1)
+                await workflow_browser.get("", new_tab=True)
+                for _ in range(tabs_num - 1)
             ]
 
             # Split macros into balanced chunks
@@ -767,7 +833,7 @@ async def ElrajhiRetry(
         )
 
         # Use single tab for report operations
-        new_browser = await spawn_new_browser(browser)
+        new_browser = await spawn_new_browser(browser, headless=False)
         main_page = new_browser.tabs[0]
 
         # Counters
@@ -1347,7 +1413,7 @@ async def ElrajhiRetryByReportIds(
             finalize_submission=finalize_submission,
         )
 
-        new_browser = await spawn_new_browser(browser)
+        new_browser = await spawn_new_browser(browser, headless=False)
         main_page = new_browser.main_tab
 
         macros_to_fill = []
@@ -1597,7 +1663,7 @@ async def ElrajhiRetryByRecordIds(
             finalize_submission=finalize_submission,
         )
 
-        new_browser = await spawn_new_browser(browser)
+        new_browser = await spawn_new_browser(browser, headless=False)
         main_page = new_browser.main_tab
 
         macros_to_fill = []
