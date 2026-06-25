@@ -581,6 +581,28 @@ const UploadReportElrajhi = ({ onViewChange }) => {
     const officeId = selectedCompany?.officeId || selectedCompany?.office_id;
     return officeId ? String(officeId) : "";
   }, [selectedCompany]);
+
+  /** Same shape as navigate-to-company (skipNavigation); sent with elrajhi-filler so Python always has office context. */
+  const elrajhiCompanyContext = useMemo(() => {
+    if (!selectedCompany) return null;
+    const officeId = selectedCompany.officeId || selectedCompany.office_id;
+    const sectorId = selectedCompany.sectorId || selectedCompany.sector_id;
+    const fromState = (selectedCompany.url || "").trim();
+    const url =
+      fromState ||
+      (officeId != null && String(officeId)
+        ? `https://qima.taqeem.gov.sa/organization/show/${officeId}`
+        : "");
+    if (!url) return null;
+    return {
+      name: selectedCompany.name,
+      url,
+      officeId: officeId != null ? String(officeId) : undefined,
+      sectorId: sectorId != null ? String(sectorId) : undefined,
+      skipNavigation: true,
+    };
+  }, [selectedCompany]);
+
   const [showValidationModal, setShowValidationModal] = useState(false);
 
   const refreshAfterEdit = async (batchId) => {
@@ -644,6 +666,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
   const [pdfUploadedThisSession, setPdfUploadedThisSession] = useState({});
   const [reportProgressDisplay, setReportProgressDisplay] = useState({});
   const reportProgressDisplayRef = useRef({});
+  const [currentOperationBatchId, setCurrentOperationBatchId] = useState(null);
 
   // ─── PDF Absolute Path Helper (same pattern as MultiExcelUpload) ───────────
   const normalizeKeyLocal = (value) =>
@@ -713,6 +736,68 @@ const UploadReportElrajhi = ({ onViewChange }) => {
   useEffect(() => {
     reportProgressDisplayRef.current = reportProgressDisplay;
   }, [reportProgressDisplay]);
+
+  useEffect(() => {
+    if (!window?.electronAPI?.onSubmitReportsQuicklyProgress) return undefined;
+
+    const unsubscribe = window.electronAPI.onSubmitReportsQuicklyProgress(
+      (progressData) => {
+        const processId = String(progressData?.processId || "");
+        const isElrajhiProcess =
+          processId.startsWith("elrajhi-filler-") ||
+          processId.startsWith("elrajhi-retry-") ||
+          processId.startsWith("elrajhi-retry-report-ids-") ||
+          processId.startsWith("elrajhi-retry-record-ids-");
+
+        if (!isElrajhiProcess) return;
+
+        const batchFromMeta =
+          progressData?.metadata?.batch_id || progressData?.metadata?.batchId;
+        if (
+          currentOperationBatchId &&
+          batchFromMeta &&
+          String(batchFromMeta) !== String(currentOperationBatchId)
+        ) {
+          return;
+        }
+
+        const completed = Number(progressData?.completed || 0);
+        const total = Number(progressData?.total || 0);
+        const failed = Number(progressData?.failed || 0);
+        const percentage = Number(progressData?.percentage || 0);
+        const progressText =
+          progressData?.message ||
+          `Processing ElRajhi batch: ${completed}/${total || "?"} (${Math.round(percentage)}%)`;
+
+        if (sendingValidation || pdfOnlySending) {
+          setValidationMessage({
+            type: failed > 0 ? "info" : "info",
+            text: progressText,
+          });
+          return;
+        }
+
+        if (sendingTaqeem) {
+          setError("");
+          setSuccess(progressText);
+        }
+      },
+    );
+
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, [
+    currentOperationBatchId,
+    pdfOnlySending,
+    sendingTaqeem,
+    sendingValidation,
+    setError,
+    setSuccess,
+    setValidationMessage,
+  ]);
 
   const resetMainValidationState = () => {
     setMainReportIssues([]);
@@ -931,7 +1016,6 @@ const UploadReportElrajhi = ({ onViewChange }) => {
   const [isPausedPdfOnly, setIsPausedPdfOnly] = useState(false);
   const [isPausedBatchCheck, setIsPausedBatchCheck] = useState(false);
   const [isPausedBatchRetry, setIsPausedBatchRetry] = useState(false);
-  const [currentOperationBatchId, setCurrentOperationBatchId] = useState(null);
 
   const handleBatchAction = async (batchId, action) => {
     const batch = batchList.find((b) => b.batchId === batchId);
@@ -1040,6 +1124,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             { token },
             {
               requiredPoints: 1,
+              skipNavigateToCompany: true,
               showInsufficientPointsModal: () =>
                 setShowInsufficientPointsModal(true),
               onViewChange,
@@ -1325,7 +1410,6 @@ const UploadReportElrajhi = ({ onViewChange }) => {
 
   const { token, isGuest } = useSession();
 
-  console.log("TOKEN:", token);
 
   const handleSubmitElrajhi = async () => {
     await executeWithAuth(
@@ -1334,6 +1418,12 @@ const UploadReportElrajhi = ({ onViewChange }) => {
           const { token: authToken } = params;
           if (!validationExcelFile) {
             throw new Error("Select an Excel file before sending.");
+          }
+
+          if (!elrajhiCompanyContext) {
+            throw new Error(
+              "Select a company (office) in the app before sending reports to Taqeem.",
+            );
           }
 
           if (validationReportIssues.length) {
@@ -1348,6 +1438,9 @@ const UploadReportElrajhi = ({ onViewChange }) => {
           }
           setSendingValidation(true);
           setIsPausedValidation(false);
+          console.info(
+            "[ElRajhi] Send all reports: Taqeem auth OK → saving batch then starting elrajhi-filler (no extra navigate-to-company).",
+          );
           setValidationMessage({
             type: "info",
             text: "Saving reports to database...",
@@ -1371,11 +1464,29 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             pdfPathMap, // ← new argument
           );
 
-          console.log("ELRAJHI BATCH:", data);
+          console.log(
+            "[ElRajhi] upload response keys:",
+            data && typeof data === "object" ? Object.keys(data) : typeof data,
+            "batchId:",
+            data?.batchId,
+            "status:",
+            data?.status,
+          );
+
+          if (!data || String(data.status || "").toLowerCase() === "failed") {
+            throw new Error(
+              data?.error || "El Rajhi upload failed (no payload from server).",
+            );
+          }
+          if (!data.batchId) {
+            throw new Error(
+              "El Rajhi upload succeeded but batchId is missing — check API / network.",
+            );
+          }
 
           const batchIdFromData = data.batchId;
           setCurrentOperationBatchId(batchIdFromData);
-          const insertedCount = data.inserted || 0;
+          const insertedCount = data.inserted ?? data.created ?? 0;
           const reportsFromApi = Array.isArray(data.reports)
             ? data.reports
             : [];
@@ -1417,6 +1528,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             recommendedTabs,
             false,
             sendToConfirmerValidation,
+            elrajhiCompanyContext,
           );
 
           if (electronResult?.status === "SUCCESS") {
@@ -1480,6 +1592,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
       },
       {
         requiredPoints: validationReports.length || 0,
+        skipNavigateToCompany: true,
         showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
         onViewChange,
         onAuthSuccess: () => {
@@ -1487,12 +1600,27 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         },
         onAuthFailure: (reason) => {
           console.warn("Upload authentication failed:", reason);
-          if (reason !== "INSUFFICIENT_POINTS" && reason !== "LOGIN_REQUIRED") {
+          if (reason === "LOGIN_REQUIRED") {
             setValidationMessage({
               type: "error",
-              text: reason?.message || "Authentication failed",
+              text: "تحتاج مصادقة تقييم: أكمل تقييم من الشريط أو سجّل الدخول ثم أعد المحاولة.",
             });
+            return;
           }
+          if (reason === "INSUFFICIENT_POINTS") {
+            setValidationMessage({
+              type: "error",
+              text: "النقاط غير كافية لهذا الإرسال.",
+            });
+            return;
+          }
+          const msg =
+            typeof reason === "object" && reason?.message
+              ? reason.message
+              : typeof reason === "string"
+                ? reason
+                : "Authentication failed";
+          setValidationMessage({ type: "error", text: msg });
         },
       },
     );
@@ -1502,6 +1630,12 @@ const UploadReportElrajhi = ({ onViewChange }) => {
     try {
       if (!validationExcelFile) {
         throw new Error("Select an Excel file before sending.");
+      }
+
+      if (!elrajhiCompanyContext) {
+        throw new Error(
+          "Select a company (office) in the app before sending reports to Taqeem.",
+        );
       }
 
       if (validationReportIssues.length) {
@@ -1575,6 +1709,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         recommendedTabs,
         true,
         sendToConfirmerValidation,
+        elrajhiCompanyContext,
       );
 
       if (electronResult?.status === "SUCCESS") {
@@ -2098,6 +2233,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
       { token },
       {
         requiredPoints: 0, // Check doesn't cost points
+        skipNavigateToCompany: true,
         showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
         onViewChange,
         onAuthSuccess: () => {
@@ -2447,6 +2583,12 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             throw new Error("Please select PDF files before sending.");
           }
 
+          if (!elrajhiCompanyContext) {
+            throw new Error(
+              "Select a company (office) in the app before sending reports to Taqeem.",
+            );
+          }
+
           const mainValidation = await runReportValidationForFile(
             excelFile,
             "main",
@@ -2519,6 +2661,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
             recommendedTabs,
             false,
             sendToConfirmerMain,
+            elrajhiCompanyContext,
           );
 
           if (electronResult?.status === "SUCCESS") {
@@ -2577,6 +2720,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
       { token, excelFile, pdfFiles, sendToConfirmerMain },
       {
         requiredPoints: pdfFiles.length || 0,
+        skipNavigateToCompany: true,
         showInsufficientPointsModal: () => setShowInsufficientPointsModal(true),
         onViewChange,
         onAuthSuccess: () => {
@@ -2605,10 +2749,6 @@ const UploadReportElrajhi = ({ onViewChange }) => {
       ...prev,
       validationExcel: excel ? excel.name : null,
     }));
-    if (excel) {
-      await ensureCompanyValuersLoaded("validation");
-      await openValuerModal("validation");
-    }
     clearFileInput(validationExcelInputRef);
   };
 
@@ -2667,7 +2807,11 @@ const UploadReportElrajhi = ({ onViewChange }) => {
   const pdfReportCount = validationReports.filter(
     (report) => report.pdf_name,
   ).length;
-  const canSendPdfOnly = canSendReports && wantsPdfUpload && pdfReportCount > 0;
+  const canSendPdfOnly =
+    canSendReports &&
+    Boolean(elrajhiCompanyContext) &&
+    wantsPdfUpload &&
+    pdfReportCount > 0;
 
   const resetValidationSection = () => {
     resetValidationFlow();
@@ -3025,6 +3169,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
         { token },
         {
           requiredPoints: requiredPoints,
+          skipNavigateToCompany: true,
           showInsufficientPointsModal: () =>
             setShowInsufficientPointsModal(true),
           onViewChange,
@@ -3847,7 +3992,18 @@ const UploadReportElrajhi = ({ onViewChange }) => {
               <button
                 type="button"
                 onClick={handleSubmitElrajhi}
-                disabled={sendingValidation || !canSendReports}
+                disabled={
+                  sendingValidation ||
+                  !canSendReports ||
+                  !elrajhiCompanyContext
+                }
+                title={
+                  sendingValidation || (canSendReports && elrajhiCompanyContext)
+                    ? undefined
+                    : !elrajhiCompanyContext
+                      ? "Select a company (office) from the app sidebar before sending."
+                      : "Load Excel validation: market assets required, valuer columns must sum to 100% if present, and fix any report-info errors above."
+                }
                 className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-semibold hover:bg-emerald-700 disabled:opacity-50"
               >
                 {sendingValidation ? (

@@ -376,6 +376,15 @@ function registerIpcHandlers() {
     "valuation-append-preview-images",
     valuationHandlers.handleAppendPreviewImages,
   );
+
+  ipcMain.handle(
+    "submit-real-estate-report",
+    reportHandlers.handleRealEstateFormFill,
+  );
+  ipcMain.handle(
+    "download-real-estate-pdf",
+    reportHandlers.handleDownloadRealEstatePdf,
+  );
   ipcMain.handle(
     "valuation-append-registration-certificates",
     valuationHandlers.handleAppendRegistrationCertificates,
@@ -398,6 +407,8 @@ function unregisterIpcHandlers() {
   ipcMain.removeAllListeners("register");
   ipcMain.removeAllListeners("open-taqeem-login");
   ipcMain.removeAllListeners("get-dummy-pdf-path");
+  ipcMain.removeAllListeners("submit-real-estate-report");
+  ipcMain.removeAllListeners("download-real-estate-pdf");
 
   ipcMain.removeAllListeners("ping-worker");
   ipcMain.removeAllListeners("worker-status");

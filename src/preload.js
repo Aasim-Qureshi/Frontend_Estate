@@ -61,8 +61,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
         token,
         name: opts.name || "refreshToken",
         path: opts.path || "/",
-        maxAgeDays:
-          typeof opts.maxAgeDays === "number" ? opts.maxAgeDays : 7,
+        maxAgeDays: typeof opts.maxAgeDays === "number" ? opts.maxAgeDays : 7,
         sessionOnly: opts.sessionOnly !== false,
         sameSite: opts.sameSite || "lax",
         secure:
@@ -113,8 +112,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
   macroFillRetry: (reportId, tabsNum, recordId = null, assetData = null) =>
     safeInvoke("run-macro-edit-retry", reportId, tabsNum, recordId, assetData),
 
-  elrajhiUploadReport: (batchId, tabsNum, pdfOnly, finalizeSubmission = true) =>
-    safeInvoke("elrajhi-filler", batchId, tabsNum, pdfOnly, finalizeSubmission),
+  elrajhiUploadReport: (
+    batchId,
+    tabsNum,
+    pdfOnly,
+    finalizeSubmission = true,
+    company = null,
+  ) =>
+    safeInvoke(
+      "elrajhi-filler",
+      batchId,
+      tabsNum,
+      pdfOnly,
+      finalizeSubmission,
+      company,
+    ),
 
   pauseElrajiBatch: (batchId) => safeInvoke("pause-elrajhi-batch", batchId),
   resumeElrajiBatch: (batchId) => safeInvoke("resume-elrajhi-batch", batchId),
@@ -358,4 +370,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   downloadImage: (url, filename) =>
     safeInvoke("download-image", { url, filename }),
   showImageWindow: (url) => safeInvoke("show-image-window", url),
+
+  submitRealEstateReport: (recordId, pdfPath = null) =>
+    safeInvoke("submit-real-estate-report", recordId, pdfPath),
+  downloadRealEstatePdf: (reportId) =>
+    safeInvoke("download-real-estate-pdf", reportId),
 });

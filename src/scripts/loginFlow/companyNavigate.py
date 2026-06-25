@@ -1,4 +1,6 @@
 import json, asyncio, traceback
+
+from scripts.core.browser import navigate
 from scripts.core.company_context import set_selected_company
 
 def repair_mojibake(value: str) -> str:
@@ -49,7 +51,8 @@ async def navigate_to_company(browser, company):
             return {"status": "FAILED", "error": "No browser instance"}
 
         target_url = selected.get("url") or url
-        await browser.get(target_url)
+        # Use shared navigate() (retries, same global browser) instead of browser.get().
+        await navigate(target_url)
         await asyncio.sleep(3)  # Wait for page to load
 
         result = {

@@ -109,6 +109,47 @@ mongo_db = mongo_client["test"]
 # Track running macro-edit tasks
 running_tasks = {}
 
+# Serialize heavy browser automation so concurrent IPC (e.g. get-companies during
+# public-login or elrajhi-filler) cannot corrupt the shared nodriver session.
+_command_serial_lock = asyncio.Lock()
+
+
+async def _run_command_safe(cmd):
+    """Always emit a JSON line with commandId so Electron never hangs on stdin."""
+    command_id = cmd.get("commandId")
+    action = cmd.get("action")
+    try:
+        await handle_command(cmd)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(
+            json.dumps(
+                {
+                    "status": "FAILED",
+                    "error": str(e),
+                    "traceback": tb,
+                    "commandId": command_id,
+                }
+            ),
+            flush=True,
+        )
+    finally:
+        print(
+            f"[PY] Finished action: {action} id={command_id}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+async def _process_one_command(cmd):
+    action = str(cmd.get("action") or "").lower()
+    # Pause/resume/stop must not wait behind long-running fills; they only flip flags.
+    if action.startswith(("pause-", "resume-", "stop-")):
+        asyncio.create_task(_run_command_safe(cmd))
+        return
+    async with _command_serial_lock:
+        await _run_command_safe(cmd)
+
 
 def _extract_report_ids(records):
     """Normalize report IDs from API payload and preserve order."""
@@ -120,8 +161,8 @@ def _extract_report_ids(records):
 
     for item in records:
         if isinstance(item, dict):
-            report_id = item.get("report_id") or item.get("reportId") or item.get(
-                "reportid"
+            report_id = (
+                item.get("report_id") or item.get("reportId") or item.get("reportid")
             )
         else:
             report_id = item
@@ -200,14 +241,15 @@ async def get_reports_by_batch(batch_id):
 async def handle_command(cmd):
     """Handle a single command"""
     action = cmd.get("action")
+    cid = cmd.get("commandId")
 
-    print(f"[PY] Received action: {action}", file=sys.stderr)
+    print(f"[PY] Received action: {action} id={cid}", file=sys.stderr, flush=True)
 
     if action == "login":
         browser = await get_browser(force_new=True)
         page = await browser.get(
             "https://sso.taqeem.gov.sa/realms/REL_TAQEEM/protocol/openid-connect/auth"
-            "?client_id=cli-qima-valuers&redirect_uri=https%3A%2F%2Fqima.taqeem.sa%2Fkeycloak%2Flogin%2Fcallback"
+            "?client_id=cli-qima-valuers&redirect_uri=https%3A%2F%2Fqima.taqeem.gov.sa%2Fkeycloak%2Flogin%2Fcallback"
             "&scope=openid&response_type=code"
         )
         result = await startLogin(
@@ -228,7 +270,7 @@ async def handle_command(cmd):
 
         params = (
             "?client_id=cli-qima-valuers"
-            "&redirect_uri=https%3A%2F%2Fqima.taqeem.sa%2Fkeycloak%2Flogin%2Fcallback"
+            "&redirect_uri=https%3A%2F%2Fqima.taqeem.gov.sa%2Fkeycloak%2Flogin%2Fcallback"
             "&scope=openid"
             "&response_type=code"
         )
@@ -257,7 +299,16 @@ async def handle_command(cmd):
         print(json.dumps(result), flush=True)
 
     elif action == "check-status":
-        result = await check_browser_status()
+        # Must always finish: a stuck nodriver evaluate used to block the whole command queue
+        # (no JSON reply → Electron spinners never end, get-companies / elrajhi never run).
+        try:
+            result = await asyncio.wait_for(check_browser_status(), timeout=28.0)
+        except asyncio.TimeoutError:
+            result = {
+                "status": "FAILED",
+                "error": "Browser check timed out — the automation browser may be busy. If a long task is running, wait for it to finish then retry.",
+                "browserOpen": True,
+            }
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)
@@ -265,7 +316,7 @@ async def handle_command(cmd):
     elif action == "open-login-page":
         login_url = cmd.get("loginUrl") or (
             "https://sso.taqeem.gov.sa/realms/REL_TAQEEM/protocol/openid-connect/auth"
-            "?client_id=cli-qima-valuers&redirect_uri=https%3A%2F%2Fqima.taqeem.sa%2Fkeycloak%2Flogin%2Fcallback"
+            "?client_id=cli-qima-valuers&redirect_uri=https%3A%2F%2Fqima.taqeem.gov.sa%2Fkeycloak%2Flogin%2Fcallback"
             "&scope=openid&response_type=code"
         )
         only_if_closed = bool(cmd.get("onlyIfClosed", True))
@@ -463,12 +514,14 @@ async def handle_command(cmd):
         tabs_num = int(cmd.get("tabsNum", 3))
         pdf_only = bool(cmd.get("pdfOnly", False))
         finalize_submission = bool(cmd.get("finalizeSubmission", True))
+        company = cmd.get("company") or cmd.get("companyUrl")
 
         result = await ElRajhiFiller(
             browser,
             batch_id,
             tabs_num,
             pdf_only,
+            company_url=company,
             finalize_submission=finalize_submission,
         )
         result["commandId"] = cmd.get("commandId")
@@ -846,13 +899,27 @@ async def handle_command(cmd):
         print(json.dumps(result), flush=True)
 
     elif action == "get-companies":
-        result = await get_companies()
+        try:
+            result = await asyncio.wait_for(get_companies(), timeout=900.0)
+        except asyncio.TimeoutError:
+            result = {
+                "status": "FAILED",
+                "error": "get-companies timed out after 15 minutes (browser may be stuck).",
+                "data": [],
+            }
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)
 
     elif action == "get-profile":
-        result = await get_profile()
+        try:
+            result = await asyncio.wait_for(get_profile(), timeout=60.0)
+        except asyncio.TimeoutError:
+            result = {
+                "status": "FAILED",
+                "error": "get-profile timed out",
+                "data": None,
+            }
         result["commandId"] = cmd.get("commandId")
 
         print(json.dumps(result), flush=True)
@@ -1034,6 +1101,24 @@ async def handle_command(cmd):
         result["commandId"] = cmd.get("commandId")
         print(json.dumps(result), flush=True)
 
+    elif action == "submit-real-estate-report":
+        from scripts.submission.realEstateFormFiller import (
+            debug_scrape_region_city_codes,
+            run_real_estate_form_fill,
+        )
+
+        browser = await get_browser()
+        record_id = cmd.get("recordId")
+        pdf_path = cmd.get("pdfPath")
+
+        result = await run_real_estate_form_fill(browser, record_id, pdf_path=pdf_path)
+        # result = await debug_scrape_region_city_codes(
+        #     browser, record_id, pdf_path=pdf_path
+        # )
+        result["commandId"] = cmd.get("commandId")
+
+        print(json.dumps(result), flush=True)
+
     elif action == "retry-create-report-by-id":
         browser = await get_browser()
 
@@ -1115,35 +1200,60 @@ async def read_stdin_lines():
         yield line.strip()
 
 
-async def command_handler():
-    """Main command handler that can process commands concurrently"""
-
+async def _stdin_to_queue(queue: asyncio.Queue):
+    """Read JSON commands from stdin without blocking the automation queue."""
     async for line in read_stdin_lines():
         if not line:
             continue
-
         try:
             cmd = json.loads(line)
-
-            # Create a task for this command so it doesn't block other commands
-            # This allows pause/resume commands to be processed while macro-edit is running
-            asyncio.create_task(handle_command(cmd))
-
+            await queue.put(cmd)
         except json.JSONDecodeError as e:
-            error_response = {
-                "status": "FAILED",
-                "error": f"Invalid JSON: {str(e)}",
-                "received": line,
-            }
-            print(json.dumps(error_response), flush=True)
+            print(
+                json.dumps(
+                    {
+                        "status": "FAILED",
+                        "error": f"Invalid JSON: {str(e)}",
+                        "received": line[:500],
+                    }
+                ),
+                flush=True,
+            )
         except Exception as e:
             tb = traceback.format_exc()
-            error_response = {
-                "status": "FAILED",
-                "error": f"Command handler error: {str(e)}",
-                "traceback": tb,
-            }
-            print(json.dumps(error_response), flush=True)
+            print(
+                json.dumps(
+                    {
+                        "status": "FAILED",
+                        "error": f"stdin reader error: {str(e)}",
+                        "traceback": tb,
+                    }
+                ),
+                flush=True,
+            )
+    await queue.put(None)
+
+
+async def command_handler():
+    """
+    Process one browser-heavy command at a time (pause/resume/stop run in parallel).
+    stdin is read on a separate async path so control commands still enqueue while
+    a long job (public-login, get-companies, elrajhi-filler) is running.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    reader_task = asyncio.create_task(_stdin_to_queue(queue))
+    try:
+        while True:
+            cmd = await queue.get()
+            if cmd is None:
+                break
+            await _process_one_command(cmd)
+    finally:
+        reader_task.cancel()
+        try:
+            await reader_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def main():

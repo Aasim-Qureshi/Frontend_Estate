@@ -667,7 +667,7 @@ def build_cookie_header(cookies):
         domain = _cookie_value(cookie, "domain") or ""
         if not name:
             continue
-        if "taqeem.sa" not in domain:
+        if "taqeem.gov.sa" not in domain:
             continue
         pairs.append(f"{name}={value}")
     return "; ".join(pairs)

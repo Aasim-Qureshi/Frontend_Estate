@@ -44,17 +44,27 @@ const CheckBrowser = () => {
             message: "Checking browser status..."
         });
 
-        const result = await checkBrowserStatus();
-        console.log("Browser status result:", result);
+        try {
+            const result = await checkBrowserStatus();
+            console.log("Browser status result:", result);
 
-        setBrowserStatus({
-            status: result.status,
-            isOpen: result.browserOpen,
-            message: result.message,
-            error: result.error
-        });
-
-        setIsChecking(false);
+            setBrowserStatus({
+                status: result.status,
+                isOpen: result.browserOpen,
+                message: result.message,
+                error: result.error
+            });
+        } catch (err) {
+            console.error("Browser status check failed:", err);
+            setBrowserStatus({
+                status: "ERROR",
+                isOpen: false,
+                message: "Could not reach the automation worker",
+                error: err?.message || String(err),
+            });
+        } finally {
+            setIsChecking(false);
+        }
     };
 
     const getStatusIcon = () => {

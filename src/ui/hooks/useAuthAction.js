@@ -41,6 +41,8 @@ export const useAuthAction = () => {
         onAuthFailure = () => {},
         onViewChange = null,
         skipAuth = false,
+        /** When true, do not enqueue navigate-to-company before the action (El Rajhi / Python sets company itself). */
+        skipNavigateToCompany = false,
       } = options;
 
       console.log("[useAuthAction] executeWithAuth called");
@@ -138,17 +140,28 @@ export const useAuthAction = () => {
         console.log("[useAuthAction] auth success, token attached to action");
         onAuthSuccess(authStatus);
 
-        if (selectedCompany && window?.electronAPI?.navigateToCompany) {
+        if (
+          !skipNavigateToCompany &&
+          selectedCompany &&
+          window?.electronAPI?.navigateToCompany
+        ) {
           console.log(
             "[useAuthAction] navigating to company",
             selectedCompany.name,
           );
 
           try {
+            const officeId =
+              selectedCompany.officeId || selectedCompany.office_id;
+            const companyUrl =
+              (selectedCompany.url && String(selectedCompany.url).trim()) ||
+              (officeId
+                ? `https://qima.taqeem.gov.sa/organization/show/${officeId}`
+                : "");
             await window.electronAPI.navigateToCompany({
               name: selectedCompany.name,
-              url: selectedCompany.url,
-              officeId: selectedCompany.officeId || selectedCompany.office_id,
+              url: companyUrl || selectedCompany.url,
+              officeId,
               sectorId: selectedCompany.sectorId || selectedCompany.sector_id,
               skipNavigation: false,
             });
