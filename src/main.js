@@ -370,10 +370,14 @@ function createWindow() {
     show: false,
   });
 
-  // Capture renderer runtime failures to avoid silent white-screen issues.
   mainWindow.webContents.on(
     "console-message",
     (_event, level, message, line, sourceId) => {
+      // Ignore i18n translation errors/warnings
+      if (message.includes("i18n")) {
+        return;
+      }
+
       console.log(
         `[RENDERER:${level}] ${message} (${sourceId || "unknown"}:${line || 0})`,
       );

@@ -61,6 +61,11 @@ const valueSystemGroups = {
           "Quickly submit reports with minimal data entry using Excel sheets.",
       },
       {
+        id: "real-estate-upload",
+        label: "Real Estate Upload",
+        description: "Upload Real Estate Reports",
+      },
+      {
         id: "upload-assets",
         label: "Upload Assets",
         description: "Upload asset files and attach them to existing reports.",

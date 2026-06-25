@@ -161,8 +161,8 @@ def _extract_report_ids(records):
 
     for item in records:
         if isinstance(item, dict):
-            report_id = item.get("report_id") or item.get("reportId") or item.get(
-                "reportid"
+            report_id = (
+                item.get("report_id") or item.get("reportId") or item.get("reportid")
             )
         else:
             report_id = item
@@ -1099,6 +1099,24 @@ async def handle_command(cmd):
                 "error": "Invalid response from create_new_report",
             }
         result["commandId"] = cmd.get("commandId")
+        print(json.dumps(result), flush=True)
+
+    elif action == "submit-real-estate-report":
+        from scripts.submission.realEstateFormFiller import (
+            debug_scrape_region_city_codes,
+            run_real_estate_form_fill,
+        )
+
+        browser = await get_browser()
+        record_id = cmd.get("recordId")
+        pdf_path = cmd.get("pdfPath")
+
+        result = await run_real_estate_form_fill(browser, record_id, pdf_path=pdf_path)
+        # result = await debug_scrape_region_city_codes(
+        #     browser, record_id, pdf_path=pdf_path
+        # )
+        result["commandId"] = cmd.get("commandId")
+
         print(json.dumps(result), flush=True)
 
     elif action == "retry-create-report-by-id":

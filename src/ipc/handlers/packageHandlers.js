@@ -133,7 +133,6 @@ const packageHandlers = {
         validateStatus: () => true,
       };
 
-      console.log(`[API] Attempting ${config.method} ${config.url}`);
       const response = await axios(config);
 
       // Handle Set-Cookie headers
@@ -167,7 +166,6 @@ const packageHandlers = {
       }
 
       if (response.status >= 200 && response.status < 300) {
-        console.log(`[API] Success: ${config.method} ${config.url}`);
         return response.data;
       }
 
