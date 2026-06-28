@@ -371,8 +371,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
     safeInvoke("download-image", { url, filename }),
   showImageWindow: (url) => safeInvoke("show-image-window", url),
 
-  submitRealEstateReport: (recordId, pdfPath = null) =>
-    safeInvoke("submit-real-estate-report", recordId, pdfPath),
+  submitRealEstateReport: (
+    recordId,
+    pdfPath = null,
+    approachSelections = null,
+  ) =>
+    safeInvoke(
+      "submit-real-estate-report",
+      recordId,
+      pdfPath,
+      approachSelections,
+    ),
   downloadRealEstatePdf: (reportId) =>
     safeInvoke("download-real-estate-pdf", reportId),
 });

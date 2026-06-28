@@ -48,7 +48,9 @@ async def fetch_records_by_ids(record_ids):
     return data.get("items") or data.get("records") or data.get("data") or []
 
 
-async def create_and_submit_report(page, record, create_url, pdf_path=None):
+async def create_and_submit_report(
+    page, record, create_url, pdf_path=None, approach_selections=None
+):
     """
     Fill the three form steps for a single record.
     Returns a result dict with status SUCCESS or FAILED.
@@ -85,7 +87,9 @@ async def create_and_submit_report(page, record, create_url, pdf_path=None):
                 "is_valuers_step", False
             )
 
-            record_values = extract_record_values(record)
+            record_values = extract_record_values(
+                record, approach_selections=approach_selections
+            )
             if pdf_path:
                 record_values["report_asset_file"] = pdf_path
 
@@ -144,7 +148,11 @@ async def create_and_submit_report(page, record, create_url, pdf_path=None):
 
 
 async def run_real_estate_form_fill(
-    browser, record_id, finalize_submission=False, pdf_path=None
+    browser,
+    record_id,
+    finalize_submission=False,
+    pdf_path=None,
+    approach_selections=None,
 ):
     """
     Submit a single realEstate record.
@@ -170,7 +178,7 @@ async def run_real_estate_form_fill(
 
 
 async def run_real_estate_form_fill_bulk(
-    browser, record_ids, finalize_submission=False
+    browser, record_ids, finalize_submission=False, approach_selections=None
 ):
     """
     Submit multiple realEstate records.
@@ -193,6 +201,7 @@ async def run_real_estate_form_fill_bulk(
             records=records,
             process_id=process_id,
             finalize_submission=finalize_submission,
+            approach_selections=approach_selections,
         )
     except Exception as e:
         return {
@@ -203,7 +212,12 @@ async def run_real_estate_form_fill_bulk(
 
 
 async def _run_filler(
-    browser, records, process_id, finalize_submission=True, pdf_path=None
+    browser,
+    records,
+    process_id,
+    finalize_submission=True,
+    pdf_path=None,
+    approach_selections=None,
 ):
     """
     Core logic: fill all three form steps sequentially, then finalize each report.
