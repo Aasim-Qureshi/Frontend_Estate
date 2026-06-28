@@ -1110,8 +1110,14 @@ async def handle_command(cmd):
         browser = await get_browser()
         record_id = cmd.get("recordId")
         pdf_path = cmd.get("pdfPath")
+        approach_selections = cmd.get("approachSelections")
 
-        result = await run_real_estate_form_fill(browser, record_id, pdf_path=pdf_path)
+        result = await run_real_estate_form_fill(
+            browser,
+            record_id,
+            pdf_path=pdf_path,
+            approach_selections=approach_selections,
+        )
         # result = await debug_scrape_region_city_codes(
         #     browser, record_id, pdf_path=pdf_path
         # )

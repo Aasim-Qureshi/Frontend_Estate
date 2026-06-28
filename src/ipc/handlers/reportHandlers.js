@@ -1265,7 +1265,12 @@ const reportHandlers = {
     }
   },
 
-  async handleRealEstateFormFill(event, record_id, pdfPath = null) {
+  async handleRealEstateFormFill(
+    event,
+    record_id,
+    pdfPath = null,
+    handleRealEstateFormFill,
+  ) {
     try {
       console.log(
         "[MAIN] Received real estate form fill request:",
