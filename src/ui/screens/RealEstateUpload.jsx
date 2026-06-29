@@ -206,56 +206,69 @@ const getProgressIndex = (report, queuedActions = []) => {
 
 const StepProgress = ({ submitted, sent, approved }) => {
   const steps = [
-    { num: 1, label: "Submitted", done: submitted },
-    { num: 2, label: "Sent", done: sent },
-    { num: 3, label: "Approved", done: approved },
+    { label: "New" },
+    { label: "Submitted" },
+    { label: "Sent" },
+    { label: "Approved" },
   ];
-  const currentIdx = approved ? 2 : sent ? 1 : submitted ? 0 : -1;
+
+  const currentIdx = approved ? 3 : sent ? 2 : submitted ? 1 : 0;
 
   return (
     <div className="flex items-center gap-2 flex-1">
       {steps.map((step, i) => {
         const done = i <= currentIdx;
-        const current = i === currentIdx;
+
         return (
-          <React.Fragment key={step.num}>
+          <React.Fragment key={i}>
             {i > 0 && (
-              <div className="h-0.5 flex-1 rounded-full overflow-hidden bg-slate-100">
+              <div className="h-px flex-1 bg-slate-100">
                 <div
-                  className="h-full rounded-full"
                   style={{
-                    width: i <= currentIdx ? "100%" : "0%",
-                    background: "#6366f1",
+                    height: "100%",
+                    background: done ? "#6366f1" : "transparent",
                     transition: "width 600ms ease",
+                    width: done ? "100%" : "0%",
                   }}
                 />
               </div>
             )}
             <div className="flex flex-col items-center gap-1 shrink-0">
               <div
-                className="flex items-center justify-center rounded-full border-2"
+                className="flex items-center justify-center rounded-full border"
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderColor: done ? "#6366f1" : "#cbd5e1",
-                  background: current ? "#eef2ff" : "#fff",
+                  width: 22,
+                  height: 22,
+                  borderColor: done ? "#6366f1" : "#e2e8f0",
+                  background: done ? "#6366f1" : "#fff",
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: done ? "#4f46e5" : "#94a3b8",
-                  }}
-                >
-                  {step.num}
-                </span>
+                {done ? (
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    stroke="white"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="2,6 5,9 10,3" />
+                  </svg>
+                ) : (
+                  <span
+                    style={{ fontSize: 10, fontWeight: 700, color: "#cbd5e1" }}
+                  >
+                    {i + 1}
+                  </span>
+                )}
               </div>
               <span
                 style={{
                   fontSize: 9,
-                  fontWeight: current ? 800 : 600,
-                  color: done ? "#4f46e5" : "#94a3b8",
+                  fontWeight: 600,
+                  color: done ? "#6366f1" : "#94a3b8",
                   whiteSpace: "nowrap",
                 }}
               >

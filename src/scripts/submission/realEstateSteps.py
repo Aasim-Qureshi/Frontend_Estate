@@ -355,19 +355,6 @@ def resolve_approach_statuses(
     replacement_cost_value,
     approach_selections=None,
 ):
-    """
-    Decides the #approach1/2/3 select values: "1" = primary, "2" = secondary,
-    None = unused/ignored.
-
-    approach_selections comes from the frontend's primary/secondary/unused picker
-    (shown when 2+ valuation methods have data) and looks like:
-        {"market": "1", "income": "2", "cost": None}
-    When provided, it's authoritative — whatever the user picked wins.
-
-    When approach_selections is None (zero or only one method had data, so the
-    frontend skipped the picker), each method with a computed value > 0 is
-    auto-assigned "1" (primary) — safe here since there's at most one to assign.
-    """
     computed = {
         "market": comparison_value,
         "income": investment_method_value,
@@ -381,7 +368,14 @@ def resolve_approach_statuses(
             statuses[key] = str(sel) if sel in ("1", "2", 1, 2) else None
         return statuses
 
-    return {key: ("1" if (val or 0) > 0 else None) for key, val in computed.items()}
+    # No selections provided — assign "1" to only the first method with a value,
+    # leave the rest as None (unused).
+    statuses: dict[str, str | None] = {"market": None, "income": None, "cost": None}
+    for key, val in computed.items():
+        if (val or 0) > 0:
+            statuses[key] = "1"
+            break  # ← stop after the first one
+    return statuses
 
 
 def _fmt_value(value):
@@ -392,6 +386,123 @@ def _fmt_value(value):
     if rounded == int(rounded):
         return str(int(rounded))
     return f"{rounded:.2f}"
+
+
+# ---------------------------------------------------------------------------
+# Dropdown value translator  (System A  →  System B / Taqeem)
+#
+# Each nested dict maps  source_value -> target_value.
+# Fields whose values are identical in both systems are omitted with a comment.
+# To extend: add a new key to _TRANSLATIONS and call translate_field() with it.
+# ---------------------------------------------------------------------------
+
+_TRANSLATIONS: dict[str, dict[int, int]] = {
+    "valuationPurpose": {
+        1: 9,  # Financing          → Financing
+        2: 2,  # Purchase           → Buying
+        3: 1,  # Sale               → Selling
+        4: 7,  # Mortgage           → Mortgage
+        5: 8,  # Accounting         → Accounting Purposes
+        6: 14,  # Bankruptcy         → Other (closest)
+        7: 3,  # Acquisition        → Mergers and Acquisition
+        8: 14,  # Financial Reporting → Other (closest)
+        9: 12,  # Taxation           → Tax Related Valuations
+        10: 6,  # Insurance Purposes → Insurance
+        11: 10,  # Litigation         → Disputes and Litigation
+        12: 15,  # Internal Purposes  → Internal Decision Making
+        13: 11,  # Expropriation      → Expropriation
+        14: 14,  # Transfer           → Other (no match)
+        15: 17,  # Inheritance        → Inheritance and division of estates
+        16: 14,  # Other              → Other
+        17: 17,  # Estate Distribution → Inheritance and division of estates (closest)
+        18: 14,  # Forced Sale        → Other (purpose field; Forced Sale is a hypothesis)
+        19: 14,  # Market Value Assessment → Other (no match)
+        20: 5,  # Rental Value Assessment → Rent Value
+        21: 16,  # Liquidation        → Liquidation
+        50: 4,  # Investment Purposes → Investment
+        54: 14,  # Compensation       → Other (no match)
+    },
+    "valuationHypothesis": {
+        # Values differ between systems but all map cleanly.
+        1: 2,  # Current Use          → Current Use
+        2: 1,  # Highest and Best Use → Highest and Best Use
+        3: 3,  # Orderly Liquidation  → Orderly Liquidation
+        4: 4,  # Forced Sale          → Forced Sale
+    },
+    "valuationBasis": {
+        # 1 → 1 and 5 → 5 are identity mappings but included for explicitness.
+        1: 1,  # Market Value               → Market Value
+        2: 4,  # Investment Value           → Investment Value/Worth
+        3: 7,  # Fair Value                 → Fair Value
+        4: 6,  # Liquidation Value          → Liquidation Value
+        5: 5,  # Synergistic Value          → Synergistic Value
+        6: 2,  # Market Rent                → Market Rent
+        7: 1,  # Market Value / Market Rent → Market Value (closest)
+        8: 7,  # Fair Value (duplicate)     → Fair Value
+        10: 9,  # Financial Statement Recognition → Other (no match)
+    },
+    # ── Future dropdowns ───────────────────────────────────────────────────
+    "propertyType": {
+        1: 16,  # Land                → Other (no direct match)
+        2: 1,  # Apartment           → Residential
+        3: 1,  # Residential Villa   → Residential
+        4: 14,  # Building            → Multi Use
+        5: 1,  # Rest House          → Residential (closest)
+        6: 5,  # Farm                → Agricultural
+        7: 7,  # Warehouse           → Warehouse
+        9: 3,  # Shop                → Commercial
+        10: 14,  # Floor               → Multi Use (closest)
+        21: 1,  # Residential Land    → Residential
+        22: 3,  # Commercial Land     → Commercial
+        24: 8,  # Hotel               → Hotels
+        28: 3,  # Commercial Building → Commercial
+        67: 1,  # Residential Building → Residential
+    },
+    "ownershipType": {
+        1: 1,  # Freehold             → Owner
+        2: 1,  # Conditional Ownership → Owner (closest)
+        3: 1,  # Restricted Ownership  → Owner (closest)
+        4: 4,  # Life Interest         → Other (no match)
+        5: 4,  # Usufruct              → Other (no match)
+        6: 52,  # Common Ownership      → ملكية مشاعة
+        7: 4,  # Mortgaged             → Other (no match)
+    },
+}
+
+
+def translate_field(field_name: str, source_value) -> int | None:
+    """Translate a dropdown value from System A to System B (Taqeem).
+
+    Args:
+        field_name:   Key matching a _TRANSLATIONS entry (e.g. "valuationPurpose").
+        source_value: The integer (or int-castable) value from System A.
+
+    Returns:
+        The mapped target integer, or None if:
+          - the field has no translation table (values are identical — pass through as-is), or
+          - the source value is None/falsy, or
+          - the value is not found in the table (logs a warning).
+    """
+    if source_value is None:
+        return None
+
+    table = _TRANSLATIONS.get(field_name)
+    if table is None:
+        # No translation needed for this field — caller should use value directly.
+        return int(source_value)
+
+    try:
+        key = int(source_value)
+    except (ValueError, TypeError):
+        return None
+
+    result = table.get(key)
+    if result is None:
+        print(
+            f"[translate_field] WARNING: no mapping for {field_name}={key}",
+            file=sys.stderr,
+        )
+    return result
 
 
 def extract_record_values(record, approach_selections=None):
@@ -416,9 +527,15 @@ def extract_record_values(record, approach_selections=None):
     return {
         # ── Step 1 ─────────────────────────────────────────────
         "report_title": "0",  # missing from record
-        "valuationPurpose": record.get("valuationPurpose"),  # top-level
-        "valuationHypothesis": record.get("valuationHypothesis"),  # top-level
-        "valuationBasis": record.get("valuationBasis"),  # top-level
+        "valuationPurpose": translate_field(
+            "valuationPurpose", record.get("valuationPurpose")
+        ),
+        "valuationHypothesis": translate_field(
+            "valuationHypothesis", record.get("valuationHypothesis")
+        ),
+        "valuationBasis": translate_field(
+            "valuationBasis", record.get("valuationBasis")
+        ),
         "report_type": None,  # missing from record
         "evalDate": eval_data.get("evalDate"),  # evalData
         "reportDate": eval_data.get("reportDate"),  # evalData
@@ -434,7 +551,9 @@ def extract_record_values(record, approach_selections=None):
         # "valuer_name": None,
         # "contribution_percentage": None,  # missing from record
         # ── Step 2 ─────────────────────────────────────────────
-        "propertyType": eval_data.get("propertyTypeId"),  # evalData
+        "propertyType": translate_field(
+            "propertyType", eval_data.get("propertyTypeId")
+        ),
         "inspected_at": eval_data.get("evalDate"),  # evalData (closest match)
         # NOTE: comparisonValue / investmentMethodValue / replacementCostValue are
         # COMPUTED, not stored — the DB only holds the raw building blocks
@@ -468,7 +587,7 @@ def extract_record_values(record, approach_selections=None):
         "blockNumber": eval_data.get("blockNumber"),  # evalData
         "parcelNumber": eval_data.get("parcelNumber"),  # evalData
         "deedNumber": eval_data.get("deedNumber"),  # evalData
-        "ownershipType": record.get("ownershipType"),  # top-level
+        "ownershipType": translate_field("ownershipType", record.get("ownershipType")),
         "ownershipPercentage": eval_data.get("ownershipPercentage"),  # evalData
         "rental_duration": None,  # missing from record
         "rental_end_date": None,  # missing from record

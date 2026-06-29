@@ -477,10 +477,10 @@ async def fill_form(
         else:
             save_btn = await wait_for_element(page, "input[type='submit']", timeout=10)
             if save_btn:
-                await asyncio.sleep(0.2)  # Reduced delay before click
+                await asyncio.sleep(0.5)  # Reduced delay before click
                 await save_btn.click()
                 # Reduced wait time - form submission is usually quick
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(50.0)
                 return {"status": "SAVED"}
             else:
                 return {"status": "FAILED", "error": "Save button not found"}

@@ -168,6 +168,7 @@ async def run_real_estate_form_fill(
             process_id=f"real-estate-filler-{record_id}",
             finalize_submission=finalize_submission,
             pdf_path=pdf_path,
+            approach_selections=approach_selections,
         )
     except Exception as e:
         return {
@@ -297,7 +298,11 @@ async def _run_filler(
             )
 
             result = await create_and_submit_report(
-                main_page, record, create_url, pdf_path=pdf_path
+                main_page,
+                record,
+                create_url,
+                pdf_path=pdf_path,
+                approach_selections=approach_selections,
             )
             results.append(result)
 
