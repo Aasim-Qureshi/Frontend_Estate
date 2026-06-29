@@ -494,12 +494,16 @@ class ReportCommands {
     });
   }
 
-  async realEstateFormFill(recordId, pdfPath = null, realEstateFormFill) {
+  async realEstateFormFill(
+    recordId,
+    pdfPath = null,
+    approachSelections = null,
+  ) {
     return this._sendCommand({
       action: "submit-real-estate-report",
       recordId,
       pdfPath,
-      realEstateFormFill,
+      approachSelections,
     });
   }
 }

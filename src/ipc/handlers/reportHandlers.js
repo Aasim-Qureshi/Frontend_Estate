@@ -1269,7 +1269,7 @@ const reportHandlers = {
     event,
     record_id,
     pdfPath = null,
-    handleRealEstateFormFill,
+    approachSelections,
   ) {
     try {
       console.log(
@@ -1280,6 +1280,7 @@ const reportHandlers = {
       const result = await pythonAPI.report.realEstateFormFill(
         record_id,
         pdfPath,
+        approachSelections,
       );
       console.log("[MAIN] Real estate form fill result:", result);
       return result;
