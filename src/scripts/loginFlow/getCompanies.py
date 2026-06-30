@@ -6,6 +6,175 @@ from scripts.core.company_context import build_report_create_url, parse_company_
 from scripts.core.utils import wait_for_element
 
 
+async def _scrape_companies_for_sector(page, sidebar_id, sector_id):
+    """Generic sidebar company scraper, parameterized by sector/sidebar ul id."""
+    companies = []
+    companies_data = None
+
+    try:
+        companies_data = await page.evaluate(
+            f"""
+            () => {{
+                const section = document.querySelector('ul#{sidebar_id}');
+                if (!section) return [];
+                const links = Array.from(section.querySelectorAll('a[href]'));
+                let started = false;
+                const out = [];
+
+                for (const link of links) {{
+                    const href = link.getAttribute('href') || '';
+                    const text = (link.textContent || '').trim();
+                    if (!href || !text) continue;
+                    if (href.includes('membership/reports/sector/{sector_id}')) {{
+                        started = true;
+                        continue;
+                    }}
+                    if (href.includes('organization/joinPartner/sector/{sector_id}')) {{
+                        break;
+                    }}
+                    if (!started) continue;
+                    if (href.includes('organization/show/')) {{
+                        out.push({{ name: text, href }});
+                    }}
+                }}
+                return out;
+            }}
+            """
+        )
+    except Exception:
+        companies_data = None
+
+    if isinstance(companies_data, list):
+        for item in companies_data:
+            href = (item or {}).get("href")
+            text = repair_mojibake((item or {}).get("name") or "")
+            if not href or not text:
+                continue
+            parsed = parse_company_url(href)
+            companies.append(
+                {
+                    "name": text,
+                    "url": parsed.get("url") or href,
+                    "officeId": parsed.get("office_id"),
+                    "sectorId": parsed.get("sector_id") or sector_id,
+                }
+            )
+
+    try:
+        from bs4 import BeautifulSoup
+
+        html_content = await page.get_content()
+        soup = BeautifulSoup(html_content, "html.parser")
+        section = soup.find("ul", {"id": sidebar_id})
+        if section:
+            links = section.find_all("a", href=True)
+            reports_link_found = False
+            join_partner_found = False
+
+            for link in links:
+                href = link.get("href")
+                text = repair_mojibake(link.get_text(strip=True))
+                if not href or not text:
+                    continue
+                if f"membership/reports/sector/{sector_id}" in href:
+                    reports_link_found = True
+                    continue
+                if f"organization/joinPartner/sector/{sector_id}" in href:
+                    join_partner_found = True
+                    break
+                if reports_link_found and not join_partner_found:
+                    if "organization/show/" in href:
+                        parsed = parse_company_url(href)
+                        companies.append(
+                            {
+                                "name": text,
+                                "url": parsed.get("url") or href,
+                                "officeId": parsed.get("office_id"),
+                                "sectorId": parsed.get("sector_id") or sector_id,
+                            }
+                        )
+    except Exception:
+        pass
+
+    deduped = []
+    seen = set()
+    for company in companies:
+        key = str(
+            company.get("officeId") or company.get("url") or company.get("name") or ""
+        ).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(company)
+
+    return deduped
+
+
+async def _get_companies_for_sector(
+    sidebar_id, sector_id, company_type, fetch_valuers=True
+):
+    try:
+        start_url = "https://qima.taqeem.gov.sa/"
+        final_home_url = "https://qima.taqeem.gov.sa/valuer/home"
+
+        page = await navigate(start_url)
+        await asyncio.sleep(3)
+
+        companies = await _scrape_companies_for_sector(page, sidebar_id, sector_id)
+        print(
+            f"[INFO] Total {company_type} companies found: {len(companies)}",
+            file=sys.stderr,
+        )
+
+        if fetch_valuers:
+            valuers_by_office = {}
+            for company in companies:
+                office_id = str(company.get("officeId") or "").strip()
+                csector = str(company.get("sectorId") or sector_id).strip() or sector_id
+
+                if not office_id:
+                    company["valuers"] = []
+                    continue
+
+                if office_id in valuers_by_office:
+                    company["valuers"] = valuers_by_office[office_id]
+                    continue
+
+                company["officeId"] = office_id
+                company["sectorId"] = csector
+                company["valuers"] = await fetch_company_valuers(
+                    page, office_id=office_id, sector_id=csector
+                )
+                valuers_by_office[office_id] = company["valuers"]
+        else:
+            for company in companies:
+                company.setdefault("valuers", [])
+
+        for company in companies:
+            company["type"] = company_type
+
+        try:
+            await page.get(final_home_url)
+            await asyncio.sleep(0.8)
+        except Exception:
+            pass
+
+        return {"status": "SUCCESS", "data": companies}
+    except Exception as e:
+        print(f"[ERROR] Error getting {company_type} companies: {e}", file=sys.stderr)
+        return {"status": "FAILED", "error": str(e)}
+
+
+async def get_companies():
+    """Equipment companies (sector 4)."""
+    return await _get_companies_for_sector("sidebarItem_5", "4", "equipment")
+
+
+async def get_companies_real_estate():
+    """Real-estate companies. VERIFY sidebar_id/sector_id against the live Taqeem sidebar DOM."""
+    return await _get_companies_for_sector("sidebarItem_2", "1", "real-estate")
+
+
 def repair_mojibake(value: str) -> str:
     if not value or not isinstance(value, str):
         return value
@@ -21,7 +190,7 @@ def _normalize_valuers(items):
     cleaned = []
     seen = set()
 
-    for item in (items or []):
+    for item in items or []:
         valuer_id = repair_mojibake((item or {}).get("valuerId") or "")
         valuer_name = repair_mojibake((item or {}).get("valuerName") or "")
 
@@ -278,7 +447,9 @@ async def fetch_company_valuers(page, office_id, sector_id="4"):
             dom_office = str(dom_office or "").strip()
 
             # URL and DOM can differ temporarily while page is still initializing.
-            if (url_office and url_office == office_id) or (dom_office and dom_office == office_id):
+            if (url_office and url_office == office_id) or (
+                dom_office and dom_office == office_id
+            ):
                 is_expected_office = True
                 break
         except Exception:
@@ -350,167 +521,3 @@ async def fetch_company_valuers(page, office_id, sector_id="4"):
         file=sys.stderr,
     )
     return []
-
-
-async def get_companies():
-    try:
-        start_url = "https://qima.taqeem.gov.sa/"
-        final_home_url = "https://qima.taqeem.gov.sa/valuer/home"
-
-        page = await navigate(start_url)
-        await asyncio.sleep(3)
-
-        companies = []
-        companies_data = None
-
-        try:
-            companies_data = await page.evaluate(
-                """
-                () => {
-                    const section = document.querySelector('ul#sidebarItem_5');
-                    if (!section) return [];
-                    const links = Array.from(section.querySelectorAll('a[href]'));
-                    let started = false;
-                    const out = [];
-
-                    for (const link of links) {
-                        const href = link.getAttribute('href') || '';
-                        const text = (link.textContent || '').trim();
-                        if (!href || !text) continue;
-                        if (href.includes('membership/reports/sector/4')) {
-                            started = true;
-                            continue;
-                        }
-                        if (href.includes('organization/joinPartner/sector/4')) {
-                            break;
-                        }
-                        if (!started) continue;
-                        if (href.includes('organization/show/')) {
-                            out.push({ name: text, href });
-                        }
-                    }
-                    return out;
-                }
-                """
-            )
-        except Exception:
-            companies_data = None
-
-        if isinstance(companies_data, list):
-            for item in companies_data:
-                href = (item or {}).get("href")
-                text = repair_mojibake((item or {}).get("name") or "")
-                if not href or not text:
-                    continue
-                parsed = parse_company_url(href)
-                companies.append(
-                    {
-                        "name": text,
-                        "url": parsed.get("url") or href,
-                        "officeId": parsed.get("office_id"),
-                        "sectorId": parsed.get("sector_id"),
-                    }
-                )
-
-        try:
-            from bs4 import BeautifulSoup
-
-            html_content = await page.get_content()
-            soup = BeautifulSoup(html_content, "html.parser")
-            machinery_section = soup.find("ul", {"id": "sidebarItem_5"})
-            if machinery_section:
-                links = machinery_section.find_all("a", href=True)
-                reports_link_found = False
-                join_partner_found = False
-
-                for link in links:
-                    href = link.get("href")
-                    text = repair_mojibake(link.get_text(strip=True))
-
-                    if not href or not text:
-                        continue
-
-                    if "membership/reports/sector/4" in href:
-                        reports_link_found = True
-                        continue
-
-                    if "organization/joinPartner/sector/4" in href:
-                        join_partner_found = True
-                        break
-
-                    if reports_link_found and not join_partner_found:
-                        if "organization/show/" in href and text:
-                            parsed = parse_company_url(href)
-                            companies.append(
-                                {
-                                    "name": text,
-                                    "url": parsed.get("url") or href,
-                                    "officeId": parsed.get("office_id"),
-                                    "sectorId": parsed.get("sector_id"),
-                                }
-                            )
-        except Exception:
-            pass
-
-        deduped = []
-        seen = set()
-        for company in companies:
-            key = (
-                company.get("officeId")
-                or company.get("office_id")
-                or company.get("url")
-                or company.get("name")
-            )
-            if not key:
-                continue
-            key = str(key).strip()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            deduped.append(company)
-        companies = deduped
-
-        print(f"[INFO] Total companies found: {len(companies)}", file=sys.stderr)
-
-        valuers_by_office = {}
-        for company in companies:
-            office_id = str(
-                company.get("officeId")
-                or company.get("office_id")
-                or ""
-            ).strip()
-            sector_id = str(
-                company.get("sectorId")
-                or company.get("sector_id")
-                or "4"
-            ).strip() or "4"
-
-            if not office_id:
-                company["valuers"] = []
-                print(
-                    f"[WARN] Skipping valuers for company {company.get('name')}: missing office id",
-                    file=sys.stderr,
-                )
-                continue
-
-            # Avoid duplicated scrape operations for the same office id.
-            if office_id in valuers_by_office:
-                company["valuers"] = valuers_by_office[office_id]
-                continue
-
-            company["officeId"] = office_id
-            company["sectorId"] = sector_id
-            company["valuers"] = await fetch_company_valuers(page, office_id=office_id, sector_id=sector_id)
-            valuers_by_office[office_id] = company["valuers"]
-
-        try:
-            await page.get(final_home_url)
-            await asyncio.sleep(0.8)
-        except Exception:
-            pass
-
-        print(f"[INFO] Total companies with valuers: {len(companies)}", file=sys.stderr)
-        return {"status": "SUCCESS", "data": companies}
-    except Exception as e:
-        print(f"[ERROR] Error getting companies: {e}", file=sys.stderr)
-        return {"status": "FAILED", "error": str(e)}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useValueNav } from "../context/ValueNavContext";
 import {
   ChevronRight,
   ChevronDown,
@@ -632,6 +633,7 @@ const ActionSelector = ({
   onViewChange,
   isTaqeemLoggedIn,
   setTaqeemStatus,
+  selectedCompany,
 }) => {
   const [dummyState, setDummyState] = useState({
     idFetched: !!report.taqeemId,
@@ -767,6 +769,11 @@ const ActionSelector = ({
   const handleGo = () => {
     if (!queued.length) return;
 
+    if (!selectedCompany || selectedCompany.type !== "real-estate") {
+      setShowWarning(true); // or a dedicated "select company" modal
+      return;
+    }
+
     if (queued.includes("submit")) {
       const used = getUsedApproachMethods(report.evalData || {});
       const usedCount = Object.keys(used).length;
@@ -873,7 +880,7 @@ const ActionSelector = ({
                 Cancel
               </button>
               <button
-                onClick={proceed}
+                onClick={() => proceed()}
                 className="flex-1 rounded-lg bg-amber-500 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-600"
               >
                 Continue anyway
@@ -1368,6 +1375,7 @@ const ReportRow = ({
   onViewChange,
   isTaqeemLoggedIn,
   setTaqeemStatus,
+  selectedCompany,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [taqeemState, setTaqeemState] = useState({
@@ -1500,6 +1508,7 @@ const ReportRow = ({
               onViewChange={onViewChange}
               isTaqeemLoggedIn={isTaqeemLoggedIn}
               setTaqeemStatus={setTaqeemStatus}
+              selectedCompany={selectedCompany}
             />
           </div>
         </div>
@@ -1528,6 +1537,124 @@ export default function RealEstateUpload({ onViewChange }) {
     error: fetchError,
     refetch,
   } = useTransactions();
+
+  const {
+    selectedCompany,
+    companies,
+    chooseDomain,
+    loadingCompanies,
+    companyError,
+    ensureCompaniesLoaded,
+    autoSelectDefaultCompany,
+    syncCompanies,
+    replaceCompanies,
+  } = useValueNav();
+
+  useEffect(() => {
+    chooseDomain("real-estate");
+  }, [chooseDomain]);
+
+  const ensureGuestSession = async () => {
+    if (token) return token;
+    if (!window?.electronAPI?.apiRequest) return null;
+    try {
+      const tokenObj = await window.electronAPI.getToken?.();
+      const bearer = tokenObj?.refreshToken || tokenObj?.token;
+      const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
+      const result = await window.electronAPI.apiRequest(
+        "POST",
+        "/api/users/guest",
+        {},
+        headers,
+      );
+      if (result?.token && result?.userId) {
+        const guestUser = result?.user || {
+          id: result.userId,
+          _id: result.userId,
+          guest: true,
+        };
+        login?.(guestUser, result.token);
+        return { token: result.token, userId: result.userId }; // ← return fresh creds directly
+      }
+    } catch (err) {
+      console.warn("[RealEstateUpload] Failed to ensure guest session:", err);
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const hasRealEstateSelection = selectedCompany?.type === "real-estate";
+    if (hasRealEstateSelection) return;
+
+    (async () => {
+      try {
+        const freshSession = await ensureGuestSession(); // { token, userId } or null
+
+        let loaded = await ensureCompaniesLoaded("real-estate");
+
+        if (
+          (!loaded || loaded.length === 0) &&
+          window?.electronAPI?.getCompaniesRealEstate
+        ) {
+          const data = await window.electronAPI.getCompaniesRealEstate();
+          console.log("comp data", data);
+          if (
+            data?.status === "SUCCESS" &&
+            Array.isArray(data.data) &&
+            data.data.length > 0
+          ) {
+            const tagged = data.data.map((c) => ({
+              ...c,
+              type: "real-estate",
+            }));
+            let synced = tagged;
+            if (syncCompanies) {
+              try {
+                const result = await syncCompanies(tagged, "real-estate", {
+                  token: freshSession?.token, // ← bypass stale closure entirely
+                  userId: freshSession?.userId,
+                });
+                if (Array.isArray(result) && result.length > 0) {
+                  synced = result.map((c) => ({
+                    ...c,
+                    type: c.type || "real-estate",
+                  }));
+                } else {
+                  console.warn(
+                    "[RealEstateUpload] syncCompanies returned no rows — not persisted.",
+                  );
+                }
+              } catch (syncErr) {
+                console.error(
+                  "[RealEstateUpload] syncCompanies failed — NOT persisted to DB:",
+                  syncErr,
+                );
+                synced = tagged;
+              }
+            }
+            loaded = synced;
+            await replaceCompanies(loaded, {
+              type: "real-estate",
+              quiet: true,
+              skipNavigation: true,
+              autoSelect: true,
+            });
+          }
+        }
+
+        await autoSelectDefaultCompany({
+          type: "real-estate",
+          skipNavigation: true,
+          companiesList: loaded,
+        });
+      } catch (err) {
+        console.warn(
+          "[RealEstateUpload] Failed to load real estate companies on mount",
+          err,
+        );
+      }
+    })();
+  }, [selectedCompany?.type]);
 
   const filtered = allReports.filter((r) => {
     const matchStatus = statusFilter ? r.report_status === statusFilter : true;
@@ -1601,6 +1728,29 @@ export default function RealEstateUpload({ onViewChange }) {
           >
             Retry
           </button>
+        </div>
+      )}
+      {loadingCompanies && (
+        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-700">
+          <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+          <span className="text-sm font-medium">
+            Fetching your real estate companies…
+          </span>
+        </div>
+      )}
+      {companyError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="text-sm">{companyError}</span>
+        </div>
+      )}
+      {!loadingCompanies && !companyError && !selectedCompany && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-700">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="text-sm font-medium">
+            Select a Real Estate company from the sidebar before submitting
+            reports to Taqeem.
+          </span>
         </div>
       )}
       {!loading && (
@@ -1704,6 +1854,7 @@ export default function RealEstateUpload({ onViewChange }) {
                   onViewChange={onViewChange}
                   isTaqeemLoggedIn={isTaqeemLoggedIn}
                   setTaqeemStatus={setTaqeemStatus}
+                  selectedCompany={selectedCompany}
                 />
               ))
             ) : (

@@ -88,6 +88,11 @@ function registerIpcHandlers() {
       "authHandlers.handleGetCompanies",
     );
     safeHandle(
+      "get-companies-real-estate",
+      authHandlers.handleGetCompaniesRealEstate,
+      "authHandlers.handleGetCompaniesRealEstate",
+    );
+    safeHandle(
       "get-profile",
       authHandlers.handleGetProfile,
       "authHandlers.handleGetProfile",

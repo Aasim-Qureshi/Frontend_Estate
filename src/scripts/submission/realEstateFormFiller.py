@@ -9,7 +9,7 @@ from scripts.core.browser import spawn_new_browser
 from scripts.core.company_context import (
     build_report_create_url,
     get_selected_company,
-    require_selected_company,
+    require_selected_company_of_type,
     set_selected_company,
 )
 from scripts.core.httpClient import http_get, http_patch
@@ -228,10 +228,11 @@ async def _run_filler(
     new_browser = None
     try:
         try:
-            require_selected_company()
+            selected = get_selected_company()
 
-            # udpate this later
-            create_url = "https://qima.taqeem.gov.sa/report/create/1/137"
+            create_url = build_report_create_url(
+                sector_id="1", office_id=selected.get("office_id")
+            )
         except Exception as ctx_err:
             return {"status": "FAILED", "error": str(ctx_err)}
 
@@ -371,8 +372,10 @@ async def debug_scrape_region_city_codes(
     """
     new_browser = None
     try:
-        require_selected_company()
-        create_url = "https://qima.taqeem.gov.sa/report/create/1/137"
+        selected = get_selected_company()
+        create_url = build_report_create_url(
+            sector_id="1", office_id=selected.get("office_id")
+        )
 
         record = await fetch_record_by_id(record_id)
         if not record:
