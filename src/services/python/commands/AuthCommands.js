@@ -1,98 +1,104 @@
 class AuthCommands {
-    constructor(workerService) {
-        if (!workerService) {
-            throw new Error('WorkerService is required');
-        }
-        this.worker = workerService;
+  constructor(workerService) {
+    if (!workerService) {
+      throw new Error("WorkerService is required");
     }
+    this.worker = workerService;
+  }
 
-    async _sendCommand(command, options = {}) {
-        return await this.worker.sendCommand(command, options);
-    }
+  async _sendCommand(command, options = {}) {
+    return await this.worker.sendCommand(command, options);
+  }
 
-    async login(email, password, method, autoOtp = false) {
-        return this._sendCommand({
-            action: 'login',
-            email,
-            password,
-            method,
-            autoOtp
-        });
-    }
+  async login(email, password, method, autoOtp = false) {
+    return this._sendCommand({
+      action: "login",
+      email,
+      password,
+      method,
+      autoOtp,
+    });
+  }
 
-    async publicLogin(isAuth) {
-        return this._sendCommand({
-            action: 'public-login',
-            isAuth
-        });
-    }
+  async publicLogin(isAuth) {
+    return this._sendCommand({
+      action: "public-login",
+      isAuth,
+    });
+  }
 
-    async submitOtp(otp) {
-        return this._sendCommand({
-            action: 'otp',
-            otp
-        });
-    }
+  async submitOtp(otp) {
+    return this._sendCommand({
+      action: "otp",
+      otp,
+    });
+  }
 
-    async checkStatus() {
-        return this._sendCommand(
-            {
-                action: 'check-status'
-            },
-            {
-                allowFailure: true
-            }
-        );
-    }
+  async checkStatus() {
+    return this._sendCommand(
+      {
+        action: "check-status",
+      },
+      {
+        allowFailure: true,
+      },
+    );
+  }
 
-    async getCompanies() {
-        return this._sendCommand({
-            action: 'get-companies'
-        });
-    }
+  async getCompanies() {
+    return this._sendCommand({
+      action: "get-companies",
+    });
+  }
 
-    async getProfile() {
-        return this._sendCommand({
-            action: 'get-profile'
-        });
-    }
+  async getCompaniesRealEstate() {
+    return this._sendCommand({
+      action: "get-companies-real-estate",
+    });
+  }
 
-    async navigateToCompany(company) {
-        return this._sendCommand({
-            action: 'navigate-to-company',
-            company
-        });
-    }
+  async getProfile() {
+    return this._sendCommand({
+      action: "get-profile",
+    });
+  }
 
-    async getReportsByBatch(batchId) {
-        return this._sendCommand({
-            action: 'get-reports-by-batch',
-            batchId
-        });
-    }
+  async navigateToCompany(company) {
+    return this._sendCommand({
+      action: "navigate-to-company",
+      company,
+    });
+  }
 
-    async openLoginPage(loginUrl, options = {}) {
-        return this._sendCommand({
-            action: 'open-login-page',
-            loginUrl,
-            onlyIfClosed: options.onlyIfClosed !== false,
-            navigateIfOpen: !!options.navigateIfOpen,
-            forceNew: !!options.forceNew
-        });
-    }
+  async getReportsByBatch(batchId) {
+    return this._sendCommand({
+      action: "get-reports-by-batch",
+      batchId,
+    });
+  }
 
-    async ping() {
-        return this._sendCommand({
-            action: 'ping'
-        });
-    }
+  async openLoginPage(loginUrl, options = {}) {
+    return this._sendCommand({
+      action: "open-login-page",
+      loginUrl,
+      onlyIfClosed: options.onlyIfClosed !== false,
+      navigateIfOpen: !!options.navigateIfOpen,
+      forceNew: !!options.forceNew,
+    });
+  }
 
-    async register(userData) {
-        return this._sendCommand({
-            action: 'register',
-            ...userData
-        });
-    }
+  async ping() {
+    return this._sendCommand({
+      action: "ping",
+    });
+  }
+
+  async register(userData) {
+    return this._sendCommand({
+      action: "register",
+      ...userData,
+    });
+  }
 }
 
 module.exports = AuthCommands;

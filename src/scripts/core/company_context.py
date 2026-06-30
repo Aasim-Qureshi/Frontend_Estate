@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 """
 Central place to store the currently selected company (office) so all scripts
@@ -55,7 +55,9 @@ def parse_company_url(url: str) -> dict:
         path = parsed.path or ""
 
         # Common patterns: /organization/show/<sector>/<office>, /report/create/<sector>/<office>
-        pattern = r"/(?:organization/show|report/create)/(?P<sector>\d+)/(?P<office>\d+)"
+        pattern = (
+            r"/(?:organization/show|report/create)/(?P<sector>\d+)/(?P<office>\d+)"
+        )
         match = re.search(pattern, path)
         if match:
             sector_id = match.group("sector")
@@ -80,10 +82,13 @@ def parse_company_url(url: str) -> dict:
     }
 
 
-def set_selected_company(url: str, name: str = None, office_id: str | int = None, sector_id: str | int = None) -> dict:
-    """
-    Store the currently selected company.
-    """
+def set_selected_company(
+    url: str,
+    name: str = None,
+    office_id: str | int = None,
+    sector_id: str | int = None,
+    type: str = None,
+) -> dict:
     parsed = parse_company_url(url)
     office = office_id or parsed.get("office_id")
     sector = sector_id or parsed.get("sector_id")
@@ -94,6 +99,7 @@ def set_selected_company(url: str, name: str = None, office_id: str | int = None
         "url": parsed.get("url") or _to_absolute_url(url),
         "office_id": str(office) if office else None,
         "sector_id": str(sector) if sector else None,
+        "type": type,
     }
     return _selected_company
 
@@ -105,7 +111,21 @@ def get_selected_company(default: dict | None = None) -> dict:
 def require_selected_company() -> dict:
     company = get_selected_company()
     if not company or not company.get("office_id"):
-        raise RuntimeError("No company selected. Please choose a company via the Get Companies screen first.")
+        raise RuntimeError(
+            "No company selected. Please choose a company via the Get Companies screen first."
+        )
+    return company
+
+
+def require_selected_company_of_type(expected_type: str) -> dict:
+    company = require_selected_company()
+    actual_type = company.get("type")
+    if actual_type != expected_type:
+        raise RuntimeError(
+            f"Selected company is type '{actual_type or 'unknown'}', "
+            f"but a '{expected_type}' company is required. "
+            f"Please select a {expected_type} company first."
+        )
     return company
 
 
@@ -123,7 +143,9 @@ def build_report_url(report_id: str, office_id: str | int | None = None) -> str:
     return f"https://qima.taqeem.gov.sa/report/{report_id}?office={office}"
 
 
-def build_report_create_url(sector_id: str | int | None = None, office_id: str | int | None = None) -> str:
+def build_report_create_url(
+    sector_id: str | int | None = None, office_id: str | int | None = None
+) -> str:
     office = str(office_id or get_office_id())
     sector = str(sector_id or get_sector_id())
     return f"https://qima.taqeem.gov.sa/report/create/{sector}/{office}"

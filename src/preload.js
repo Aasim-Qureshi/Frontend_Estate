@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   submitOtp: (otp) => safeInvoke("submit-otp", otp),
   checkStatus: () => safeInvoke("check-status"),
   getCompanies: () => safeInvoke("get-companies"),
+  getCompaniesRealEstate: () => safeInvoke("get-companies-real-estate"),
   navigateToCompany: (company) => safeInvoke("navigate-to-company", company),
   register: (userData) => safeInvoke("register", userData),
   openTaqeemLogin: (opts = {}) => safeInvoke("open-taqeem-login", opts),

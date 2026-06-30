@@ -95,19 +95,17 @@ const Sidebar = ({ currentView, onViewChange }) => {
   ];
 
   const defaultUploadTab =
-    getFirstAccessibleTabId(valueSystemGroups.uploadReports?.tabs || [], user) ||
-    "submit-reports-quickly";
+    getFirstAccessibleTabId(
+      valueSystemGroups.uploadReports?.tabs || [],
+      user,
+    ) || "submit-reports-quickly";
 
   const mainLinks = [
     { id: "uploadReports", label: "Upload Reports" },
     ...(isUser000
       ? [{ id: "uploadSingleReport", label: "Upload Single Report" }]
       : []),
-    ...(isAdmin
-      ? [
-          { id: "taqeemInfo", label: "Taqeem Info" },
-        ]
-      : []),
+    ...(isAdmin ? [{ id: "taqeemInfo", label: "Taqeem Info" }] : []),
     { id: "deleteReport", label: "Delete Report" },
     { id: "myReports", label: "My Reports" },
   ];
@@ -168,6 +166,27 @@ const Sidebar = ({ currentView, onViewChange }) => {
           });
         } catch (err) {
           console.warn("Failed to prepare companies for upload reports", err);
+        }
+      })();
+    }
+  };
+
+  const goToRealEstateUpload = async () => {
+    chooseCard("uploading-reports");
+    chooseDomain("real-estate");
+    setActiveGroup("uploadReports");
+    delayViewChange("real-estate-upload"); // match whatever view id renders RealEstateUpload
+
+    if (!selectedCompany) {
+      (async () => {
+        try {
+          const loadedCompanies = await ensureCompaniesLoaded("real-estate");
+          await autoSelectDefaultCompany({
+            skipNavigation: true,
+            companiesList: loadedCompanies,
+          });
+        } catch (err) {
+          console.warn("Failed to prepare real estate companies", err);
         }
       })();
     }
@@ -411,25 +430,20 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const renderDomains = () => {
     if (selectedCard !== "uploading-reports") return null;
     return (
-      <div
-        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 "
-        
-      >
+      <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 ">
         <ul className="space-y-1">
           {domainButtons.map((item, index) => {
             const Icon = item.icon;
             const isActive = selectedDomain === item.id;
             return (
-              <li
-                key={item.id}
-              >
+              <li key={item.id}>
                 <button
                   onClick={async () => {
                     chooseDomain(item.id);
                     setActiveGroup(null);
 
                     if (item.id === "real-estate") {
-                      delayViewChange("coming-soon");
+                      await goToRealEstateUpload();
                       return;
                     }
 
@@ -469,7 +483,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
   };
 
   const renderCompanyList = () => {
-    if (selectedDomain !== "equipments") return null;
+    if (selectedDomain !== "equipments" && selectedDomain !== "real-estate")
+      return null;
     const showPlaceholder =
       !selectedCompany &&
       !loadingCompanies &&
@@ -480,10 +495,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
     const showLoginPrompt =
       !isAuthenticated || taqeemStatus?.state !== "success";
     return (
-      <div
-        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 space-y-1.5 "
-        
-      >
+      <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 space-y-1.5 ">
         {loadingCompanies && (
           <div className="flex items-center gap-2 text-[10px] text-slate-100 bg-slate-900/70 border border-slate-800 rounded-md px-2 py-1">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -567,14 +579,12 @@ const Sidebar = ({ currentView, onViewChange }) => {
   };
 
   const renderMainLinks = () => {
-    if (selectedDomain !== "equipments") return null;
+    if (selectedDomain !== "equipments" && selectedDomain !== "real-estate")
+      return null;
     const hasCompanies = companies && companies.length > 0;
     if (hasCompanies && !selectedCompany) {
       return (
-        <div
-          className="rounded-xl border border-amber-500/40 bg-amber-900/35 px-3 py-2 text-[11px] text-amber-100 "
-          
-        >
+        <div className="rounded-xl border border-amber-500/40 bg-amber-900/35 px-3 py-2 text-[11px] text-amber-100 ">
           {t("sidebar.company.selectToContinue", {
             defaultValue: "Select a company to view main links.",
           })}
@@ -582,10 +592,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
       );
     }
     return (
-      <div
-        className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 "
-        
-      >
+      <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 ">
         <ul className="space-y-1">
           {mainLinks.map((item, index) => {
             if (!canAccessGroup(item.id, user)) return null;
@@ -597,9 +604,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
             );
             const firstTab = groupTabs?.[0]?.id;
             return (
-              <li
-                key={item.id}
-              >
+              <li key={item.id}>
                 <button
                   onClick={() => {
                     if (blocked) return;
@@ -659,10 +664,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
       { id: "mobasher-data", label: "Mobasher Data", icon: Database },
     ];
     return (
-      <div
-        className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2.5 py-2 "
-        
-      >
+      <div className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2.5 py-2 ">
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-200">
           {t("sidebar.evaluationSources.title", {
             defaultValue: "Evaluation Sources",
@@ -676,9 +678,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
               currentView === item.id ||
               (item.id === "haraj" && currentView === "haraj-data");
             return (
-              <li
-                key={item.id}
-              >
+              <li key={item.id}>
                 <button
                   onClick={() => {
                     if (blocked) return;
@@ -717,10 +717,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const renderAdminLinks = () => {
     if (!isAdmin || selectedCard !== "admin-console") return null;
     return (
-      <div
-        className="rounded-xl border border-amber-500/35 bg-slate-900/80 px-2 py-2 "
-        
-      >
+      <div className="rounded-xl border border-amber-500/35 bg-slate-900/80 px-2 py-2 ">
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
           {t("sidebar.admin.title")}
         </div>
@@ -730,9 +727,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
             const blocked = isFeatureBlocked(item.id);
             const isActive = currentView === item.id;
             return (
-              <li
-                key={item.id}
-              >
+              <li key={item.id}>
                 <button
                   onClick={() => {
                     if (blocked) return;
@@ -770,10 +765,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const renderCompanyLinks = () => {
     if (!isCompanyHead || selectedCard !== "company-console") return null;
     return (
-      <div
-        className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2 py-2 "
-        
-      >
+      <div className="rounded-xl border border-emerald-500/35 bg-slate-900/80 px-2 py-2 ">
         <div className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-200">
           {t("sidebar.company.title")}
         </div>
@@ -783,9 +775,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
             const blocked = isFeatureBlocked(item.id);
             const isActive = currentView === item.id;
             return (
-              <li
-                key={item.id}
-              >
+              <li key={item.id}>
                 <button
                   onClick={() => {
                     if (blocked) return;
@@ -823,10 +813,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const renderDashboardLinks = () => {
     if (dashboardLinks.length === 0) return null;
     return (
-      <div
-        className="px-2.5 py-2"
-        
-      >
+      <div className="px-2.5 py-2">
         <div className="px-1 pb-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
           {t("sidebar.dashboards.title")}
         </div>
@@ -885,13 +872,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
       dir={dir}
       className={`relative w-[228px] min-w-[228px] h-screen text-white text-[11px] overflow-hidden ${sidebarBorderClass} border-slate-800 bg-slate-950`}
     >
-      
-
       <div className="relative flex h-full flex-col">
-        <div
-          className="px-3 py-3 border-b border-slate-800 bg-slate-950"
-          
-        >
+        <div className="px-3 py-3 border-b border-slate-800 bg-slate-950">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
@@ -946,10 +928,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
         {renderDashboardLinks()}
 
-        <div
-          className="px-2.5 py-2"
-          
-        >
+        <div className="px-2.5 py-2">
           <button
             onClick={() => {
               if (ticketsBlocked) return;
@@ -1017,4 +996,3 @@ const Sidebar = ({ currentView, onViewChange }) => {
 };
 
 export default Sidebar;
-
