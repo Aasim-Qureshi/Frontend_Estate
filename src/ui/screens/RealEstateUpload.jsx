@@ -40,7 +40,7 @@ const useTransactions = () => {
     setError(null);
     try {
       const res = await fetch(
-        "http://localhost:3000/api/transactions?limit=100",
+        "http://167.71.231.64:3000/api/transactions?limit=100",
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -48,11 +48,15 @@ const useTransactions = () => {
       const items = (json.items ?? []).map((t) => ({
         ...t,
         report_status: t.report_status ?? "UNKNOWN",
-        taqeemId: t.taqeemId ?? null,
-        taqeemSubmitted: t.taqeemSubmitted ?? false,
+        // DB stores this as `reportId` (camelCase) — that IS the Taqeem ID.
+        // Fall back through the other historical field names just in case
+        // different endpoints/versions serialize it differently.
+        taqeemId: t.taqeemId ?? t.reportId ?? t.report_id ?? null,
+        taqeemSubmitted:
+          t.taqeemSubmitted ?? !!(t.taqeemId ?? t.reportId ?? t.report_id),
         taqeemSent: t.taqeemSent ?? false,
         taqeemApproved: t.taqeemApproved ?? false,
-        report_id: t.report_id ?? null,
+        report_id: t.report_id ?? t.reportId ?? null,
         evalData: { ...(t.evalData ?? {}) },
       }));
       setReports(items);
@@ -205,7 +209,12 @@ const getProgressIndex = (report, queuedActions = []) => {
   return 0;
 };
 
-const StepProgress = ({ submitted, sent, approved }) => {
+// Maps a step's index to the dummyState/taqeemState key that ActionSelector
+// puts into its `animating` array while that step's async work is in flight
+// (see ActionSelector's setAnimating calls).
+const STEP_KEYS = [null, "submitted", "sent", "approved"];
+
+const StepProgress = ({ submitted, sent, approved, animating = [] }) => {
   const steps = [
     { label: "New" },
     { label: "Submitted" },
@@ -219,6 +228,7 @@ const StepProgress = ({ submitted, sent, approved }) => {
     <div className="flex items-center gap-2 flex-1">
       {steps.map((step, i) => {
         const done = i <= currentIdx;
+        const isLoading = STEP_KEYS[i] && animating.includes(STEP_KEYS[i]);
 
         return (
           <React.Fragment key={i}>
@@ -240,11 +250,16 @@ const StepProgress = ({ submitted, sent, approved }) => {
                 style={{
                   width: 22,
                   height: 22,
-                  borderColor: done ? "#6366f1" : "#e2e8f0",
-                  background: done ? "#6366f1" : "#fff",
+                  borderColor: isLoading || done ? "#6366f1" : "#e2e8f0",
+                  background: isLoading ? "#fff" : done ? "#6366f1" : "#fff",
                 }}
               >
-                {done ? (
+                {isLoading ? (
+                  <Loader2
+                    className="animate-spin"
+                    style={{ width: 12, height: 12, color: "#6366f1" }}
+                  />
+                ) : done ? (
                   <svg
                     width="10"
                     height="10"
@@ -269,7 +284,7 @@ const StepProgress = ({ submitted, sent, approved }) => {
                 style={{
                   fontSize: 9,
                   fontWeight: 600,
-                  color: done ? "#6366f1" : "#94a3b8",
+                  color: isLoading || done ? "#6366f1" : "#94a3b8",
                   whiteSpace: "nowrap",
                 }}
               >
@@ -332,7 +347,7 @@ const ActionDropdown = ({ actions, done, queued, onToggle, isUnlocked }) => {
             const isDone = done.has(a.id);
             const isSelected = queued.includes(a.id);
             const unlocked = isUnlocked(a.id);
-            const disabled = isDone || (!unlocked && !isSelected);
+            const disabled = !unlocked && !isSelected;
 
             return (
               <label
@@ -628,6 +643,7 @@ const ActionSelector = ({
   onAction,
   missingFields = [],
   onStateChange,
+  onAnimatingChange,
   token,
   login,
   onViewChange,
@@ -642,7 +658,13 @@ const ActionSelector = ({
     approved: report.taqeemApproved,
     taqeemId: report.taqeemId,
   });
-  const [animating, setAnimating] = useState([]);
+  const [animating, setAnimatingRaw] = useState([]);
+  // Mirror every animating change up to ReportRow so the step-progress bar
+  // (which lives outside this component) can show the same spinner state.
+  const setAnimating = (next) => {
+    setAnimatingRaw(next);
+    if (onAnimatingChange) onAnimatingChange(next);
+  };
   const [queued, setQueued] = useState([]);
   const [busy, setBusy] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -651,13 +673,16 @@ const ActionSelector = ({
   const [approachSelections, setApproachSelections] = useState(null);
 
   const doneFromReport = new Set();
-  if (dummyState.submitted) doneFromReport.add("submit");
+  if (dummyState.submitted || dummyState.taqeemId) doneFromReport.add("submit");
   if (dummyState.sent) doneFromReport.add("send");
   if (dummyState.approved) doneFromReport.add("approve");
 
   const isUnlocked = (actionId) => {
     const action = ACTIONS.find((a) => a.id === actionId);
     if (!action) return false;
+    // Testing phase: submission is always re-triggerable, even if the
+    // record already has a Taqeem ID. "send"/"approve" still lock once done.
+    if (actionId === "submit") return true;
     if (doneFromReport.has(actionId)) return false;
     if (!action.requires) return true;
     return (
@@ -720,6 +745,7 @@ const ActionSelector = ({
 
     if (queued.includes("submit")) {
       setAnimating(["submitted"]);
+      let submitResult = null;
       try {
         let pdfPath = null;
 
@@ -738,7 +764,7 @@ const ActionSelector = ({
         }
 
         if (window?.electronAPI?.submitRealEstateReport) {
-          await window.electronAPI.submitRealEstateReport(
+          submitResult = await window.electronAPI.submitRealEstateReport(
             reportId,
             pdfPath,
             resolvedApproachSelections,
@@ -752,8 +778,24 @@ const ActionSelector = ({
       } catch (err) {
         console.error("[RealEstateUpload] submitRealEstateReport error:", err);
       }
+
+      // Pull the freshly-minted report_id (Taqeem ID) out of the result the
+      // moment submission finishes, so the row updates without a refetch.
+      // create_and_submit_report returns { status, report_id, ... } for a
+      // single record; _run_filler wraps that in results[0] when called via
+      // run_real_estate_form_fill — cover both shapes defensively.
+      const newTaqeemId =
+        submitResult?.report_id ??
+        submitResult?.results?.[0]?.report_id ??
+        submitResult?.data?.report_id ??
+        null;
+
       setDummyState((prev) => {
-        const next = { ...prev, submitted: true };
+        const next = {
+          ...prev,
+          submitted: true,
+          ...(newTaqeemId ? { taqeemId: newTaqeemId, idFetched: true } : {}),
+        };
         if (onStateChange) onStateChange(next);
         return next;
       });
@@ -1386,6 +1428,8 @@ const ReportRow = ({
     taqeemId: report.taqeemId,
   });
 
+  const [animatingSteps, setAnimatingSteps] = useState([]);
+
   const e = report.evalData;
   const cfg = STATUS_CONFIG[report.report_status] || STATUS_CONFIG.INCOMPLETE;
   const missingFields = getMissingFields(report);
@@ -1491,6 +1535,7 @@ const ReportRow = ({
               submitted={taqeemState.submitted}
               sent={taqeemState.sent}
               approved={taqeemState.approved}
+              animating={animatingSteps}
             />
           </div>
           {/* Action — fixed w-48 so the dropdown+button never shift other columns */}
@@ -1503,6 +1548,7 @@ const ReportRow = ({
               report={report}
               missingFields={missingFields}
               onStateChange={setTaqeemState}
+              onAnimatingChange={setAnimatingSteps}
               token={token}
               login={login}
               onViewChange={onViewChange}

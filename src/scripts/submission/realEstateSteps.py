@@ -467,6 +467,14 @@ _TRANSLATIONS: dict[str, dict[int, int]] = {
         6: 52,  # Common Ownership      → ملكية مشاعة
         7: 4,  # Mortgaged             → Other (no match)
     },
+    "street_facing_fronts": {
+        1: 6,
+        2: 7,
+        3: 8,
+        4: 9,
+        5: 10,
+        # extend as needed — pattern is n → n+5
+    },
 }
 
 
@@ -591,15 +599,17 @@ def extract_record_values(record, approach_selections=None):
         "ownershipPercentage": eval_data.get("ownershipPercentage"),  # evalData
         "rental_duration": None,  # missing from record
         "rental_end_date": None,  # missing from record
-        "street_facing_fronts": None,  # missing from record
+        "street_facing_fronts": translate_field(
+            "street_facing_fronts", eval_data.get("streetFronts")
+        ),
         "distance_from_city_center": None,  # missing from record
         "surroundingEnvironment": eval_data.get(
             "surroundingEnvironment"
         ),  # evalData (array)
         "landSpace": eval_data.get("landSpace"),  # evalData
         "propertyArea": eval_data.get("propertyArea"),  # evalData
-        "authorized_land_cover_percentage": None,  # missing from record
-        "authorized_height": None,  # missing from record
+        "authorized_land_cover_percentage": eval_data.get("authorizedLandCoverPct"),
+        "authorized_height": eval_data.get("elevation"),  # missing from record
         "land_leased": None,  # missing from record
         "buildingCondition": building_condition.get(
             "status"
@@ -610,5 +620,5 @@ def extract_record_values(record, approach_selections=None):
         "propertyModel": eval_data.get("propertyModel"),  # evalData
         "availableServices": eval_data.get("availableServices"),  # evalData (dict)
         "propertyAge": eval_data.get("propertyAge"),  # evalData
-        "street": eval_data.get("street"),  # evalData
+        "street": eval_data.get("streetWidth"),  # evalData
     }
