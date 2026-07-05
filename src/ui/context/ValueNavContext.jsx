@@ -291,17 +291,38 @@ export const ValueNavProvider = ({ children }) => {
   }, []);
 
   const loadSavedCompanies = useCallback(
-    async (type = "equipment") => {
+    async (type = "equipment", overrides = {}) => {
       if (!window?.electronAPI?.apiRequest) {
         setCompanyError(t("navigation.companyFetchUnavailable"));
         return [];
       }
+      // NEW: allow callers to pass a just-created token/user, bypassing
+      // stale-closure issues right after login()/guest-session creation.
+      const effectiveToken = overrides.token || token;
+      const effectiveUser = overrides.user || user;
+      const effectiveAuthHeaders = overrides.token
+        ? { Authorization: `Bearer ${overrides.token}` }
+        : authHeaders;
+
+      console.log("[loadSavedCompanies] called", {
+        type,
+        hasOverrideToken: !!overrides.token,
+        hasContextToken: !!token,
+        effectiveTokenPreview: effectiveToken
+          ? effectiveToken.slice(0, 12) + "…"
+          : null,
+        effectiveUser,
+      });
+
       const fetchAutomationCompanies = () =>
         type === "real-estate"
           ? window.electronAPI.getCompaniesRealEstate?.()
           : window.electronAPI.getCompanies?.();
 
-      if (!token) {
+      if (!effectiveToken) {
+        console.log(
+          "[loadSavedCompanies] BRANCH: no token → automation fallback",
+        );
         if (!fetchAutomationCompanies()) {
           setCompanyError("");
           return companiesByTypeRef.current[type] || [];
@@ -324,8 +345,11 @@ export const ValueNavProvider = ({ children }) => {
           setLoadingCompanies(false);
         }
       }
-      console.log("[syncCompanies] user at call time:", user, "token:", token);
-      if (!user) {
+
+      if (!effectiveUser) {
+        console.log(
+          "[loadSavedCompanies] BRANCH: token but no user → automation fallback",
+        );
         setCompanyError("");
         const fetcher = fetchAutomationCompanies();
         if (!fetcher) return [];
@@ -348,11 +372,18 @@ export const ValueNavProvider = ({ children }) => {
       setLoadingCompanies(true);
       setCompanyError("");
       try {
+        console.log("headers", effectiveAuthHeaders);
         const res = await window.electronAPI.apiRequest(
           "GET",
           `/api/companes/me?type=${type}`,
           {},
-          authHeaders,
+          effectiveAuthHeaders,
+        );
+        console.log(
+          "[loadSavedCompanies] DB response for type",
+          type,
+          ":",
+          res,
         );
         applyCompaniesMeta(extractCompaniesMeta(res));
         const list = normalizeCompanyList(res).map(normalizeCompany);
@@ -382,7 +413,6 @@ export const ValueNavProvider = ({ children }) => {
       user,
     ],
   );
-
   const syncCompanies = useCallback(
     async (items = [], defaultType = "equipment", overrides = {}) => {
       if (!window?.electronAPI?.apiRequest) {
@@ -792,10 +822,10 @@ export const ValueNavProvider = ({ children }) => {
   }, [companies, selectedCompany, setSelectedCompanyState]);
 
   const ensureCompaniesLoaded = useCallback(
-    async (type = "equipment") => {
+    async (type = "equipment", overrides = {}) => {
       const existing = companiesByType[type];
       if (existing && existing.length > 0) return existing;
-      return loadSavedCompanies(type);
+      return loadSavedCompanies(type, overrides);
     },
     [companiesByType, loadSavedCompanies],
   );
