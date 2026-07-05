@@ -198,13 +198,21 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
     try {
       const tokenObj = await window.electronAPI.getToken?.();
-      const bearer = tokenObj?.refreshToken || tokenObj?.token;
-      const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
+      if (tokenObj?.token) {
+        const restoredUser =
+          tokenObj.user ||
+          (tokenObj.userId
+            ? { id: tokenObj.userId, _id: tokenObj.userId }
+            : null);
+        if (restoredUser) login?.(restoredUser, tokenObj.token);
+        return tokenObj.token;
+      }
+
       const result = await window.electronAPI.apiRequest(
         "POST",
         "/api/users/guest",
         {},
-        headers,
+        {},
       );
       if (result?.token && result?.userId) {
         const guestUser = result?.user || {
@@ -221,10 +229,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
         err?.message || err,
       );
     }
-
     return null;
   };
-
   const handleTaqeemLogin = async () => {
     const waitForManualLogin = async (
       timeoutMs = 180000,

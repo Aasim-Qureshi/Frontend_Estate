@@ -1601,18 +1601,50 @@ export default function RealEstateUpload({ onViewChange }) {
   }, [chooseDomain]);
 
   const ensureGuestSession = async () => {
-    if (token) return token;
-    if (!window?.electronAPI?.apiRequest) return null;
+    if (token) {
+      console.log("[ensureGuestSession] using existing context token", {
+        token,
+        user,
+      });
+      return { token, userId: user?._id || user?.id };
+    }
+    if (!window?.electronAPI?.apiRequest) {
+      console.log("[ensureGuestSession] no electronAPI.apiRequest available");
+      return null;
+    }
+
     try {
       const tokenObj = await window.electronAPI.getToken?.();
-      const bearer = tokenObj?.refreshToken || tokenObj?.token;
-      const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
+      console.log("[ensureGuestSession] getToken() returned:", tokenObj);
+
+      if (tokenObj?.token) {
+        const restoredUser =
+          tokenObj.user ||
+          (tokenObj.userId
+            ? { id: tokenObj.userId, _id: tokenObj.userId }
+            : null);
+        console.log("[ensureGuestSession] restoring persisted session", {
+          hasUser: !!tokenObj.user,
+          hasUserId: !!tokenObj.userId,
+          restoredUser,
+        });
+        if (restoredUser) login?.(restoredUser, tokenObj.token);
+        return {
+          token: tokenObj.token,
+          userId: tokenObj.userId || restoredUser?._id,
+        };
+      }
+
+      console.log(
+        "[ensureGuestSession] nothing persisted — minting NEW guest user",
+      );
       const result = await window.electronAPI.apiRequest(
         "POST",
         "/api/users/guest",
         {},
-        headers,
+        {},
       );
+      console.log("[ensureGuestSession] guest creation result:", result);
       if (result?.token && result?.userId) {
         const guestUser = result?.user || {
           id: result.userId,
@@ -1620,14 +1652,13 @@ export default function RealEstateUpload({ onViewChange }) {
           guest: true,
         };
         login?.(guestUser, result.token);
-        return { token: result.token, userId: result.userId }; // ← return fresh creds directly
+        return { token: result.token, userId: result.userId };
       }
     } catch (err) {
       console.warn("[RealEstateUpload] Failed to ensure guest session:", err);
     }
     return null;
   };
-
   useEffect(() => {
     const hasRealEstateSelection = selectedCompany?.type === "real-estate";
     if (hasRealEstateSelection) return;
@@ -1635,15 +1666,26 @@ export default function RealEstateUpload({ onViewChange }) {
     (async () => {
       try {
         const freshSession = await ensureGuestSession(); // { token, userId } or null
+        console.log("[RealEstateUpload mount] freshSession:", freshSession);
 
-        let loaded = await ensureCompaniesLoaded("real-estate");
+        let loaded = await ensureCompaniesLoaded("real-estate", {
+          token: freshSession?.token,
+          user: freshSession?.userId ? { _id: freshSession.userId } : undefined,
+        });
+        console.log(
+          "[RealEstateUpload mount] ensureCompaniesLoaded (DB) result:",
+          loaded,
+        );
 
         if (
           (!loaded || loaded.length === 0) &&
           window?.electronAPI?.getCompaniesRealEstate
         ) {
           const data = await window.electronAPI.getCompaniesRealEstate();
-          console.log("comp data", data);
+          console.log(
+            "[RealEstateUpload mount] automation getCompaniesRealEstate:",
+            data,
+          );
           if (
             data?.status === "SUCCESS" &&
             Array.isArray(data.data) &&

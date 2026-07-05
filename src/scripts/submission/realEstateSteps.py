@@ -1,21 +1,21 @@
 import sys
 
 field_map_1 = {
-    "report_title": "[name='title']",
-    "valuationPurpose": "[name='purpose_id']",
-    "valuationHypothesis": "[name='value_premise_id']",
-    "valuationBasis": "[name='value_base_id']",
+    "report_title": "[name='title']",  # req
+    "valuationPurpose": "[name='purpose_id']",  # req
+    "valuationHypothesis": "[name='value_premise_id']",  # req
+    "valuationBasis": "[name='value_base_id']",  # req
     # "report_type": "[name='report_type']",
-    "evalDate": "[name='valued_at']",
-    "reportDate": "[name='submitted_at']",
+    "evalDate": "[name='valued_at']",  # req
+    "reportDate": "[name='submitted_at']",  # req
     "assumptions": "[name='assumptions']",
     "special_assumptions": "[name='special_assumptions']",
-    "finalAssetValue": "[name='value']",
+    "finalAssetValue": "[name='value']",  # req
     "valuation_currency": "[name='currency_id']",
-    "report_asset_file": "[name='report_file']",
-    "clientName": "[name='client[0][name]']",
-    "contactNo": "[name='client[0][telephone]']",
-    "email_address": "[name='client[0][email]']",
+    "report_asset_file": "[name='report_file']",  # req
+    "clientName": "[name='client[0][name]']",  # req
+    "contactNo": "[name='client[0][telephone]']",  # req
+    "email_address": "[name='client[0][email]']",  # req
     "otherUsers": "[name='has_user']",
     # "valuer_name": "[name='valuer[0][id]']",
     # "contribution_percentage": "[name='valuer[0][contribution]']",
@@ -45,22 +45,22 @@ field_types_1 = {
 field_map_2 = {
     # Selects first — these trigger dynamic reveals on the Taqeem page and must
     # be set before any field that depends on that reveal.
-    "propertyType": "[name='asset_type_id']",
-    "landUse": "[name='asset_usage_id']",
+    "propertyType": "[name='asset_type_id']",  # req
+    "landUse": "[name='asset_usage_id']",  # req
     "marketApproachStatus": "[id='approach1']",
     "incomeApproachStatus": "[id='approach2']",
     "costApproachStatus": "[id='approach3']",
-    # Everything else
-    "inspected_at": "[name='inspected_at']",
-    "finalAssetValue": "[name='value']",
+    # One of the above must at least be uesd
+    "inspected_at": "[name='inspected_at']",  # req
+    "finalAssetValue": "[name='value']",  # req
     "comparisonValue": "[name='approach[1][method][1][value]']",
     "investmentMethodValue": "[name='approach[2][method][7][value]']",
     "replacementCostValue": "[name='approach[3][method][9][value]']",
-    "lng": "[name='longitude']",
-    "lat": "[name='latitude']",
-    "country": "[id='country_id']",
-    "regionName": "[id='region']",
-    "cityName": "[id='city']",
+    "lng": "[name='longitude']",  # req
+    "lat": "[name='latitude']",  # req
+    "country": "[id='country_id']",  # req
+    "regionName": "[id='region']",  # req
+    "cityName": "[id='city']",  # req
 }
 field_types_2 = {
     "propertyType": "dynamic_select",
@@ -85,18 +85,18 @@ field_types_2 = {
 field_map_3 = {
     "blockNumber": "[name='attribute[1]']",
     "parcelNumber": "[name='attribute[2]']",
-    "deedNumber": "[name='attribute[3]']",
-    "ownershipType": "[name='attribute[4]']",
+    "deedNumber": "[name='attribute[3]']",  # req
+    "ownershipType": "[name='attribute[4]']",  # req
     "ownershipPercentage": "[name='attribute[5]']",
     "rental_duration": "[name='attribute[6]']",
     "rental_end_date": "[name='attribute[7]']",
-    "street_facing_fronts": "[name='attribute[8]']",
+    "street_facing_fronts": "[name='attribute[8]']",  # req
     "distance_from_city_center": "[name='attribute[9]']",
-    "surroundingEnvironment": "[name='attribute[10][]']",
-    "landSpace": "[name='attribute[11]']",
+    "surroundingEnvironment": "[name='attribute[10][]']",  # req
+    "landSpace": "[name='attribute[11]']",  # req
     "propertyArea": "[name='attribute[12]']",
-    "authorized_land_cover_percentage": "[name='attribute[13]']",
-    "authorized_height": "[name='attribute[14]']",
+    "authorized_land_cover_percentage": "[name='attribute[13]']",  # req
+    "authorized_height": "[name='attribute[14]']",  # reqq
     "land_leased": "[id='15']",
     "buildingCondition": "[name='attribute[16]']",
     "finishLevel": "[name='attribute[17]']",
@@ -106,7 +106,7 @@ field_map_3 = {
     "availableServices": "[name='attribute[21][]']",
     "landUse": "[name='attribute[27]']",
     "propertyAge": "[name='attribute[28]']",
-    "street": "[name='attribute[31]']",
+    "street": "[name='attribute[31]']",  # req
 }
 
 field_types_3 = {
