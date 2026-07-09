@@ -41,6 +41,7 @@ const useTransactions = () => {
     try {
       const res = await fetch(
         "http://167.71.231.64:3000/api/transactions?limit=100",
+        // "http://localhost:3000/api/transactions?limit=100",
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -134,40 +135,106 @@ const formatDate = (iso) => {
   });
 };
 
-// Fields required by each form step, mapped to report/evalData keys.
-// step1: report-level fields
+// Mirrors every field marked `# req` in realEstateSteps.py's field_map_1/2/3.
 const REQUIRED_STEP1 = [
   { key: "valuationPurpose", src: "report", label: "Valuation Purpose" },
-  { key: "ownershipType", src: "report", label: "Ownership Type" },
+  { key: "valuationHypothesis", src: "report", label: "Valuation Hypothesis" },
   { key: "valuationBasis", src: "report", label: "Valuation Basis" },
-  { key: "assignmentDate", src: "report", label: "Assignment Date" },
-  { key: "clientName", src: "evalData", label: "Client Name" },
+  { key: "evalDate", src: "evalData", label: "Valuation Date" },
+  { key: "reportDate", src: "evalData", label: "Report Date" },
+  { key: "finalAssetValue", src: "evalData", label: "Final Asset Value" },
 ];
-// step2: asset + location fields
+
 const REQUIRED_STEP2 = [
   { key: "propertyType", src: "evalData", label: "Property Type" },
-  { key: "cityName", src: "evalData", label: "City" },
-  { key: "propertyArea", src: "evalData", label: "Land Area" },
+  { key: "landUse", src: "evalData", label: "Land Use" }, // ⚠ verify evalData key
   { key: "lat", src: "evalData", label: "Latitude" },
   { key: "lng", src: "evalData", label: "Longitude" },
 ];
-// step3: property detail fields
+
 const REQUIRED_STEP3 = [
   { key: "deedNumber", src: "evalData", label: "Deed / Certificate No." },
-  { key: "ownerName", src: "evalData", label: "Owner Name" },
-  { key: "address", src: "evalData", label: "Address" },
+  { key: "ownershipType", src: "report", label: "Ownership Type" },
+  { key: "streetFronts", src: "evalData", label: "Street Facing Fronts" }, // ⚠ verify
+  {
+    key: "surroundingEnvironment",
+    src: "evalData",
+    label: "Surrounding Environment",
+    isArray: true,
+  },
+  { key: "landSpace", src: "evalData", label: "Land Area" },
+  {
+    key: "authorizedLandCoverPct",
+    src: "evalData",
+    label: "Authorized Land Cover %",
+  }, // ⚠ verify
+  { key: "elevation", src: "evalData", label: "Authorized Height" }, // ⚠ verify
+  { key: "streetWidth", src: "evalData", label: "Street Width" }, // ⚠ verify
 ];
 
 const ALL_REQUIRED = [...REQUIRED_STEP1, ...REQUIRED_STEP2, ...REQUIRED_STEP3];
 
 const getMissingFields = (report) => {
-  return ALL_REQUIRED.filter(({ key, src }) => {
-    const val = src === "report" ? report[key] : report.evalData?.[key];
+  const evalData = report.evalData || {};
+  const hasClient = !!report.clientId;
+
+  const missing = ALL_REQUIRED.filter(({ key, src, isArray }) => {
+    const val = src === "report" ? report[key] : evalData?.[key];
+    if (isArray) return !Array.isArray(val) || val.length === 0;
     return !val || String(val).trim() === "";
   });
+
+  const warnings = [];
+
+  // Client: clientId covers name/email/contact — nothing to check/require.
+  if (!hasClient) {
+    if (!evalData.clientName || String(evalData.clientName).trim() === "") {
+      missing.push({ key: "clientName", label: "Client Name" });
+    }
+    if (!report.contactNo || String(report.contactNo).trim() === "") {
+      missing.push({ key: "contactNo", label: "Client Contact No." });
+    }
+  }
+
+  // Region: has ID → fine. Has name only → warn (name-match attempt).
+  // Has neither → missing (defaults will be used).
+  if (!evalData.regionId) {
+    if (evalData.regionName && String(evalData.regionName).trim() !== "") {
+      warnings.push({
+        key: "regionName",
+        label: `Region ("${evalData.regionName}") has no ID — will attempt to match by name; defaults used if unmatched`,
+      });
+    } else {
+      missing.push({ key: "regionName", label: "Region" });
+    }
+  }
+
+  // City: same pattern.
+  if (!evalData.cityId) {
+    if (evalData.cityName && String(evalData.cityName).trim() !== "") {
+      warnings.push({
+        key: "cityName",
+        label: `City ("${evalData.cityName}") has no ID — will attempt to match by name; defaults used if unmatched`,
+      });
+    } else {
+      missing.push({ key: "cityName", label: "City" });
+    }
+  }
+
+  // Constraint: at least one valuation approach (market/income/cost) must have data.
+  const usedApproaches = getUsedApproachMethods(evalData);
+  if (Object.keys(usedApproaches).length === 0) {
+    missing.push({
+      key: "valuationApproach",
+      label: "Valuation Approach (Market, Income or Cost)",
+    });
+  }
+
+  return { missing, warnings };
 };
 
-const hasIncompleteData = (report) => getMissingFields(report).length > 0;
+const hasIncompleteData = (report) =>
+  getMissingFields(report).missing.length > 0;
 
 // ─── Open Taqeem browser ───────────────────────────────────────────────────
 const openTaqeemBrowser = async (setBusy, reportId, action) => {
@@ -637,11 +704,121 @@ const ApproachSelectionModal = ({ usedMethods, onConfirm, onCancel }) => {
   );
 };
 
+// ─── Shared Taqeem action runner — used by both the single-row selector
+// and the bulk action bar, so behavior (and the Python/IPC call) is
+// identical either way. ─────────────────────────────────────────────────
+async function performTaqeemActions({
+  report,
+  queuedActions,
+  approachSelections,
+  token,
+  login,
+  onViewChange,
+  isTaqeemLoggedIn,
+  setTaqeemStatus,
+  onProgress, // (patch) => void — merged into the report's taqeem state
+  onAnimating, // (stepKeys[]) => void — drives the progress-bar spinner
+}) {
+  const authStatus = await ensureTaqeemAuthorized(
+    token,
+    onViewChange,
+    isTaqeemLoggedIn,
+    0, // assetCount — no point deduction for real estate
+    login,
+    setTaqeemStatus,
+    { isGuest: !token },
+  );
+
+  const ok =
+    authStatus === true ||
+    authStatus?.success === true ||
+    [
+      "SUCCESS",
+      "CHECK",
+      "AUTHORIZED",
+      "SYNCED",
+      "LOGIN_SUCCESS",
+      "NORMAL_ACCOUNT",
+      "BOOTSTRAP_GRANTED",
+    ].includes(String(authStatus?.status || "").toUpperCase());
+
+  if (!ok) return { ok: false };
+
+  if (queuedActions.includes("submit")) {
+    onAnimating(["submitted"]);
+    let submitResult = null;
+    try {
+      let pdfPath = null;
+
+      if (window?.electronAPI?.downloadRealEstatePdf) {
+        const pdfResult = await window.electronAPI.downloadRealEstatePdf(
+          report.id,
+        );
+        if (pdfResult?.status === "SUCCESS" && pdfResult.filePath) {
+          pdfPath = pdfResult.filePath;
+        } else {
+          console.warn(
+            "[RealEstateUpload] PDF download failed, submitting without report_asset_file:",
+            pdfResult?.error,
+          );
+        }
+      }
+
+      if (window?.electronAPI?.submitRealEstateReport) {
+        submitResult = await window.electronAPI.submitRealEstateReport(
+          report.id,
+          pdfPath,
+          approachSelections,
+        );
+      } else {
+        console.log(
+          "[RealEstateUpload] submitRealEstateReport not available, recordId:",
+          report.id,
+        );
+      }
+    } catch (err) {
+      console.error("[RealEstateUpload] submitRealEstateReport error:", err);
+    }
+
+    const newTaqeemId =
+      submitResult?.report_id ??
+      submitResult?.results?.[0]?.report_id ??
+      submitResult?.data?.report_id ??
+      null;
+
+    onProgress({
+      submitted: true,
+      ...(newTaqeemId ? { taqeemId: newTaqeemId, idFetched: true } : {}),
+    });
+    onAnimating([]);
+  }
+
+  if (queuedActions.includes("send")) {
+    onAnimating(["sent"]);
+    await new Promise((r) => setTimeout(r, 5000));
+    onProgress({ sent: true });
+    await new Promise((r) => setTimeout(r, 100));
+    onAnimating([]);
+  }
+
+  if (queuedActions.includes("approve")) {
+    onAnimating(["approved"]);
+    await new Promise((r) => setTimeout(r, 5000));
+    onProgress({ approved: true });
+    await new Promise((r) => setTimeout(r, 100));
+    onAnimating([]);
+  }
+
+  return { ok: true };
+}
+
 const ActionSelector = ({
   reportId,
   report,
   onAction,
   missingFields = [],
+  warningFields = [],
+  taqeemState,
   onStateChange,
   onAnimatingChange,
   token,
@@ -651,20 +828,6 @@ const ActionSelector = ({
   setTaqeemStatus,
   selectedCompany,
 }) => {
-  const [dummyState, setDummyState] = useState({
-    idFetched: !!report.taqeemId,
-    submitted: report.taqeemSubmitted,
-    sent: report.taqeemSent,
-    approved: report.taqeemApproved,
-    taqeemId: report.taqeemId,
-  });
-  const [animating, setAnimatingRaw] = useState([]);
-  // Mirror every animating change up to ReportRow so the step-progress bar
-  // (which lives outside this component) can show the same spinner state.
-  const setAnimating = (next) => {
-    setAnimatingRaw(next);
-    if (onAnimatingChange) onAnimatingChange(next);
-  };
   const [queued, setQueued] = useState([]);
   const [busy, setBusy] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -673,15 +836,14 @@ const ActionSelector = ({
   const [approachSelections, setApproachSelections] = useState(null);
 
   const doneFromReport = new Set();
-  if (dummyState.submitted || dummyState.taqeemId) doneFromReport.add("submit");
-  if (dummyState.sent) doneFromReport.add("send");
-  if (dummyState.approved) doneFromReport.add("approve");
+  if (taqeemState.submitted || taqeemState.taqeemId)
+    doneFromReport.add("submit");
+  if (taqeemState.sent) doneFromReport.add("send");
+  if (taqeemState.approved) doneFromReport.add("approve");
 
   const isUnlocked = (actionId) => {
     const action = ACTIONS.find((a) => a.id === actionId);
     if (!action) return false;
-    // Testing phase: submission is always re-triggerable, even if the
-    // record already has a Taqeem ID. "send"/"approve" still lock once done.
     if (actionId === "submit") return true;
     if (doneFromReport.has(actionId)) return false;
     if (!action.requires) return true;
@@ -698,121 +860,33 @@ const ActionSelector = ({
     });
   };
 
-  const animateStep = async (key, stateKey, dummyId = null) => {
-    setAnimating([key]);
-    await new Promise((r) => setTimeout(r, 5000));
-    setDummyState((prev) => {
-      const next = { ...prev, [stateKey]: true };
-      if (dummyId) next.taqeemId = dummyId;
-      if (onStateChange) onStateChange(next);
-      return next;
-    });
-    await new Promise((r) => setTimeout(r, 100));
-    setAnimating([]);
-  };
-
   const proceed = async (resolvedApproachSelections = approachSelections) => {
     setShowWarning(false);
     setBusy(true);
 
-    const authStatus = await ensureTaqeemAuthorized(
+    const result = await performTaqeemActions({
+      report,
+      queuedActions: queued,
+      approachSelections: resolvedApproachSelections,
       token,
+      login,
       onViewChange,
       isTaqeemLoggedIn,
-      0, // assetCount — no point deduction for real estate
-      login,
       setTaqeemStatus,
-      { isGuest: !token },
-    );
+      onProgress: onStateChange,
+      onAnimating: onAnimatingChange,
+    });
 
-    const ok =
-      authStatus === true ||
-      authStatus?.success === true ||
-      [
-        "SUCCESS",
-        "CHECK",
-        "AUTHORIZED",
-        "SYNCED",
-        "LOGIN_SUCCESS",
-        "NORMAL_ACCOUNT",
-        "BOOTSTRAP_GRANTED",
-      ].includes(String(authStatus?.status || "").toUpperCase());
-
-    if (!ok) {
-      setBusy(false);
-      return; // ensureTaqeemAuthorized already redirects to login if needed
-    }
-
-    if (queued.includes("submit")) {
-      setAnimating(["submitted"]);
-      let submitResult = null;
-      try {
-        let pdfPath = null;
-
-        if (window?.electronAPI?.downloadRealEstatePdf) {
-          const pdfResult = await window.electronAPI.downloadRealEstatePdf(
-            report.id || report.id,
-          );
-          if (pdfResult?.status === "SUCCESS" && pdfResult.filePath) {
-            pdfPath = pdfResult.filePath;
-          } else {
-            console.warn(
-              "[RealEstateUpload] PDF download failed, submitting without report_asset_file:",
-              pdfResult?.error,
-            );
-          }
-        }
-
-        if (window?.electronAPI?.submitRealEstateReport) {
-          submitResult = await window.electronAPI.submitRealEstateReport(
-            reportId,
-            pdfPath,
-            resolvedApproachSelections,
-          );
-        } else {
-          console.log(
-            "[RealEstateUpload] submitRealEstateReport not available, recordId:",
-            reportId,
-          );
-        }
-      } catch (err) {
-        console.error("[RealEstateUpload] submitRealEstateReport error:", err);
-      }
-
-      // Pull the freshly-minted report_id (Taqeem ID) out of the result the
-      // moment submission finishes, so the row updates without a refetch.
-      // create_and_submit_report returns { status, report_id, ... } for a
-      // single record; _run_filler wraps that in results[0] when called via
-      // run_real_estate_form_fill — cover both shapes defensively.
-      const newTaqeemId =
-        submitResult?.report_id ??
-        submitResult?.results?.[0]?.report_id ??
-        submitResult?.data?.report_id ??
-        null;
-
-      setDummyState((prev) => {
-        const next = {
-          ...prev,
-          submitted: true,
-          ...(newTaqeemId ? { taqeemId: newTaqeemId, idFetched: true } : {}),
-        };
-        if (onStateChange) onStateChange(next);
-        return next;
-      });
-      setAnimating([]);
-    }
-    if (queued.includes("send")) await animateStep("sent", "sent");
-    if (queued.includes("approve")) await animateStep("approved", "approved");
-
-    if (onAction) queued.forEach((a) => onAction(a, reportId));
+    if (result.ok && onAction) queued.forEach((a) => onAction(a, reportId));
     setQueued([]);
     setBusy(false);
   };
+
   const handleGo = () => {
     if (!queued.length) return;
 
     if (!selectedCompany || selectedCompany.type !== "real-estate") {
-      setShowWarning(true); // or a dedicated "select company" modal
+      setShowWarning(true);
       return;
     }
 
@@ -826,25 +900,28 @@ const ActionSelector = ({
         return;
       }
 
-      // 0 or 1 method — auto-assign primary and proceed directly
       const auto = {};
       Object.keys(used).forEach((key) => {
         auto[key] = "1";
       });
       setApproachSelections(auto);
 
-      if (missingFields.length > 0) setShowWarning(true);
+      if (missingFields.length > 0 || warningFields.length > 0)
+        setShowWarning(true);
       else proceed(auto);
-      return; // ← early return so we don't fall through to the proceed below
+      return;
     }
 
-    if (missingFields.length > 0) setShowWarning(true);
+    if (missingFields.length > 0 || warningFields.length > 0)
+      setShowWarning(true);
     else proceed();
   };
+
   const handleApproachConfirm = (selections) => {
     setApproachSelections(selections);
     setShowApproachModal(false);
-    if (missingFields.length > 0) setShowWarning(true);
+    if (missingFields.length > 0 || warningFields.length > 0)
+      setShowWarning(true);
     else proceed(selections);
   };
 
@@ -854,8 +931,12 @@ const ActionSelector = ({
         className="flex items-center gap-1 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {missingFields.length > 0 && (
-          <IncompleteDataBadge missingFields={missingFields} iconOnly />
+        {(missingFields.length > 0 || warningFields.length > 0) && (
+          <IncompleteDataBadge
+            missingFields={missingFields}
+            warningFields={warningFields}
+            iconOnly
+          />
         )}
         <ActionDropdown
           actions={ACTIONS}
@@ -895,11 +976,11 @@ const ActionSelector = ({
               </div>
               <div>
                 <p className="text-[13px] font-bold text-slate-800">
-                  Action may fail
+                  Missing required fields
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  These fields are missing and could cause the submission to
-                  fail:
+                  The following fields are missing. If you continue, default
+                  values will be used for them:
                 </p>
               </div>
             </div>
@@ -934,9 +1015,15 @@ const ActionSelector = ({
     </>
   );
 };
-const IncompleteDataBadge = ({ missingFields, iconOnly = false }) => {
+const IncompleteDataBadge = ({
+  missingFields,
+  warningFields = [],
+  iconOnly = false,
+}) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const hasAny = missingFields.length > 0 || warningFields.length > 0;
+  if (!hasAny) return null;
 
   return (
     <div
@@ -959,34 +1046,66 @@ const IncompleteDataBadge = ({ missingFields, iconOnly = false }) => {
         />
         {!iconOnly && (
           <>
-            {missingFields.length} missing field
-            {missingFields.length > 1 ? "s" : ""}
+            {missingFields.length > 0 && (
+              <>
+                {missingFields.length} missing field
+                {missingFields.length > 1 ? "s" : ""}
+              </>
+            )}
+            {missingFields.length > 0 && warningFields.length > 0 && " · "}
+            {warningFields.length > 0 && (
+              <>
+                {warningFields.length} warning
+                {warningFields.length > 1 ? "s" : ""}
+              </>
+            )}
             <ChevronDown className="w-3 h-3 text-amber-400" />
           </>
         )}
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1.5 z-20 w-56 rounded-xl border border-amber-200 bg-white shadow-lg p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 mb-2">
-            Missing fields
-          </p>
-          <ul className="space-y-1">
-            {missingFields.map(({ label }) => (
-              <li
-                key={label}
-                className="flex items-center gap-1.5 text-[11px] text-slate-600"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                {label}
-              </li>
-            ))}
-          </ul>
+        <div className="absolute left-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-amber-200 bg-white shadow-lg p-3 space-y-3">
+          {missingFields.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-rose-500 mb-2">
+                Missing fields
+              </p>
+              <ul className="space-y-1">
+                {missingFields.map(({ label }) => (
+                  <li
+                    key={label}
+                    className="flex items-center gap-1.5 text-[11px] text-slate-600"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {warningFields.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 mb-2">
+                Warnings
+              </p>
+              <ul className="space-y-1">
+                {warningFields.map(({ label, key }) => (
+                  <li
+                    key={key}
+                    className="flex items-start gap-1.5 text-[11px] text-slate-600"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0 mt-1" />
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
-
 // ─── Micro components ──────────────────────────────────────────────────────
 const Field = ({ label, value, mono = false, span = 1 }) => (
   <div className={span === 2 ? "col-span-2" : ""}>
@@ -1044,7 +1163,10 @@ const Tag = ({ children, color = "slate" }) => {
 // ─── Expanded detail ───────────────────────────────────────────────────────
 const ExpandedDetail = ({ report }) => {
   const e = report.evalData;
-  const s = e.availableServices || {};
+  const cfg = STATUS_CONFIG[report.report_status] || STATUS_CONFIG.INCOMPLETE;
+  const { missing: missingFields, warnings: warningFields } =
+    getMissingFields(report);
+  const s = e.availableServices || {}; // ← re-add
   const env = (e.surroundingEnvironment || []).map((k) => ENV_LABELS[k] || k);
 
   return (
@@ -1418,23 +1540,18 @@ const ReportRow = ({
   isTaqeemLoggedIn,
   setTaqeemStatus,
   selectedCompany,
+  taqeemState,
+  onStateChange,
+  animatingSteps,
+  onAnimatingChange,
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const [taqeemState, setTaqeemState] = useState({
-    idFetched: !!report.taqeemId,
-    submitted: report.taqeemSubmitted,
-    sent: report.taqeemSent,
-    approved: report.taqeemApproved,
-    taqeemId: report.taqeemId,
-  });
-
-  const [animatingSteps, setAnimatingSteps] = useState([]);
 
   const e = report.evalData;
   const cfg = STATUS_CONFIG[report.report_status] || STATUS_CONFIG.INCOMPLETE;
-  const missingFields = getMissingFields(report);
+  const { missing: missingFields, warnings: warningFields } =
+    getMissingFields(report);
 
-  // Bottom-left badge: reflects the taqeem workflow state
   const getBottomBadge = () => {
     if (taqeemState.approved)
       return {
@@ -1483,7 +1600,6 @@ const ReportRow = ({
         className="px-4 pt-3 pb-2 cursor-pointer select-none"
         onClick={() => setExpanded((v) => !v)}
       >
-        {/* Main info line */}
         <div className="flex items-center gap-3">
           <div
             className="shrink-0 w-5 flex items-center justify-center"
@@ -1503,7 +1619,6 @@ const ReportRow = ({
               <ChevronRight className="w-4 h-4" />
             )}
           </div>
-          {/* Badge — fixed w-24 so "Approved", "Submitted", "New" etc. don't shift layout */}
           <div className="shrink-0 w-24 flex items-center">
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${bottomBadge.pill}`}
@@ -1538,7 +1653,6 @@ const ReportRow = ({
               animating={animatingSteps}
             />
           </div>
-          {/* Action — fixed w-48 so the dropdown+button never shift other columns */}
           <div
             className="shrink-0 w-48 flex items-center justify-end gap-2"
             onClick={(ev) => ev.stopPropagation()}
@@ -1547,8 +1661,10 @@ const ReportRow = ({
               reportId={report.id}
               report={report}
               missingFields={missingFields}
-              onStateChange={setTaqeemState}
-              onAnimatingChange={setAnimatingSteps}
+              warningFields={warningFields}
+              taqeemState={taqeemState}
+              onStateChange={onStateChange}
+              onAnimatingChange={onAnimatingChange}
               token={token}
               login={login}
               onViewChange={onViewChange}
@@ -1577,6 +1693,36 @@ export default function RealEstateUpload({ onViewChange }) {
   const { taqeemStatus, setTaqeemStatus } = useNavStatus();
   const isTaqeemLoggedIn = taqeemStatus?.state === "success";
   const [authError, setAuthError] = useState("");
+  const [taqeemStates, setTaqeemStates] = useState({});
+  const [animatingByReport, setAnimatingByReport] = useState({});
+
+  const defaultTaqeemState = (report) => ({
+    idFetched: !!report.taqeemId,
+    submitted: report.taqeemSubmitted,
+    sent: report.taqeemSent,
+    approved: report.taqeemApproved,
+    taqeemId: report.taqeemId,
+  });
+
+  const getTaqeemState = (report) =>
+    taqeemStates[report.id] ?? defaultTaqeemState(report);
+
+  const patchTaqeemState = (report, patch) => {
+    setTaqeemStates((prev) => ({
+      ...prev,
+      [report.id]: {
+        ...(prev[report.id] ?? defaultTaqeemState(report)),
+        ...patch,
+      },
+    }));
+  };
+
+  const getAnimating = (reportId) => animatingByReport[reportId] || [];
+
+  const setAnimatingForReport = (reportId, arr) => {
+    setAnimatingByReport((prev) => ({ ...prev, [reportId]: arr }));
+  };
+
   const {
     reports: allReports,
     loading,
@@ -1785,12 +1931,63 @@ export default function RealEstateUpload({ onViewChange }) {
   const clearSelection = () => setSelectedIds(new Set());
 
   const handleBulkAction = async (actionId, ids) => {
-    for (const reportId of ids) {
-      await openTaqeemBrowser(() => {}, reportId, actionId);
+    if (!selectedCompany || selectedCompany.type !== "real-estate") {
+      setAuthError(
+        "Select a Real Estate company from the sidebar before submitting reports to Taqeem.",
+      );
+      return;
     }
+    setAuthError("");
+
+    // Go through the selected reports one at a time (not in parallel) so
+    // each row's own progress bar animates in turn, mirroring the single-row
+    // "Go" button's behavior.
+    for (const reportId of ids) {
+      const report = allReports.find((r) => r.id === reportId);
+      if (!report) continue;
+
+      const currentState = getTaqeemState(report);
+
+      // Same locking rules as the single-row selector — skip a step if its
+      // prerequisite hasn't happened for this particular report yet.
+      if (
+        actionId === "send" &&
+        !(currentState.submitted || currentState.taqeemId)
+      ) {
+        continue;
+      }
+      if (actionId === "approve" && !currentState.sent) {
+        continue;
+      }
+
+      let approachSelections = null;
+      if (actionId === "submit") {
+        const used = getUsedApproachMethods(report.evalData || {});
+        // Bulk submit can't pop a per-report modal to choose primary/secondary,
+        // so default to the same convention used for the single-row auto-path:
+        // first used method is primary, any others are secondary.
+        approachSelections = {};
+        Object.keys(used).forEach((key, idx) => {
+          approachSelections[key] = idx === 0 ? "1" : "2";
+        });
+      }
+
+      await performTaqeemActions({
+        report,
+        queuedActions: [actionId],
+        approachSelections,
+        token,
+        login,
+        onViewChange,
+        isTaqeemLoggedIn,
+        setTaqeemStatus,
+        onProgress: (patch) => patchTaqeemState(report, patch),
+        onAnimating: (arr) => setAnimatingForReport(report.id, arr),
+      });
+    }
+
     clearSelection();
   };
-
   const statusCounts = Object.keys(STATUS_CONFIG).reduce((acc, k) => {
     acc[k] = allReports.filter((r) => r.report_status === k).length;
     return acc;
@@ -1913,6 +2110,13 @@ export default function RealEstateUpload({ onViewChange }) {
             )}
           </div>
 
+          {authError && (
+            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span className="text-sm">{authError}</span>
+            </div>
+          )}
+
           {/* ── Bulk action bar (only when rows selected) ── */}
           {selectedIds.size > 0 && (
             <BulkBar
@@ -1943,6 +2147,12 @@ export default function RealEstateUpload({ onViewChange }) {
                   isTaqeemLoggedIn={isTaqeemLoggedIn}
                   setTaqeemStatus={setTaqeemStatus}
                   selectedCompany={selectedCompany}
+                  taqeemState={getTaqeemState(report)}
+                  onStateChange={(patch) => patchTaqeemState(report, patch)}
+                  animatingSteps={getAnimating(report.id)}
+                  onAnimatingChange={(arr) =>
+                    setAnimatingForReport(report.id, arr)
+                  }
                 />
               ))
             ) : (

@@ -120,7 +120,11 @@ export const SessionProvider = ({ children }) => {
 
     setUser(normalizedUser);
     setIsGuest(guestFlag);
-    safeSet(sessionStorageRef, USER_STORAGE_KEY, JSON.stringify(normalizedUser));
+    safeSet(
+      sessionStorageRef,
+      USER_STORAGE_KEY,
+      JSON.stringify(normalizedUser),
+    );
     safeRemove(localStorageRef, USER_STORAGE_KEY);
 
     if (accessToken) {
