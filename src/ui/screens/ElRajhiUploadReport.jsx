@@ -1410,7 +1410,6 @@ const UploadReportElrajhi = ({ onViewChange }) => {
 
   const { token, isGuest } = useSession();
 
-
   const handleSubmitElrajhi = async () => {
     await executeWithAuth(
       async (params) => {
@@ -2618,6 +2617,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
           });
           const response = await axios.post(
             "http://167.71.231.64:3000/api/upload",
+            // "http://localhost:3000/api/upload",
             formData,
             {
               headers: {
@@ -3993,9 +3993,7 @@ const UploadReportElrajhi = ({ onViewChange }) => {
                 type="button"
                 onClick={handleSubmitElrajhi}
                 disabled={
-                  sendingValidation ||
-                  !canSendReports ||
-                  !elrajhiCompanyContext
+                  sendingValidation || !canSendReports || !elrajhiCompanyContext
                 }
                 title={
                   sendingValidation || (canSendReports && elrajhiCompanyContext)

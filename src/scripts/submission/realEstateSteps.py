@@ -142,7 +142,51 @@ form_steps = [
     {"field_map": field_map_3, "field_types": field_types_3, "is_valuers_step": False},
 ]
 
-# realEstateSteps.py  ── add at the bottom ──
+DEFAULT_APPROACH_VALUE = "1"  # placeholder used only when zero approach data exists
+
+# Defaults applied to required ("# req") fields when the source value is
+# missing/empty. Values here are already in Taqeem's target format (i.e.
+# post-translation), not System-A ids.
+REQUIRED_FIELD_DEFAULTS = {
+    "report_title": "Valuation Report",
+    "valuationPurpose": 14,  # "Other"
+    "valuationHypothesis": 2,  # "Current Use"
+    "valuationBasis": 1,  # "Market Value"
+    "finalAssetValue": "0",
+    "clientName": "Not Provided",
+    "contactNo": "123123123",
+    "propertyType": 16,  # "Other"
+    "landUse": 1,
+    "lat": "24.7136",  # Riyadh fallback
+    "lng": "46.6753",
+    "regionName": "Riyadh",
+    "cityName": "Riyadh",
+    "deedNumber": "N/A",
+    "ownershipType": 1,  # "Owner"
+    "street_facing_fronts": 6,  # target value (source 1 -> 6)
+    "surroundingEnvironment": ["otherServices"],
+    "landSpace": "10",
+    "authorized_land_cover_percentage": "10",
+    "authorized_height": "0",
+    "street": "10",
+}
+
+
+def _apply_default(field_name, value):
+    """Returns value if non-empty, else the configured default for that
+    required field (evalDate/reportDate default to today's date)."""
+    is_empty = (
+        value is None
+        or (isinstance(value, str) and value.strip() == "")
+        or (isinstance(value, (list, dict)) and len(value) == 0)
+    )
+    if not is_empty:
+        return value
+    if field_name in ("evalDate", "reportDate"):
+        from datetime import date
+
+        return date.today().isoformat()
+    return REQUIRED_FIELD_DEFAULTS.get(field_name, value)
 
 
 def _num(s):
@@ -368,13 +412,17 @@ def resolve_approach_statuses(
             statuses[key] = str(sel) if sel in ("1", "2", 1, 2) else None
         return statuses
 
-    # No selections provided — assign "1" to only the first method with a value,
-    # leave the rest as None (unused).
     statuses: dict[str, str | None] = {"market": None, "income": None, "cost": None}
     for key, val in computed.items():
         if (val or 0) > 0:
             statuses[key] = "1"
-            break  # ← stop after the first one
+            break
+
+    # Constraint: at least one approach must be set. If none has real data,
+    # default to Market as primary with a placeholder value.
+    if not any(statuses.values()):
+        statuses["market"] = "1"
+
     return statuses
 
 
@@ -531,36 +579,56 @@ def extract_record_values(record, approach_selections=None):
         replacement_cost_value,
         approach_selections,
     )
+    comparison_value_str = _fmt_value(comparison_value)
+    if approach_statuses["market"] and comparison_value_str is None:
+        comparison_value_str = DEFAULT_APPROACH_VALUE
+
+    income_value_str = _fmt_value(investment_method_value)
+    if approach_statuses["income"] and income_value_str is None:
+        income_value_str = DEFAULT_APPROACH_VALUE
+
+    cost_value_str = _fmt_value(replacement_cost_value)
+    if approach_statuses["cost"] and cost_value_str is None:
+        cost_value_str = DEFAULT_APPROACH_VALUE
 
     return {
         # ── Step 1 ─────────────────────────────────────────────
-        "report_title": "0",  # missing from record
-        "valuationPurpose": translate_field(
-            "valuationPurpose", record.get("valuationPurpose")
+        "report_title": _apply_default(
+            "report_title",
+            translate_field("report_title", record.get("report_title")),
         ),
-        "valuationHypothesis": translate_field(
-            "valuationHypothesis", record.get("valuationHypothesis")
+        "valuationPurpose": _apply_default(
+            "valuationPurpose",
+            translate_field("valuationPurpose", record.get("valuationPurpose")),
         ),
-        "valuationBasis": translate_field(
-            "valuationBasis", record.get("valuationBasis")
+        "valuationHypothesis": _apply_default(
+            "valuationHypothesis",
+            translate_field("valuationHypothesis", record.get("valuationHypothesis")),
+        ),
+        "valuationBasis": _apply_default(
+            "valuationBasis",
+            translate_field("valuationBasis", record.get("valuationBasis")),
         ),
         "report_type": None,  # missing from record
-        "evalDate": eval_data.get("evalDate"),  # evalData
-        "reportDate": eval_data.get("reportDate"),  # evalData
+        "evalDate": _apply_default("evalDate", eval_data.get("evalDate")),
+        "reportDate": _apply_default("reportDate", eval_data.get("reportDate")),
         "assumptions": eval_data.get("assumptions"),  # evalData
         "special_assumptions": None,  # missing from record
-        "finalAssetValue": eval_data.get("finalAssetValue"),  # evalData
+        "finalAssetValue": _apply_default(
+            "finalAssetValue", eval_data.get("finalAssetValue")
+        ),
         "valuation_currency": 1,  # missing from record
         "report_asset_file": None,  # missing from record
-        "clientName": record.get("clientName"),  # evalData
-        "contactNo": record.get("contactNo"),  # evalData
+        "clientName": _apply_default("clientName", record.get("clientName")),
+        "contactNo": _apply_default("contactNo", record.get("contactNo")),
         "email_address": record.get("email_address"),  # missing from record
         "otherUsers": eval_data.get("otherUsers"),  # evalData
         # "valuer_name": None,
         # "contribution_percentage": None,  # missing from record
         # ── Step 2 ─────────────────────────────────────────────
-        "propertyType": translate_field(
-            "propertyType", eval_data.get("propertyTypeId")
+        "propertyType": _apply_default(
+            "propertyType",
+            translate_field("propertyType", eval_data.get("propertyTypeId")),
         ),
         "inspected_at": eval_data.get("evalDate"),  # evalData (closest match)
         # NOTE: comparisonValue / investmentMethodValue / replacementCostValue are
@@ -579,12 +647,12 @@ def extract_record_values(record, approach_selections=None):
         "replacementCostValue": _fmt_value(replacement_cost_value)
         if approach_statuses["cost"]
         else None,
-        "lng": eval_data.get("lng"),  # evalData
-        "lat": eval_data.get("lat"),  # evalData
+        "lng": _apply_default("lng", eval_data.get("lng")),
+        "lat": _apply_default("lat", eval_data.get("lat")),
         "landUse": eval_data.get("assetCategoryId"),  # evalData
         "country": 1,  # missing from record
-        "regionName": eval_data.get("regionName"),  # evalData
-        "cityName": eval_data.get("cityName"),  # evalData
+        "regionName": _apply_default("regionName", eval_data.get("regionName")),
+        "cityName": _apply_default("cityName", eval_data.get("cityName")),
         # taqeemId codes resolved server-side from the `regions` / `cities`
         # collections — these are the actual <option value> the site
         # expects, so set_location() can set them directly instead of
@@ -594,22 +662,30 @@ def extract_record_values(record, approach_selections=None):
         # ── Step 3 ─────────────────────────────────────────────
         "blockNumber": eval_data.get("blockNumber"),  # evalData
         "parcelNumber": eval_data.get("parcelNumber"),  # evalData
-        "deedNumber": eval_data.get("deedNumber"),  # evalData
-        "ownershipType": translate_field("ownershipType", record.get("ownershipType")),
+        "deedNumber": _apply_default("deedNumber", eval_data.get("deedNumber")),
+        "ownershipType": _apply_default(
+            "ownershipType",
+            translate_field("ownershipType", record.get("ownershipType")),
+        ),
         "ownershipPercentage": eval_data.get("ownershipPercentage"),  # evalData
         "rental_duration": None,  # missing from record
         "rental_end_date": None,  # missing from record
-        "street_facing_fronts": translate_field(
-            "street_facing_fronts", eval_data.get("streetFronts")
+        "street_facing_fronts": _apply_default(
+            "street_facing_fronts",
+            translate_field("street_facing_fronts", eval_data.get("streetFronts")),
         ),
         "distance_from_city_center": None,  # missing from record
-        "surroundingEnvironment": eval_data.get(
-            "surroundingEnvironment"
-        ),  # evalData (array)
-        "landSpace": eval_data.get("landSpace"),  # evalData
+        "surroundingEnvironment": _apply_default(
+            "surroundingEnvironment", eval_data.get("surroundingEnvironment")
+        ),
+        "landSpace": _apply_default("landSpace", eval_data.get("landSpace")),
         "propertyArea": eval_data.get("propertyArea"),  # evalData
-        "authorized_land_cover_percentage": eval_data.get("authorizedLandCoverPct"),
-        "authorized_height": eval_data.get("elevation"),  # missing from record
+        "authorized_land_cover_percentage": _apply_default(
+            "authorized_land_cover_percentage", eval_data.get("authorizedLandCoverPct")
+        ),
+        "authorized_height": _apply_default(
+            "authorized_height", eval_data.get("elevation")
+        ),
         "land_leased": None,  # missing from record
         "buildingCondition": building_condition.get(
             "status"
@@ -620,5 +696,5 @@ def extract_record_values(record, approach_selections=None):
         "propertyModel": eval_data.get("propertyModel"),  # evalData
         "availableServices": eval_data.get("availableServices"),  # evalData (dict)
         "propertyAge": eval_data.get("propertyAge"),  # evalData
-        "street": eval_data.get("streetWidth"),  # evalData
+        "street": _apply_default("street", eval_data.get("streetWidth")),
     }
