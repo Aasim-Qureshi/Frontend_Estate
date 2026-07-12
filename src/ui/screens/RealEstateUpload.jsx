@@ -614,7 +614,55 @@ function getUsedApproachMethods(evalData) {
   if (cost > 0) used.cost = cost;
   return used;
 }
+const RealEstateCompanyFetchModal = ({ busy, error, onContinue, onCancel }) => (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+    onClick={busy ? undefined : onCancel}
+  >
+    <div
+      className="w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl p-5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+          <Building2 className="w-4 h-4 text-indigo-600" />
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-slate-800">
+            No real estate companies found
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            We couldn't find any saved real estate companies. Continue to fetch
+            them from Taqeem — you may need to log in first.
+          </p>
+        </div>
+      </div>
 
+      {error && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+          {error}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onContinue}
+          disabled={busy}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Continue"}
+        </button>
+      </div>
+    </div>
+  </div>
+);
 // ─── Approach role picker (primary / secondary / unused) ─────────────────────
 const APPROACH_LABELS = {
   market: "Comparison Approach",
@@ -1684,6 +1732,8 @@ const ReportRow = ({
     </div>
   );
 };
+
+
 // ─── Main Screen ────────────────────────────────────────────────────────────
 export default function RealEstateUpload({ onViewChange }) {
   const [statusFilter, setStatusFilter] = useState("");
@@ -1695,6 +1745,92 @@ export default function RealEstateUpload({ onViewChange }) {
   const [authError, setAuthError] = useState("");
   const [taqeemStates, setTaqeemStates] = useState({});
   const [animatingByReport, setAnimatingByReport] = useState({});
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
+  const [companyModalBusy, setCompanyModalBusy] = useState(false);
+  const [companyModalError, setCompanyModalError] = useState("");
+
+  const waitForManualTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const res = await window.electronAPI.checkStatus();
+      const statusText = String(res?.status || "").toUpperCase();
+      const loggedIn = res?.browserOpen && statusText.includes("SUCCESS");
+      const notLogged = statusText.includes("NOT_LOGGED_IN");
+      if (loggedIn) return res;
+      if (!res?.browserOpen && !notLogged) {
+        throw new Error("Login window closed.");
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error("Timed out waiting for Taqeem login.");
+  };
+
+  const fetchRealEstateCompaniesViaTaqeem = async () => {
+    setCompanyModalBusy(true);
+    setCompanyModalError("");
+    try {
+      if (!isTaqeemLoggedIn) {
+        if (!window?.electronAPI?.openTaqeemLogin) {
+          throw new Error("Login handler unavailable.");
+        }
+        setTaqeemStatus("info", "Opening Taqeem login...");
+        const loginResult = await window.electronAPI.openTaqeemLogin({
+          automationOnly: true,
+          onlyIfClosed: true,
+          navigateIfOpen: false,
+        });
+        if (loginResult?.status !== "SUCCESS") {
+          throw new Error(loginResult?.error || "Taqeem login failed.");
+        }
+        setTaqeemStatus("info", "Waiting for you to finish login...");
+        await waitForManualTaqeemLogin();
+        setTaqeemStatus("success", "Taqeem login: On");
+      }
+
+      if (!window?.electronAPI?.getCompaniesRealEstate) {
+        throw new Error("Real estate company fetch unavailable.");
+      }
+
+      const data = await window.electronAPI.getCompaniesRealEstate();
+      if (
+        data?.status === "SUCCESS" &&
+        Array.isArray(data.data) &&
+        data.data.length > 0
+      ) {
+        const tagged = data.data.map((c) => ({ ...c, type: "real-estate" }));
+        const freshSession = await ensureGuestSession();
+        let synced = tagged;
+        if (syncCompanies) {
+          try {
+            const result = await syncCompanies(tagged, "real-estate", {
+              token: freshSession?.token,
+              userId: freshSession?.userId,
+            });
+            if (Array.isArray(result) && result.length > 0) {
+              synced = result.map((c) => ({ ...c, type: c.type || "real-estate" }));
+            }
+          } catch (syncErr) {
+            console.error("[RealEstateUpload] syncCompanies failed:", syncErr);
+            synced = tagged;
+          }
+        }
+        await replaceCompanies(synced, {
+          type: "real-estate",
+          quiet: true,
+          skipNavigation: true,
+          autoSelect: true,
+        });
+        setShowCompanyModal(false);
+      } else {
+        setCompanyModalError(data?.error || "No real estate companies found.");
+      }
+    } catch (err) {
+      setCompanyModalError(err?.message || "Failed to fetch companies from Taqeem.");
+      setTaqeemStatus("error", err?.message || "Taqeem login failed.");
+    } finally {
+      setCompanyModalBusy(false);
+    }
+  };
 
   const defaultTaqeemState = (report) => ({
     idFetched: !!report.taqeemId,
@@ -1805,82 +1941,34 @@ export default function RealEstateUpload({ onViewChange }) {
     }
     return null;
   };
+
+
+
   useEffect(() => {
     const hasRealEstateSelection = selectedCompany?.type === "real-estate";
     if (hasRealEstateSelection) return;
 
     (async () => {
       try {
-        const freshSession = await ensureGuestSession(); // { token, userId } or null
-        console.log("[RealEstateUpload mount] freshSession:", freshSession);
+        const freshSession = await ensureGuestSession();
 
-        let loaded = await ensureCompaniesLoaded("real-estate", {
+        const loaded = await ensureCompaniesLoaded("real-estate", {
           token: freshSession?.token,
           user: freshSession?.userId ? { _id: freshSession.userId } : undefined,
         });
-        console.log(
-          "[RealEstateUpload mount] ensureCompaniesLoaded (DB) result:",
-          loaded,
-        );
 
-        if (
-          (!loaded || loaded.length === 0) &&
-          window?.electronAPI?.getCompaniesRealEstate
-        ) {
-          const data = await window.electronAPI.getCompaniesRealEstate();
-          console.log(
-            "[RealEstateUpload mount] automation getCompaniesRealEstate:",
-            data,
-          );
-          if (
-            data?.status === "SUCCESS" &&
-            Array.isArray(data.data) &&
-            data.data.length > 0
-          ) {
-            const tagged = data.data.map((c) => ({
-              ...c,
-              type: "real-estate",
-            }));
-            let synced = tagged;
-            if (syncCompanies) {
-              try {
-                const result = await syncCompanies(tagged, "real-estate", {
-                  token: freshSession?.token, // ← bypass stale closure entirely
-                  userId: freshSession?.userId,
-                });
-                if (Array.isArray(result) && result.length > 0) {
-                  synced = result.map((c) => ({
-                    ...c,
-                    type: c.type || "real-estate",
-                  }));
-                } else {
-                  console.warn(
-                    "[RealEstateUpload] syncCompanies returned no rows — not persisted.",
-                  );
-                }
-              } catch (syncErr) {
-                console.error(
-                  "[RealEstateUpload] syncCompanies failed — NOT persisted to DB:",
-                  syncErr,
-                );
-                synced = tagged;
-              }
-            }
-            loaded = synced;
-            await replaceCompanies(loaded, {
-              type: "real-estate",
-              quiet: true,
-              skipNavigation: true,
-              autoSelect: true,
-            });
-          }
+        if (loaded && loaded.length > 0) {
+          await autoSelectDefaultCompany({
+            type: "real-estate",
+            skipNavigation: true,
+            companiesList: loaded,
+          });
+          return;
         }
 
-        await autoSelectDefaultCompany({
-          type: "real-estate",
-          skipNavigation: true,
-          companiesList: loaded,
-        });
+        // Nothing saved yet — don't silently trigger a Taqeem fetch/login.
+        // Ask the user first.
+        setShowCompanyModal(true);
       } catch (err) {
         console.warn(
           "[RealEstateUpload] Failed to load real estate companies on mount",
@@ -1889,7 +1977,6 @@ export default function RealEstateUpload({ onViewChange }) {
       }
     })();
   }, [selectedCompany?.type]);
-
   const filtered = allReports.filter((r) => {
     const matchStatus = statusFilter ? r.report_status === statusFilter : true;
     const q = search.toLowerCase();
@@ -2174,6 +2261,14 @@ export default function RealEstateUpload({ onViewChange }) {
             )}
           </div>
         </>
+      )}
+      {showCompanyModal && (
+        <RealEstateCompanyFetchModal
+          busy={companyModalBusy}
+          error={companyModalError}
+          onContinue={fetchRealEstateCompaniesViaTaqeem}
+          onCancel={() => setShowCompanyModal(false)}
+        />
       )}
     </div>
   );
