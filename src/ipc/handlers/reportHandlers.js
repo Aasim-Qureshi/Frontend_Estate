@@ -1293,6 +1293,14 @@ const reportHandlers = {
     }
   },
 
+  async handleRealEstateFormFillBulk(event, recordIds, pdfPaths, approachSelections) {
+    try {
+      return await pythonAPI.report.realEstateFormFillBulk(recordIds, pdfPaths, approachSelections);
+    } catch (err) {
+      return { status: "FAILED", error: err.message || String(err) };
+    }
+  },
+
   async handleDownloadRealEstatePdf(event, reportId) {
     try {
       const res = await net.fetch(

@@ -383,6 +383,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       pdfPath,
       approachSelections,
     ),
+
+    submitRealEstateReportsBulk: (recordIds, pdfPaths = null, approachSelections = null) =>
+      safeInvoke("submit-real-estate-reports-bulk", recordIds, pdfPaths, approachSelections),
   downloadRealEstatePdf: (reportId) =>
     safeInvoke("download-real-estate-pdf", reportId),
 });

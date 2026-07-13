@@ -1,4 +1,6 @@
 import sys
+from datetime import date
+
 
 field_map_1 = {
     "report_title": "[name='title']",  # req
@@ -152,7 +154,7 @@ REQUIRED_FIELD_DEFAULTS = {
     "valuationPurpose": 14,  # "Other"
     "valuationHypothesis": 2,  # "Current Use"
     "valuationBasis": 1,  # "Market Value"
-    "finalAssetValue": "0",
+    "finalAssetValue": "100",
     "clientName": "Not Provided",
     "contactNo": "123123123",
     "propertyType": 16,  # "Other"
@@ -169,12 +171,12 @@ REQUIRED_FIELD_DEFAULTS = {
     "authorized_land_cover_percentage": "10",
     "authorized_height": "0",
     "street": "10",
+    "regionId": 3,
+    "cityId": 1,
 }
 
 
 def _apply_default(field_name, value):
-    """Returns value if non-empty, else the configured default for that
-    required field (evalDate/reportDate default to today's date)."""
     is_empty = (
         value is None
         or (isinstance(value, str) and value.strip() == "")
@@ -182,12 +184,9 @@ def _apply_default(field_name, value):
     )
     if not is_empty:
         return value
-    if field_name in ("evalDate", "reportDate"):
-        from datetime import date
-
+    if field_name in ("evalDate", "reportDate", "inspected_at"):
         return date.today().isoformat()
     return REQUIRED_FIELD_DEFAULTS.get(field_name, value)
-
 
 def _num(s):
     """Mirrors the frontend's `p(s)` parser: strips commas, parses float, invalid -> 0."""
@@ -410,6 +409,8 @@ def resolve_approach_statuses(
         for key in ("market", "income", "cost"):
             sel = approach_selections.get(key)
             statuses[key] = str(sel) if sel in ("1", "2", 1, 2) else None
+        if not any(statuses.values()):
+            statuses["market"] = "1"
         return statuses
 
     statuses: dict[str, str | None] = {"market": None, "income": None, "cost": None}
@@ -560,6 +561,16 @@ def translate_field(field_name: str, source_value) -> int | None:
         )
     return result
 
+def _pad_client_name(value, min_length=9, pad_char="_"):
+    """Pads a client name with trailing spaces if it's shorter than
+    min_length. Spaces are unobtrusive — they don't change how the name
+    reads/displays, they just satisfy the length constraint."""
+    if value is None:
+        return value
+    value = str(value)
+    if len(value) < min_length:
+        value = value + (pad_char * (min_length - len(value)))
+    return value
 
 def extract_record_values(record, approach_selections=None):
     """
@@ -619,8 +630,9 @@ def extract_record_values(record, approach_selections=None):
         ),
         "valuation_currency": 1,  # missing from record
         "report_asset_file": None,  # missing from record
-        "clientName": _apply_default("clientName", record.get("clientName")),
-        "contactNo": _apply_default("contactNo", record.get("contactNo")),
+        "clientName": _pad_client_name(
+                    _apply_default("clientName", record.get("clientName"))
+                ),        "contactNo": _apply_default("contactNo", record.get("contactNo")),
         "email_address": record.get("email_address"),  # missing from record
         "otherUsers": eval_data.get("otherUsers"),  # evalData
         # "valuer_name": None,
@@ -630,7 +642,7 @@ def extract_record_values(record, approach_selections=None):
             "propertyType",
             translate_field("propertyType", eval_data.get("propertyTypeId")),
         ),
-        "inspected_at": eval_data.get("evalDate"),  # evalData (closest match)
+        "inspected_at": _apply_default("inspected_at", eval_data.get("evalDate")),
         # NOTE: comparisonValue / investmentMethodValue / replacementCostValue are
         # COMPUTED, not stored — the DB only holds the raw building blocks
         # (comparisonRows, investmentEntries, replacementLines, etc). These mirror
@@ -657,8 +669,8 @@ def extract_record_values(record, approach_selections=None):
         # collections — these are the actual <option value> the site
         # expects, so set_location() can set them directly instead of
         # searching the dropdowns by regionName/cityName text.
-        "regionId": record.get("regionTaqeemId"),  # top-level (from DB lookup)
-        "cityId": record.get("cityTaqeemId"),  # top-level (from DB lookup)
+        "regionId": _apply_default("regionId", record.get("regionTaqeemId")),
+        "cityId": _apply_default("cityId", record.get("cityTaqeemId")),
         # ── Step 3 ─────────────────────────────────────────────
         "blockNumber": eval_data.get("blockNumber"),  # evalData
         "parcelNumber": eval_data.get("parcelNumber"),  # evalData
