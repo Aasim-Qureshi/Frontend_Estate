@@ -114,6 +114,36 @@ const STATUS_CONFIG = {
   },
 };
 
+const PROGRESS_STATUS_CONFIG = {
+  NOT_SUBMITTED: {
+    label: "Not Submitted",
+    dot: "bg-slate-300",
+    pill: "bg-slate-50 text-slate-500 border-slate-200",
+  },
+  SUBMITTED: {
+    label: "Submitted",
+    dot: "bg-indigo-400",
+    pill: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
+  SENT: {
+    label: "Sent to Approver",
+    dot: "bg-blue-400",
+    pill: "bg-blue-50 text-blue-700 border-blue-200",
+  },
+  APPROVED: {
+    label: "Approved",
+    dot: "bg-emerald-400",
+    pill: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+};
+
+const getProgressStatus = (taqeemState) => {
+  if (taqeemState.approved) return "APPROVED";
+  if (taqeemState.sent) return "SENT";
+  if (taqeemState.submitted || taqeemState.taqeemId) return "SUBMITTED";
+  return "NOT_SUBMITTED";
+};
+
 const ENV_LABELS = {
   mosque: "Mosque",
   commercialMarket: "Commercial Market",
@@ -890,15 +920,10 @@ const ActionSelector = ({
   if (taqeemState.approved) doneFromReport.add("approve");
 
   const isUnlocked = (actionId) => {
-    const action = ACTIONS.find((a) => a.id === actionId);
-    if (!action) return false;
-    if (actionId === "submit") return true;
-    if (doneFromReport.has(actionId)) return false;
-    if (!action.requires) return true;
-    return (
-      doneFromReport.has(action.requires) || queued.includes(action.requires)
-    );
-  };
+      // Temporarily disabled — only "submit" is available for now.
+      if (actionId !== "submit") return false;
+      return true;
+    };
 
   const toggleAction = (actionId) => {
     setQueued((prev) => {
@@ -1978,7 +2003,9 @@ export default function RealEstateUpload({ onViewChange }) {
     })();
   }, [selectedCompany?.type]);
   const filtered = allReports.filter((r) => {
-    const matchStatus = statusFilter ? r.report_status === statusFilter : true;
+      const matchStatus = statusFilter
+        ? getProgressStatus(getTaqeemState(r)) === statusFilter
+        : true;
     const q = search.toLowerCase();
     const matchSearch = q
       ? (r.assignmentNumber ?? "").includes(q) ||
@@ -2075,11 +2102,12 @@ export default function RealEstateUpload({ onViewChange }) {
 
     clearSelection();
   };
-  const statusCounts = Object.keys(STATUS_CONFIG).reduce((acc, k) => {
-    acc[k] = allReports.filter((r) => r.report_status === k).length;
-    return acc;
-  }, {});
-
+  const statusCounts = Object.keys(PROGRESS_STATUS_CONFIG).reduce((acc, k) => {
+      acc[k] = allReports.filter(
+        (r) => getProgressStatus(getTaqeemState(r)) === k,
+      ).length;
+      return acc;
+    }, {});
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6 space-y-4">
       {/* ── Page Header ── */}
@@ -2144,8 +2172,8 @@ export default function RealEstateUpload({ onViewChange }) {
 
             {/* Status filter counters */}
             <div className="flex flex-wrap gap-2">
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-                if (!statusCounts[key]) return null;
+                          {Object.entries(PROGRESS_STATUS_CONFIG).map(([key, cfg]) => {
+                            if (!statusCounts[key]) return null;
                 return (
                   <button
                     key={key}

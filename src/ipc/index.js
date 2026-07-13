@@ -387,6 +387,10 @@ function registerIpcHandlers() {
     reportHandlers.handleRealEstateFormFill,
   );
   ipcMain.handle(
+    "submit-real-estate-reports-bulk",
+    reportHandlers.handleRealEstateFormFillBulk
+  );
+  ipcMain.handle(
     "download-real-estate-pdf",
     reportHandlers.handleDownloadRealEstatePdf,
   );
@@ -413,6 +417,7 @@ function unregisterIpcHandlers() {
   ipcMain.removeAllListeners("open-taqeem-login");
   ipcMain.removeAllListeners("get-dummy-pdf-path");
   ipcMain.removeAllListeners("submit-real-estate-report");
+  ipcMain.removeAllListeners("submit-real-estate-report-bulk");
   ipcMain.removeAllListeners("download-real-estate-pdf");
 
   ipcMain.removeAllListeners("ping-worker");

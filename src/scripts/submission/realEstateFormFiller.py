@@ -169,7 +169,7 @@ async def run_real_estate_form_fill(
             finalize_submission=finalize_submission,
             pdf_path=pdf_path,
             approach_selections=approach_selections,
-        )
+            )
     except Exception as e:
         return {
             "status": "FAILED",
@@ -179,7 +179,7 @@ async def run_real_estate_form_fill(
 
 
 async def run_real_estate_form_fill_bulk(
-    browser, record_ids, finalize_submission=False, approach_selections=None
+    browser, record_ids, finalize_submission=False, pdf_paths=None, approach_selections=None
 ):
     """
     Submit multiple realEstate records.
@@ -202,6 +202,7 @@ async def run_real_estate_form_fill_bulk(
             records=records,
             process_id=process_id,
             finalize_submission=finalize_submission,
+            pdf_paths=pdf_paths,
             approach_selections=approach_selections,
         )
     except Exception as e:
@@ -218,12 +219,21 @@ async def _run_filler(
     process_id,
     finalize_submission=True,
     pdf_path=None,
+    pdf_paths=None,
     approach_selections=None,
 ):
     """
     Core logic: fill all three form steps sequentially, then finalize each report.
     No macro phase — realEstate reports are self-contained.
-    Always spawns a new browser.
+    Always spawns exactly ONE browser for the whole batch, reused for every
+    record in sequence, then stopped once at the end — this is what keeps
+    bulk submissions from opening/closing a browser per record.
+
+    pdf_path: single path applied to every record (legacy single-record callers).
+    pdf_paths: optional dict {record_id: path} for per-record PDFs (bulk callers).
+    approach_selections: either
+      - a flat dict {"market": "1", ...} applied to every record, or
+      - a dict keyed by record_id -> that same shape, for per-record selections.
     """
     new_browser = None
     try:
@@ -245,7 +255,7 @@ async def _run_filler(
             finalize_submission=finalize_submission,
         )
 
-        # Always spawn a fresh browser for realEstate
+        # Always spawn a single fresh browser for the whole batch.
         new_browser = await spawn_new_browser(browser, headless=False)
         main_page = new_browser.main_tab
 
@@ -289,21 +299,39 @@ async def _run_filler(
                     "completed": completed,
                     "failed": failed,
                     "total": total_records,
+                    "results": results,
                 }
+
+            record_id = str(record["id"])
 
             await update_progress(process_id, completed=completed, failed=failed)
             emit_progress(
                 process_id,
-                current_item=str(record["id"]),
+                current_item=record_id,
                 message=f"Submitting report {idx + 1}/{total_records}",
             )
+
+            # Resolve per-record pdf path: prefer pdf_paths[record_id], fall
+            # back to the single pdf_path (legacy single-record call shape).
+            record_pdf_path = None
+            if pdf_paths and record_id in pdf_paths:
+                record_pdf_path = pdf_paths[record_id]
+            elif pdf_path:
+                record_pdf_path = pdf_path
+
+            # Resolve per-record approach selections: if approach_selections
+            # is a dict keyed by this record_id, use that; otherwise treat it
+            # as one flat selection applied to every record.
+            record_approach_selections = approach_selections
+            if isinstance(approach_selections, dict) and record_id in approach_selections:
+                record_approach_selections = approach_selections[record_id]
 
             result = await create_and_submit_report(
                 main_page,
                 record,
                 create_url,
-                pdf_path=pdf_path,
-                approach_selections=approach_selections,
+                pdf_path=record_pdf_path,
+                approach_selections=record_approach_selections,
             )
             results.append(result)
 
@@ -312,14 +340,14 @@ async def _run_filler(
             else:
                 failed += 1
                 log(
-                    f"RealEstateFiller: failed for {record['id']}: {result.get('error')}",
+                    f"RealEstateFiller: failed for {record_id}: {result.get('error')}",
                     "ERROR",
                 )
 
             await update_progress(process_id, completed=completed, failed=failed)
             emit_progress(
                 process_id,
-                current_item=str(record["id"]),
+                current_item=record_id,
                 message=f"Submitted {completed}/{total_records} reports",
             )
 

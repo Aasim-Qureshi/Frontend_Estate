@@ -506,6 +506,15 @@ class ReportCommands {
       approachSelections,
     });
   }
+
+  async realEstateFormFillBulk(recordIds, pdfPaths = null, approachSelections = null) {
+    return this._sendCommand({
+      action: "submit-real-estate-reports-bulk",
+      recordIds,
+      pdfPaths,
+      approachSelections,
+    });
+  }
 }
 
 module.exports = ReportCommands;

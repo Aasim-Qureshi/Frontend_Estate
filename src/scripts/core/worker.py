@@ -1130,6 +1130,22 @@ async def handle_command(cmd):
 
         print(json.dumps(result), flush=True)
 
+    elif action == "submit-real-estate-reports-bulk":
+        from scripts.submission.realEstateFormFiller import run_real_estate_form_fill_bulk
+
+        browser = await get_browser()
+        record_ids = cmd.get("recordIds") or []
+        approach_selections = cmd.get("approachSelections")  # dict keyed by record_id if per-record
+
+        result = await run_real_estate_form_fill_bulk(
+            browser,
+            record_ids,
+            finalize_submission=False,
+            approach_selections=approach_selections,
+        )
+        result["commandId"] = cmd.get("commandId")
+        print(json.dumps(result), flush=True)
+
     elif action == "retry-create-report-by-id":
         browser = await get_browser()
 
