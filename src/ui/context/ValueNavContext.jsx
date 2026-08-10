@@ -137,6 +137,13 @@ export const ValueNavProvider = ({ children }) => {
   // Derived "active" list for whatever domain is selected
   const companies = companiesByType[domainToType(selectedDomain)] || [];
 
+  // Type -> domain id used by getDomainLabel/breadcrumbs
+  const typeToDomainId = (type) =>
+    type === "real-estate" ? "real-estate" : "equipments";
+
+
+
+
   const setCompaniesForType = useCallback((type, list) => {
     setCompaniesByType((prev) => ({ ...prev, [type]: list }));
   }, []);
@@ -231,6 +238,19 @@ export const ValueNavProvider = ({ children }) => {
       });
     },
     [t],
+  );
+
+  const companiesGrouped = useMemo(
+    () =>
+      Object.entries(companiesByType)
+        .filter(([, list]) => Array.isArray(list) && list.length > 0)
+        .map(([type, list]) => ({
+          type,
+          domainId: typeToDomainId(type),
+          label: getDomainLabel(typeToDomainId(type)),
+          companies: list,
+        })),
+    [companiesByType, getDomainLabel],
   );
 
   const normalizeCompanyList = useCallback((payload) => {
@@ -970,6 +990,7 @@ export const ValueNavProvider = ({ children }) => {
         defaultCompanyOfficeId,
         companies,
         loadingCompanies,
+        companiesGrouped,
         companyError,
         activeGroup,
         activeTab,

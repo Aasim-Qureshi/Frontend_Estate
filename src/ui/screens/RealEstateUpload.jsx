@@ -40,8 +40,8 @@ const useTransactions = () => {
     setError(null);
     try {
       const res = await fetch(
-        "http://167.71.231.64:3000/api/transactions?limit=100",
-        // "http://localhost:3000/api/transactions?limit=100",
+        // "http://167.71.231.64:3000/api/transactions?limit=100",
+        "http://localhost:3000/api/transactions?limit=100",
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -1233,280 +1233,94 @@ const Tag = ({ children, color = "slate" }) => {
   );
 };
 
-// ─── Expanded detail ───────────────────────────────────────────────────────
+// ─── Expanded detail (compact, only the fields that matter) ───────────────
 const ExpandedDetail = ({ report }) => {
-  const e = report.evalData;
-  const cfg = STATUS_CONFIG[report.report_status] || STATUS_CONFIG.INCOMPLETE;
-  const { missing: missingFields, warnings: warningFields } =
-    getMissingFields(report);
-  const s = e.availableServices || {}; // ← re-add
+  const e = report.evalData || {};
+  const used = getUsedApproachMethods(e); // { market, income, cost } — only keys with data
   const env = (e.surroundingEnvironment || []).map((k) => ENV_LABELS[k] || k);
 
+  const APPROACH_META = {
+    market: { label: "Comparison Method", accent: "text-indigo-700 bg-indigo-50 border-indigo-100" },
+    income: { label: "Investment Method", accent: "text-emerald-700 bg-emerald-50 border-emerald-100" },
+    cost: { label: "Replacement Cost Method", accent: "text-amber-700 bg-amber-50 border-amber-100" },
+  };
+
   return (
-    <div className="border-t border-slate-100 bg-white">
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-        {/* ── Left column (2/3) ─────────────────────────────── */}
-        <div className="lg:col-span-2 p-5 space-y-6">
-          {/* Property Identity */}
-          <div>
-            <SectionHeader icon={Home} title="Property Identity" />
-            <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
-              <Field label="Property Type" value={e.propertyType} />
-              <Field label="Area (m²)" value={e.propertyArea} />
-              <Field label="City" value={e.cityName} />
-              <Field label="Neighbourhood" value={e.neighborhoodName} />
-              <Field label="Address" value={e.address} span={2} />
-              <Field
-                label="Building Condition"
-                value={
-                  e.buildingCondition?.status
-                    ? `${e.buildingCondition.status}${e.buildingCondition.completionPct ? ` · ${e.buildingCondition.completionPct}%` : ""}`
-                    : null
-                }
-              />
-              <Field label="Deed No." value={e.deedNumber} mono />
-              <Field label="Deed Date" value={e.deedDate} />
-              <Field label="Parcel No." value={e.parcelNumber} />
-              <Field label="Block No." value={e.blockNumber} />
-              <Field label="Plan No." value={e.planNumber} />
-              <Field
-                label="Subdivision Record"
-                value={e.subDivisionRecordNumber}
-              />
-            </dl>
-          </div>
+    <div className="border-t border-slate-100 bg-white p-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+        {/* Report & valuation basics */}
+        <Field label="Report Title" value={report.report_title} />
+        <Field label="Valuation Purpose" value={report.valuationPurpose} />
+        <Field label="Value Premise" value={report.valuationHypothesis} />
+        <Field label="Value Base" value={report.valuationBasis} />
+        <Field label="Valuation Date" value={e.evalDate} />
+        <Field label="Report Issuing Date" value={e.reportDate} />
+        <Field label="Inspection Date" value={e.inspected_at || e.evalDate} />
+        <Field
+          label="Final Value"
+          value={e.finalAssetValue ? `SAR ${e.finalAssetValue}` : null}
+        />
 
-          {/* Boundaries */}
-          <div>
-            <SectionHeader icon={MapPin} title="Boundaries" accent="blue" />
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                ["N", "North", e.northBoundary, e.northLength],
-                ["S", "South", e.southBoundary, e.southLength],
-                ["E", "East", e.eastBoundary, e.eastLength],
-                ["W", "West", e.westBoundary, e.westLength],
-              ].map(([abbr, dir, desc, len]) => (
-                <div
-                  key={dir}
-                  className="flex gap-2.5 rounded-lg border border-slate-100 bg-slate-50/60 p-2.5"
-                >
-                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-100 text-[10px] font-black text-blue-700">
-                    {abbr}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-slate-700 leading-snug">
-                      {desc || "—"}
-                    </div>
-                    {len && (
-                      <div className="mt-0.5 text-[10px] text-slate-400">
-                        {len} m
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Client */}
+        <Field label="Client Name" value={e.clientName} />
+        <Field label="Telephone Number" value={report.contactNo || e.contactNo} />
+        <Field label="E-mail Address" value={e.email_address || report.email_address} />
 
-          {/* Comparisons */}
-          {(e.comparisonRows || []).filter((r) => r.landSpace || r.price)
-            .length > 0 && (
-            <div>
-              <SectionHeader
-                icon={ClipboardList}
-                title="Market Comparisons"
-                accent="emerald"
-              />
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-[11px]">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Kind
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Area m²
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Unit Price
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        Total (SAR)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {e.comparisonRows
-                      .filter((r) => r.landSpace || r.price)
-                      .map((row, idx) => (
-                        <tr key={idx}>
-                          <td className="py-1.5 pr-4 text-slate-700 font-medium">
-                            {row.comparisonKind || "—"}
-                          </td>
-                          <td className="py-1.5 pr-4 text-slate-600 font-mono">
-                            {row.landSpace || "—"}
-                          </td>
-                          <td className="py-1.5 pr-4 text-slate-600 font-mono">
-                            {row.price || "—"}
-                          </td>
-                          <td className="py-1.5 font-semibold text-slate-800 font-mono">
-                            {row.total || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+        {/* Asset identity */}
+        <Field label="Asset Type" value={e.propertyType} />
+        <Field label="Asset Usage/Sector" value={e.landUse} />
+        <Field label="Region" value={e.regionName} />
+        <Field label="City" value={e.cityName} />
+        <Field label="Latitude" value={e.lat} mono />
+        <Field label="Longitude" value={e.lng} mono />
 
-          {/* Investment */}
-          {(e.investmentEntries || []).length > 0 && (
-            <div>
-              <SectionHeader
-                icon={DollarSign}
-                title="Investment Analysis"
-                accent="amber"
-              />
-              <div className="flex flex-wrap gap-3">
-                {e.investmentEntries.map((entry, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 min-w-[200px]"
-                  >
-                    <p className="text-[11px] font-bold text-slate-700 mb-2">
-                      {entry.title}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Tag color="indigo">Cap {entry.capitalizationRate}%</Tag>
-                      <Tag color="amber">Vacancy {entry.vacancyRate}%</Tag>
-                      <Tag color="rose">Maint. {entry.maintenanceRate}%</Tag>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Right column (1/3) ─────────────────────────────── */}
-        <div className="p-5 space-y-6">
-          {/* Valuation Outputs */}
-          <div>
-            <SectionHeader icon={Activity} title="Valuation" />
-            <div className="space-y-3">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-slate-50 border border-indigo-100 p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400 mb-1">
-                  Final Asset Value
-                </p>
-                <p className="text-[20px] font-black text-indigo-900 tracking-tight">
-                  {e.finalAssetValue ? (
-                    <>
-                      SAR <span>{e.finalAssetValue}</span>
-                    </>
-                  ) : (
-                    <span className="text-[14px] font-medium text-slate-300">
-                      Pending
-                    </span>
-                  )}
-                </p>
-              </div>
-              {e.marketMeterPrice && (
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-0.5">
-                    Market Price / m²
-                  </p>
-                  <p className="text-[15px] font-bold text-slate-800">
-                    SAR {e.marketMeterPrice}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Parties */}
-          <div>
-            <SectionHeader icon={User} title="Parties" />
-            <dl className="space-y-3">
-              <Field label="Owner" value={e.ownerName} />
-              <Field label="Client" value={e.clientName} />
-              <Field label="Authorized" value={e.authorizedName} />
-            </dl>
-          </div>
-
-          {/* Assignment meta */}
-          <div>
-            <SectionHeader icon={Hash} title="Assignment" />
-            <dl className="space-y-3">
-              <Field label="Purpose" value={report.valuationPurpose} />
-              <Field label="Basis" value={report.valuationBasis} />
-              <Field label="Ownership" value={report.ownershipType} />
-              <Field label="Taqeem Report ID" value={report.report_id} mono />
-              <Field
-                label="Taqeem ID"
-                value={report.taqeemId ? String(report.taqeemId) : null}
-                mono
-              />
-              <Field
-                label="Inspectors"
-                value={String(report.assignedInspectorIds?.length || 0)}
-              />
-              <div className="flex gap-3">
-                <Field
-                  label="Attachments"
-                  value={String(report.attachmentsCount)}
-                />
-                <Field label="Images" value={String(report.imagesCount)} />
-              </div>
-              <Field
-                label="Last Updated"
-                value={formatDate(report.updatedAt)}
-              />
-            </dl>
-          </div>
-
-          {/* Services */}
-          <div>
-            <SectionHeader icon={Layers} title="Services" />
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                ["Electricity", s.electricity],
-                ["Drainage", s.sanitaryDrainage],
-                ["Telephone", s.telephoneLine],
-              ].map(([name, on]) => (
-                <Tag key={name} color={on ? "emerald" : "slate"}>
-                  {!on && <span className="opacity-40">{name}</span>}
-                  {on && name}
-                </Tag>
-              ))}
-              {s.waterMetersCount > 0 && (
-                <Tag color="blue">Water ×{s.waterMetersCount}</Tag>
-              )}
-              {s.electricityMetersCount > 0 && (
-                <Tag color="amber">Elec. ×{s.electricityMetersCount}</Tag>
-              )}
-            </div>
-          </div>
-
-          {/* Environment */}
-          {env.length > 0 && (
-            <div>
-              <SectionHeader icon={MapPin} title="Surroundings" />
-              <div className="flex flex-wrap gap-1.5">
-                {env.map((item) => (
-                  <Tag key={item} color="indigo">
-                    {item}
-                  </Tag>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Legal & physical */}
+        <Field label="Certificate No." value={e.deedNumber} mono />
+        <Field label="Ownership Type" value={report.ownershipType} />
+        <Field label="Street Facing Fronts" value={e.streetFronts} />
+        <Field label="Land Area" value={e.landSpace} />
+        <Field label="Authorized Land Cover %" value={e.authorizedLandCoverPct} />
+        <Field label="Authorized Height" value={e.elevation} />
+        <Field label="Street Width" value={e.streetWidth} />
       </div>
+
+      {/* Surrounding environment */}
+      {env.length > 0 && (
+        <div className="mt-4">
+          <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">
+            Surrounding Environment
+          </dt>
+          <div className="flex flex-wrap gap-1.5">
+            {env.map((item) => (
+              <Tag key={item} color="indigo">
+                {item}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Valuation approaches used, with their values */}
+      {Object.keys(used).length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {Object.entries(used).map(([key, val]) => (
+            <div
+              key={key}
+              className={`rounded-lg border px-3 py-2 ${APPROACH_META[key].accent}`}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-wide opacity-70">
+                {APPROACH_META[key].label}
+              </p>
+              <p className="text-[13px] font-black">
+                SAR {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
-
 // ─── Bulk Action Bar ──────────────────────────────────────────────────────
 const BulkBar = ({ selected, total, onSelectAll, onClearAll, onAction }) => {
   const [pendingAction, setPendingAction] = useState("");
