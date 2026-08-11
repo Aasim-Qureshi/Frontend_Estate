@@ -29,6 +29,63 @@ import { useSession } from "../context/SessionContext";
 import { useNavStatus } from "../context/NavStatusContext";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 
+// ─── Option dictionaries (mirrors TransactionEvaluationPage.tsx) ──────────
+const VALUATION_PURPOSES = {
+  "1": "التمويل", "2": "الشراء", "3": "البيع", "4": "الرهن", "5": "محاسبة",
+  "6": "إفلاس", "7": "استحواذ", "8": "التقرير المالي", "9": "الضرائب",
+  "10": "الأغراض التأمينية", "11": "تقاضي", "12": "أغراض داخلية",
+  "13": "نزع الملكية", "14": "نقل", "15": "ورث", "16": "اخرى",
+  "17": "توزيع تركه", "18": "البيع القسري", "19": "معرفة القيمة السوقية",
+  "20": "معرفة القيمة الإيجارية", "21": "التصفية", "50": "أغراض إستثمارية",
+  "54": "التعويض",
+};
+const VALUATION_BASES = {
+  "1": "القيمة السوقية", "2": "القيمة الاستثمارية", "3": "القيمة المنصفة",
+  "4": "قيمة التصفية", "5": "القيمة التكاملية", "6": "الايجار السوقي",
+  "7": "القيمة السوقية / قيمة الايجار السوقي", "8": "القيمة العادلة",
+  "10": "الإدراج في القوائم المالية",
+};
+const VALUATION_HYPOTHESES = {
+  "1": "الاستخدام الحالي", "2": "الاستخدام الأعلى والأفضل",
+  "3": "التصفية المنظمة", "4": "البيع القسري",
+};
+const OWNERSHIP_TYPES = {
+  "1": "الملكية المطلقة", "2": "الملكية المشروطة", "3": "الملكية المقيدة",
+  "4": "ملكية مدى الحياة", "5": "منفعة", "6": "مشاع", "7": "ملكية مرهونة",
+};
+const STREET_FRONTS = { "0": "لا يوجد شارع", "1": "شارع واحد", "2": "شارعين", "3": "3 شوارع", "4": "4 شوارع" };
+const ELEVATIONS = { "مرتفع": "مرتفع", "مستوي": "مستوي", "منخفض": "منخفض" };
+const ASSET_CATEGORIES = { "1": "أراضي", "2": "مباني" };
+const ENV_OPTIONS = [
+  ["mosque", "مسجد"], ["commercialMarket", "سوق تجاري"], ["park", "حديقة"],
+  ["governmentFacility", "مرفق حكومي"], ["highSpeedRoad", "طريق سريع"],
+  ["otherServices", "خدمات أخرى"], ["educationalFacility", "مرفق تعليمي"],
+  ["securityFacility", "مرفق أمني"], ["medicalFacility", "مرفق طبي"],
+];
+
+// key/src -> where the value lives on `report`; type drives which input renders.
+const EDIT_FIELDS = [
+  { key: "report_title", src: "report", label: "Report Title", type: "text" },
+  { key: "valuationPurpose", src: "report", label: "Valuation Purpose", type: "select", options: VALUATION_PURPOSES },
+  { key: "valuationHypothesis", src: "report", label: "Value Premise", type: "select", options: VALUATION_HYPOTHESES },
+  { key: "valuationBasis", src: "report", label: "Value Base", type: "select", options: VALUATION_BASES },
+  { key: "evalDate", src: "evalData", label: "Valuation Date", type: "date" },
+  { key: "reportDate", src: "evalData", label: "Report Issuing Date", type: "date" },
+  { key: "finalAssetValue", src: "evalData", label: "Final Value", type: "number" },
+  { key: "propertyType", src: "evalData", label: "Asset Type", type: "text" },
+  { key: "assetCategoryId", src: "evalData", label: "Asset Usage/Sector", type: "select", options: ASSET_CATEGORIES },
+  { key: "evalDate", src: "evalData", label: "Inspection Date", type: "date", dupKey: "inspectionDate" },
+  { key: "lat", src: "evalData", label: "Latitude", type: "text" },
+  { key: "lng", src: "evalData", label: "Longitude", type: "text" },
+  { key: "deedNumber", src: "evalData", label: "Certificate No.", type: "text" },
+  { key: "ownershipType", src: "report", label: "Ownership Type", type: "select", options: OWNERSHIP_TYPES },
+  { key: "streetFronts", src: "evalData", label: "Street Facing Fronts", type: "select", options: STREET_FRONTS },
+  { key: "landSpace", src: "evalData", label: "Land Area", type: "text" },
+  { key: "authorizedLandCoverPct", src: "evalData", label: "Authorized Land Cover %", type: "number" },
+  { key: "elevation", src: "evalData", label: "Authorized Height", type: "select", options: ELEVATIONS },
+  { key: "streetWidth", src: "evalData", label: "Street Width", type: "text" },
+];
+
 // ─── Data fetching ─────────────────────────────────────────────────────────
 const useTransactions = () => {
   const [reports, setReports] = useState([]);
@@ -40,8 +97,8 @@ const useTransactions = () => {
     setError(null);
     try {
       const res = await fetch(
-        "http://167.71.231.64:3000/api/transactions?limit=100",
-        // "http://localhost:3000/api/transactions?limit=100",
+        // "http://167.71.231.64:3000/api/transactions?limit=100",
+        "http://localhost:3000/api/transactions?limit=100",
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -1233,280 +1290,269 @@ const Tag = ({ children, color = "slate" }) => {
   );
 };
 
-// ─── Expanded detail ───────────────────────────────────────────────────────
-const ExpandedDetail = ({ report }) => {
-  const e = report.evalData;
-  const cfg = STATUS_CONFIG[report.report_status] || STATUS_CONFIG.INCOMPLETE;
-  const { missing: missingFields, warnings: warningFields } =
-    getMissingFields(report);
-  const s = e.availableServices || {}; // ← re-add
+// ─── Expanded detail (compact, only the fields that matter) ───────────────
+const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(null);
+
+  const e = report.evalData || {};
+  const used = getUsedApproachMethods(e);
   const env = (e.surroundingEnvironment || []).map((k) => ENV_LABELS[k] || k);
 
+  const APPROACH_META = {
+    market: { label: "Comparison Method", accent: "text-indigo-700 bg-indigo-50 border-indigo-100" },
+    income: { label: "Investment Method", accent: "text-emerald-700 bg-emerald-50 border-emerald-100" },
+    cost: { label: "Replacement Cost Method", accent: "text-amber-700 bg-amber-50 border-amber-100" },
+  };
+
+  // Resolve display text for region/city: prefer the fetched list (by id),
+  // fall back to the stored *Name string if the id lookup misses.
+  const regionMatch = regions.find((r) => r.id === e.regionId || r._id === e.regionId);
+  const regionDisplay = regionMatch?.titleAr || e.regionName || "";
+
+  const citiesForCurrentRegion = e.regionId
+    ? cities.filter((c) => (c.regionId ?? c.region_id) === e.regionId)
+    : cities;
+  const cityMatch = cities.find((c) => c.id === e.cityId || c._id === e.cityId);
+  const cityDisplay = cityMatch?.titleAr || e.cityName || "";
+
+  const startEditing = () => {
+    const init = {};
+    EDIT_FIELDS.forEach((f) => {
+      const src = f.src === "report" ? report : e;
+      init[f.dupKey || `${f.src}.${f.key}`] = src[f.key] ?? "";
+    });
+    init.surroundingEnvironment = e.surroundingEnvironment || [];
+    init.regionId = e.regionId || "";
+    init.cityId = e.cityId || "";
+    setForm(init);
+    setEditing(true);
+  };
+
+  const setVal = (f, val) =>
+    setForm((p) => ({ ...p, [f.dupKey || `${f.src}.${f.key}`]: val }));
+
+  const getVal = (f) => form?.[f.dupKey || `${f.src}.${f.key}`] ?? "";
+
+  const toggleEnv = (key) =>
+    setForm((p) => ({
+      ...p,
+      surroundingEnvironment: p.surroundingEnvironment.includes(key)
+        ? p.surroundingEnvironment.filter((k) => k !== key)
+        : [...p.surroundingEnvironment, key],
+    }));
+
+  const citiesForFormRegion = form?.regionId
+    ? cities.filter((c) => (c.regionId ?? c.region_id) === form.regionId)
+    : cities;
+
+  const handleSave = async () => {
+    setSaving(true);
+    const evalDataPatch = { ...e };
+    const topLevelPatch = {};
+    EDIT_FIELDS.forEach((f) => {
+      const val = form[f.dupKey || `${f.src}.${f.key}`];
+      if (f.dupKey) return;
+      if (f.src === "evalData") evalDataPatch[f.key] = val;
+      else topLevelPatch[f.key] = val;
+    });
+    evalDataPatch.surroundingEnvironment = form.surroundingEnvironment;
+
+    // Region/city: persist id + a display-name snapshot (titleAr) so old
+    // consumers reading *Name keep working, and the id is authoritative
+    // for taqeemId lookups downstream.
+    const chosenRegion = regions.find((r) => r.id === form.regionId || r._id === form.regionId);
+    const chosenCity = cities.find((c) => c.id === form.cityId || c._id === form.cityId);
+    evalDataPatch.regionId = form.regionId || "";
+    evalDataPatch.regionName = chosenRegion?.titleAr || "";
+    evalDataPatch.cityId = form.cityId || "";
+    evalDataPatch.cityName = chosenCity?.titleAr || "";
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/transactions/${report.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evalData: evalDataPatch, ...topLevelPatch }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const updated = await res.json();
+      onSaved?.(updated);
+      setEditing(false);
+    } catch (err) {
+      console.error("[ExpandedDetail] save failed:", err);
+      alert("Failed to save changes.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="border-t border-slate-100 bg-white">
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-        {/* ── Left column (2/3) ─────────────────────────────── */}
-        <div className="lg:col-span-2 p-5 space-y-6">
-          {/* Property Identity */}
-          <div>
-            <SectionHeader icon={Home} title="Property Identity" />
-            <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
-              <Field label="Property Type" value={e.propertyType} />
-              <Field label="Area (m²)" value={e.propertyArea} />
-              <Field label="City" value={e.cityName} />
-              <Field label="Neighbourhood" value={e.neighborhoodName} />
-              <Field label="Address" value={e.address} span={2} />
-              <Field
-                label="Building Condition"
-                value={
-                  e.buildingCondition?.status
-                    ? `${e.buildingCondition.status}${e.buildingCondition.completionPct ? ` · ${e.buildingCondition.completionPct}%` : ""}`
-                    : null
-                }
-              />
-              <Field label="Deed No." value={e.deedNumber} mono />
-              <Field label="Deed Date" value={e.deedDate} />
-              <Field label="Parcel No." value={e.parcelNumber} />
-              <Field label="Block No." value={e.blockNumber} />
-              <Field label="Plan No." value={e.planNumber} />
-              <Field
-                label="Subdivision Record"
-                value={e.subDivisionRecordNumber}
-              />
-            </dl>
-          </div>
-
-          {/* Boundaries */}
-          <div>
-            <SectionHeader icon={MapPin} title="Boundaries" accent="blue" />
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                ["N", "North", e.northBoundary, e.northLength],
-                ["S", "South", e.southBoundary, e.southLength],
-                ["E", "East", e.eastBoundary, e.eastLength],
-                ["W", "West", e.westBoundary, e.westLength],
-              ].map(([abbr, dir, desc, len]) => (
-                <div
-                  key={dir}
-                  className="flex gap-2.5 rounded-lg border border-slate-100 bg-slate-50/60 p-2.5"
-                >
-                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-100 text-[10px] font-black text-blue-700">
-                    {abbr}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-slate-700 leading-snug">
-                      {desc || "—"}
-                    </div>
-                    {len && (
-                      <div className="mt-0.5 text-[10px] text-slate-400">
-                        {len} m
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Comparisons */}
-          {(e.comparisonRows || []).filter((r) => r.landSpace || r.price)
-            .length > 0 && (
-            <div>
-              <SectionHeader
-                icon={ClipboardList}
-                title="Market Comparisons"
-                accent="emerald"
-              />
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-[11px]">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Kind
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Area m²
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400 pr-4">
-                        Unit Price
-                      </th>
-                      <th className="pb-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        Total (SAR)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {e.comparisonRows
-                      .filter((r) => r.landSpace || r.price)
-                      .map((row, idx) => (
-                        <tr key={idx}>
-                          <td className="py-1.5 pr-4 text-slate-700 font-medium">
-                            {row.comparisonKind || "—"}
-                          </td>
-                          <td className="py-1.5 pr-4 text-slate-600 font-mono">
-                            {row.landSpace || "—"}
-                          </td>
-                          <td className="py-1.5 pr-4 text-slate-600 font-mono">
-                            {row.price || "—"}
-                          </td>
-                          <td className="py-1.5 font-semibold text-slate-800 font-mono">
-                            {row.total || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Investment */}
-          {(e.investmentEntries || []).length > 0 && (
-            <div>
-              <SectionHeader
-                icon={DollarSign}
-                title="Investment Analysis"
-                accent="amber"
-              />
-              <div className="flex flex-wrap gap-3">
-                {e.investmentEntries.map((entry, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 min-w-[200px]"
-                  >
-                    <p className="text-[11px] font-bold text-slate-700 mb-2">
-                      {entry.title}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Tag color="indigo">Cap {entry.capitalizationRate}%</Tag>
-                      <Tag color="amber">Vacancy {entry.vacancyRate}%</Tag>
-                      <Tag color="rose">Maint. {entry.maintenanceRate}%</Tag>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Right column (1/3) ─────────────────────────────── */}
-        <div className="p-5 space-y-6">
-          {/* Valuation Outputs */}
-          <div>
-            <SectionHeader icon={Activity} title="Valuation" />
-            <div className="space-y-3">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-slate-50 border border-indigo-100 p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400 mb-1">
-                  Final Asset Value
-                </p>
-                <p className="text-[20px] font-black text-indigo-900 tracking-tight">
-                  {e.finalAssetValue ? (
-                    <>
-                      SAR <span>{e.finalAssetValue}</span>
-                    </>
-                  ) : (
-                    <span className="text-[14px] font-medium text-slate-300">
-                      Pending
-                    </span>
-                  )}
-                </p>
-              </div>
-              {e.marketMeterPrice && (
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-0.5">
-                    Market Price / m²
-                  </p>
-                  <p className="text-[15px] font-bold text-slate-800">
-                    SAR {e.marketMeterPrice}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Parties */}
-          <div>
-            <SectionHeader icon={User} title="Parties" />
-            <dl className="space-y-3">
-              <Field label="Owner" value={e.ownerName} />
-              <Field label="Client" value={e.clientName} />
-              <Field label="Authorized" value={e.authorizedName} />
-            </dl>
-          </div>
-
-          {/* Assignment meta */}
-          <div>
-            <SectionHeader icon={Hash} title="Assignment" />
-            <dl className="space-y-3">
-              <Field label="Purpose" value={report.valuationPurpose} />
-              <Field label="Basis" value={report.valuationBasis} />
-              <Field label="Ownership" value={report.ownershipType} />
-              <Field label="Taqeem Report ID" value={report.report_id} mono />
-              <Field
-                label="Taqeem ID"
-                value={report.taqeemId ? String(report.taqeemId) : null}
-                mono
-              />
-              <Field
-                label="Inspectors"
-                value={String(report.assignedInspectorIds?.length || 0)}
-              />
-              <div className="flex gap-3">
-                <Field
-                  label="Attachments"
-                  value={String(report.attachmentsCount)}
-                />
-                <Field label="Images" value={String(report.imagesCount)} />
-              </div>
-              <Field
-                label="Last Updated"
-                value={formatDate(report.updatedAt)}
-              />
-            </dl>
-          </div>
-
-          {/* Services */}
-          <div>
-            <SectionHeader icon={Layers} title="Services" />
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                ["Electricity", s.electricity],
-                ["Drainage", s.sanitaryDrainage],
-                ["Telephone", s.telephoneLine],
-              ].map(([name, on]) => (
-                <Tag key={name} color={on ? "emerald" : "slate"}>
-                  {!on && <span className="opacity-40">{name}</span>}
-                  {on && name}
-                </Tag>
-              ))}
-              {s.waterMetersCount > 0 && (
-                <Tag color="blue">Water ×{s.waterMetersCount}</Tag>
-              )}
-              {s.electricityMetersCount > 0 && (
-                <Tag color="amber">Elec. ×{s.electricityMetersCount}</Tag>
-              )}
-            </div>
-          </div>
-
-          {/* Environment */}
-          {env.length > 0 && (
-            <div>
-              <SectionHeader icon={MapPin} title="Surroundings" />
-              <div className="flex flex-wrap gap-1.5">
-                {env.map((item) => (
-                  <Tag key={item} color="indigo">
-                    {item}
-                  </Tag>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="border-t border-slate-100 bg-white p-5">
+      <div className="flex items-center justify-end mb-3 gap-2">
+        {editing ? (
+          <>
+            <button
+              onClick={() => setEditing(false)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={startEditing}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+          >
+            Edit
+          </button>
+        )}
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+        {EDIT_FIELDS.map((f) => {
+          const rawVal = f.src === "report" ? report[f.key] : e[f.key];
+          const displayVal =
+            f.type === "select" && rawVal
+              ? f.options[rawVal] ?? rawVal
+              : f.key === "finalAssetValue" && rawVal
+                ? `SAR ${rawVal}`
+                : rawVal;
+
+          if (!editing) {
+            return <Field key={f.label} label={f.label} value={displayVal} />;
+          }
+          return (
+            <div key={f.label}>
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+                {f.label}
+              </dt>
+              {f.type === "select" ? (
+                <select
+                  value={getVal(f)}
+                  onChange={(ev) => setVal(f, ev.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px]"
+                >
+                  <option value="">—</option>
+                  {Object.entries(f.options).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}
+                  value={getVal(f)}
+                  onChange={(ev) => setVal(f, ev.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px]"
+                />
+              )}
+            </div>
+          );
+        })}
+
+        {/* Region — dropdown fetched from SparkVision (localhost:5000) */}
+        {!editing ? (
+          <Field label="Region" value={regionDisplay} />
+        ) : (
+          <div>
+            <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+              Region
+            </dt>
+            <select
+              value={form.regionId}
+              onChange={(ev) =>
+                setForm((p) => ({ ...p, regionId: ev.target.value, cityId: "" }))
+              }
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px]"
+            >
+              <option value="">—</option>
+              {regions.map((r) => (
+                <option key={r.id || r._id} value={r.id || r._id}>
+                  {r.titleAr}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* City — filtered by chosen region */}
+        {!editing ? (
+          <Field label="City" value={cityDisplay} />
+        ) : (
+          <div>
+            <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+              City
+            </dt>
+            <select
+              value={form.cityId}
+              onChange={(ev) => setForm((p) => ({ ...p, cityId: ev.target.value }))}
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px]"
+            >
+              <option value="">—</option>
+              {citiesForFormRegion.map((c) => (
+                <option key={c.id || c._id} value={c.id || c._id}>
+                  {c.titleAr}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Surrounding environment — multi-select */}
+      <div className="mt-4">
+        <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">
+          Surrounding Environment
+        </dt>
+        {!editing ? (
+          <div className="flex flex-wrap gap-1.5">
+            {env.map((item) => <Tag key={item} color="indigo">{item}</Tag>)}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {ENV_OPTIONS.map(([key, label]) => {
+              const active = form.surroundingEnvironment.includes(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleEnv(key)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                    active
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-slate-500 border-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {Object.keys(used).length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {Object.entries(used).map(([key, val]) => (
+            <div key={key} className={`rounded-lg border px-3 py-2 ${APPROACH_META[key].accent}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wide opacity-70">{APPROACH_META[key].label}</p>
+              <p className="text-[13px] font-black">
+                SAR {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
-
 // ─── Bulk Action Bar ──────────────────────────────────────────────────────
 const BulkBar = ({ selected, total, onSelectAll, onClearAll, onAction }) => {
   const [pendingAction, setPendingAction] = useState("");
@@ -1617,6 +1663,10 @@ const ReportRow = ({
   onStateChange,
   animatingSteps,
   onAnimatingChange,
+  onReportSaved,
+  regions,
+  cities,
+
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -1751,7 +1801,13 @@ const ReportRow = ({
 
       {expanded && (
         <div className="overflow-hidden">
-          <ExpandedDetail report={report} />
+          <ExpandedDetail
+              report={report}
+              onSaved={(updated) => onReportSaved?.(updated)}
+              regions={regions}
+              cities={cities}
+
+            />
         </div>
       )}
     </div>
@@ -1773,6 +1829,19 @@ export default function RealEstateUpload({ onViewChange }) {
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [companyModalBusy, setCompanyModalBusy] = useState(false);
   const [companyModalError, setCompanyModalError] = useState("");
+  const [regions, setRegions] = useState([]);
+  const [cities, setCities] = useState([]);
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/locations/regions")
+      .then((r) => r.json())
+      .then(setRegions)
+      .catch((err) => console.error("[RealEstateUpload] regions fetch failed:", err));
+    fetch("http://localhost:5000/api/locations/cities")
+      .then((r) => r.json())
+      .then(setCities)
+      .catch((err) => console.error("[RealEstateUpload] cities fetch failed:", err));
+  }, []);
 
   const waitForManualTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
     const start = Date.now();
@@ -2254,6 +2323,7 @@ export default function RealEstateUpload({ onViewChange }) {
                 <ReportRow
                   key={report.id}
                   report={report}
+                  onReportSaved={() => refetch()}
                   selected={selectedIds.has(report.id)}
                   onToggle={toggleOne}
                   token={token}
@@ -2266,8 +2336,10 @@ export default function RealEstateUpload({ onViewChange }) {
                   onStateChange={(patch) => patchTaqeemState(report, patch)}
                   animatingSteps={getAnimating(report.id)}
                   onAnimatingChange={(arr) =>
-                    setAnimatingForReport(report.id, arr)
+                  setAnimatingForReport(report.id, arr)
                   }
+                  regions={regions}
+                  cities={cities}
                 />
               ))
             ) : (

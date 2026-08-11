@@ -203,6 +203,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
         chooseCard,
         chooseDomain,
         setSelectedCompany,
+        companiesGrouped,
         setActiveGroup,
         setActiveTab,
         resetAll,
@@ -589,7 +590,10 @@ const Layout = ({ children, currentView, onViewChange }) => {
             await setSelectedCompany(null, { skipNavigation: true });
             return;
         }
-        const company = companies?.find((c) => getCompanySelectionKey(c) === value);
+        const pool = selectedDomain
+            ? companies
+            : companiesGrouped.flatMap((g) => g.companies);
+        const company = pool?.find((c) => getCompanySelectionKey(c) === value);
         if (company) {
             await setSelectedCompany(company, { skipNavigation: true });
         }
@@ -1266,21 +1270,34 @@ const Layout = ({ children, currentView, onViewChange }) => {
                         : 'w-[190px]'
                     }`}
             >
-                <option
-                    value=""
-                    style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}
-                >
+                <option value="" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>
                     {t('layout.status.companyDefault', { defaultValue: 'No company selected' })}
                 </option>
-                {(companies || []).map((company) => (
-                    <option
-                        key={getCompanySelectionKey(company)}
-                        value={getCompanySelectionKey(company)}
-                        style={{ backgroundColor: '#0f172a', color: '#f8fafc' }}
-                    >
-                        {company.name || t('sidebar.company.fallback')}
-                    </option>
-                ))}
+                {selectedDomain ? (
+                    (companies || []).map((company) => (
+                        <option
+                            key={getCompanySelectionKey(company)}
+                            value={getCompanySelectionKey(company)}
+                            style={{ backgroundColor: '#0f172a', color: '#f8fafc' }}
+                        >
+                            {company.name || t('sidebar.company.fallback')}
+                        </option>
+                    ))
+                ) : (
+                    companiesGrouped.map((group) => (
+                        <optgroup key={group.type} label={group.label}>
+                            {group.companies.map((company) => (
+                                <option
+                                    key={getCompanySelectionKey(company)}
+                                    value={getCompanySelectionKey(company)}
+                                    style={{ backgroundColor: '#0f172a', color: '#f8fafc' }}
+                                >
+                                    {company.name || t('sidebar.company.fallback')}
+                                </option>
+                            ))}
+                        </optgroup>
+                    ))
+                )}
             </select>
         </div>
     );
@@ -1558,12 +1575,25 @@ const Layout = ({ children, currentView, onViewChange }) => {
                                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cyan-500 focus:outline-none"
                             >
                                 <option value="">{t('sidebar.company.selectToContinue', { defaultValue: 'Select a company' })}</option>
-                                {(companies || []).map((company) => (
-                                    <option key={getCompanySelectionKey(company)} value={getCompanySelectionKey(company)}>
-                                        {company.name || t('sidebar.company.fallback')}
-                                        {company.officeId ? ` (${t('sidebar.company.office', { officeId: company.officeId })})` : ''}
-                                    </option>
-                                ))}
+                                {selectedDomain ? (
+                                    (companies || []).map((company) => (
+                                        <option key={getCompanySelectionKey(company)} value={getCompanySelectionKey(company)}>
+                                            {company.name || t('sidebar.company.fallback')}
+                                            {company.officeId ? ` (${t('sidebar.company.office', { officeId: company.officeId })})` : ''}
+                                        </option>
+                                    ))
+                                ) : (
+                                    companiesGrouped.map((group) => (
+                                        <optgroup key={group.type} label={group.label}>
+                                            {group.companies.map((company) => (
+                                                <option key={getCompanySelectionKey(company)} value={getCompanySelectionKey(company)}>
+                                                    {company.name || t('sidebar.company.fallback')}
+                                                    {company.officeId ? ` (${t('sidebar.company.office', { officeId: company.officeId })})` : ''}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    ))
+                                )}
                             </select>
                         </div>
                         <button
@@ -1740,5 +1770,3 @@ const Layout = ({ children, currentView, onViewChange }) => {
 };
 
 export default Layout;
-
-

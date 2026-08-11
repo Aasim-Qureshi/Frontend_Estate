@@ -63,46 +63,58 @@ export default function GetCompanies({ onViewChange }) {
     }, [navigationComplete, selectedCompany, setCompanyStatus]);
 
     const handleGetCompanies = async () => {
-        if (!isAuthenticated) {
-            setError('Please register or login with your phone number before using Taqeem.');
-            if (onViewChange) onViewChange('registration');
-            return;
-        }
-        setLoading(true);
-        setError("");
-        setSuccessMessage("");
-        setSelectedCompany(null);
-        setNavigationComplete(false);
-        setCompanyStatus('info', 'No company selected');
-        try {
-            const data = await window.electronAPI.getCompanies();
+      if (!isAuthenticated) {
+        setError('Please register or login with your phone number before using Taqeem.');
+        if (onViewChange) onViewChange('registration');
+        return;
+      }
+      setLoading(true);
+      setError("");
+      setSuccessMessage("");
+      setSelectedCompany(null);
+      setNavigationComplete(false);
+      setCompanyStatus('info', 'No company selected');
+      try {
+        const [equipmentRes, realEstateRes] = await Promise.all([
+          window.electronAPI.getCompanies(),
+          window.electronAPI.getCompaniesRealEstate?.() ?? Promise.resolve(null),
+        ]);
 
-            if (data.status === "SUCCESS") {
-                const fetched = data.data || [];
-                const normalized = fetched.map(normalizeCompany);
-                setCompanies(normalized);
-                setSuccessMessage("Companies fetched successfully!");
-                setCompanyStatus('info', 'Select a company to navigate');
+        const equipmentList = equipmentRes?.status === "SUCCESS"
+          ? (equipmentRes.data || []).map((c) => ({ ...c, type: "equipment" }))
+          : [];
+        const realEstateList = realEstateRes?.status === "SUCCESS"
+          ? (realEstateRes.data || []).map((c) => ({ ...c, type: "real-estate" }))
+          : [];
 
-                // Persist companies to backend for this user
-                if (syncCompanies) {
-                    try {
-                        await syncCompanies(fetched.map((c) => ({ ...c, type: c.type || 'equipment' })), 'equipment');
-                        await loadSavedCompanies('equipment');
-                    } catch (syncErr) {
-                        console.warn('Failed to sync companies', syncErr);
-                    }
-                }
-            } else {
-                setError(data.error || 'Failed to get companies');
-                setCompanyStatus('error', data.error || 'Failed to load companies');
-            }
-        } catch (err) {
-            setError(err.message);
-            setCompanyStatus('error', err.message);
-        } finally {
-            setLoading(false);
+        const combined = [...equipmentList, ...realEstateList].map(normalizeCompany);
+
+        if (combined.length === 0) {
+          setError(equipmentRes?.error || realEstateRes?.error || 'Failed to get companies');
+          setCompanyStatus('error', 'Failed to load companies');
+          return;
         }
+
+        setCompanies(combined); // local list, still fine to keep for this screen's own UI
+        setSuccessMessage("Companies fetched successfully!");
+        setCompanyStatus('info', 'Select a company to navigate');
+
+        if (syncCompanies) {
+          try {
+            if (equipmentList.length) await syncCompanies(equipmentList, 'equipment');
+            if (realEstateList.length) await syncCompanies(realEstateList, 'real-estate');
+            await loadSavedCompanies('equipment');
+            await loadSavedCompanies('real-estate');
+          } catch (syncErr) {
+            console.warn('Failed to sync companies', syncErr);
+          }
+        }
+      } catch (err) {
+        setError(err.message);
+        setCompanyStatus('error', err.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
     useEffect(() => {
