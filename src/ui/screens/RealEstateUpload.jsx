@@ -966,6 +966,7 @@ const ActionSelector = ({
   const [queued, setQueued] = useState([]);
   const [busy, setBusy] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
+  const [showCompanyRequired, setShowCompanyRequired] = useState(false);
   const [showApproachModal, setShowApproachModal] = useState(false);
   const [pendingUsedMethods, setPendingUsedMethods] = useState({});
   const [approachSelections, setApproachSelections] = useState(null);
@@ -1016,7 +1017,7 @@ const ActionSelector = ({
     if (!queued.length) return;
 
     if (!selectedCompany || selectedCompany.type !== "real-estate") {
-      setShowWarning(true);
+      setShowCompanyRequired(true);
       return;
     }
 
@@ -1139,6 +1140,38 @@ const ActionSelector = ({
                 Continue anyway
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showCompanyRequired && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowCompanyRequired(false)}
+        >
+          <div
+            className="w-80 rounded-2xl border border-rose-200 bg-white shadow-2xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="w-4 h-4 text-rose-600" />
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-slate-800">
+                  No company selected
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Please select a Real Estate company from the sidebar before
+                  submitting to Taqeem. This can't proceed without one.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowCompanyRequired(false)}
+              className="w-full rounded-lg bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}
@@ -1423,7 +1456,7 @@ const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
             f.type === "select" && rawVal
               ? f.options[rawVal] ?? rawVal
               : f.key === "finalAssetValue" && rawVal
-                ? `SAR ${rawVal}`
+                ? `SAR ${Math.round(numFrom(rawVal)).toLocaleString()}`
                 : rawVal;
 
           if (!editing) {
@@ -1456,6 +1489,16 @@ const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
             </div>
           );
         })}
+
+        {used.market !== undefined && (
+          <Field label="Comparison Value" value={`SAR ${Math.round(used.market).toLocaleString()}`} />
+        )}
+        {used.income !== undefined && (
+          <Field label="Investment Value" value={`SAR ${Math.round(used.income).toLocaleString()}`} />
+        )}
+        {used.cost !== undefined && (
+          <Field label="Replacement Value" value={`SAR ${Math.round(used.cost).toLocaleString()}`} />
+        )}
 
         {/* Region — dropdown fetched from SparkVision (localhost:5000) */}
         {!editing ? (
@@ -1538,18 +1581,7 @@ const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
         )}
       </div>
 
-      {Object.keys(used).length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {Object.entries(used).map(([key, val]) => (
-            <div key={key} className={`rounded-lg border px-3 py-2 ${APPROACH_META[key].accent}`}>
-              <p className="text-[10px] font-bold uppercase tracking-wide opacity-70">{APPROACH_META[key].label}</p>
-              <p className="text-[13px] font-black">
-                SAR {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+
     </div>
   );
 };
