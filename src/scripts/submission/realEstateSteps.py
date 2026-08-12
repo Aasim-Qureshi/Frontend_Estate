@@ -146,9 +146,6 @@ form_steps = [
 
 DEFAULT_APPROACH_VALUE = "1"  # placeholder used only when zero approach data exists
 
-# Defaults applied to required ("# req") fields when the source value is
-# missing/empty. Values here are already in Taqeem's target format (i.e.
-# post-translation), not System-A ids.
 REQUIRED_FIELD_DEFAULTS = {
     "report_title": "Valuation Report",
     "valuationPurpose": 14,  # "Other"
@@ -174,6 +171,7 @@ REQUIRED_FIELD_DEFAULTS = {
     "regionId": 3,
     "cityId": 1,
 }
+
 
 
 def _apply_default(field_name, value):
@@ -431,19 +429,18 @@ def _fmt_value(value):
     """Formats a computed numeric value for typing into a text field."""
     if value is None or value <= 0:
         return None
-    rounded = round(value, 2)
-    if rounded == int(rounded):
-        return str(int(rounded))
-    return f"{rounded:.2f}"
+    return str(round(value))
 
+def _round_int_str(value):
+    """Rounds a numeric-ish value to the nearest integer, returned as a string.
+    Non-numeric or empty values are passed through unchanged."""
+    if value is None:
+        return value
+    try:
+        return str(int(round(float(str(value).replace(",", "")))))
+    except (ValueError, TypeError):
+        return value
 
-# ---------------------------------------------------------------------------
-# Dropdown value translator  (System A  →  System B / Taqeem)
-#
-# Each nested dict maps  source_value -> target_value.
-# Fields whose values are identical in both systems are omitted with a comment.
-# To extend: add a new key to _TRANSLATIONS and call translate_field() with it.
-# ---------------------------------------------------------------------------
 
 _TRANSLATIONS: dict[str, dict[int, int]] = {
     "valuationPurpose": {
@@ -625,8 +622,8 @@ def extract_record_values(record, approach_selections=None):
         "reportDate": _apply_default("reportDate", eval_data.get("reportDate")),
         "assumptions": eval_data.get("assumptions"),  # evalData
         "special_assumptions": None,  # missing from record
-        "finalAssetValue": _apply_default(
-            "finalAssetValue", eval_data.get("finalAssetValue")
+        "finalAssetValue": _round_int_str(
+            _apply_default("finalAssetValue", eval_data.get("finalAssetValue"))
         ),
         "valuation_currency": 1,  # missing from record
         "report_asset_file": None,  # missing from record

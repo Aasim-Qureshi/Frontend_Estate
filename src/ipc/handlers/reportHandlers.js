@@ -1304,7 +1304,7 @@ const reportHandlers = {
   async handleDownloadRealEstatePdf(event, reportId) {
     try {
       const res = await net.fetch(
-        `http://167.71.231.64:5000/api/transactions/${reportId}/pdf`,
+        `http://localhost:5000/api/transactions/${reportId}/pdf?format=pdf`,
       );
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
