@@ -54,39 +54,39 @@ const valueSystemGroups = {
     id: "uploadReports",
     title: "Upload Reports",
     tabs: [
-      {
-        id: "submit-reports-quickly",
-        label: "Submit Reports Quickly",
-        description:
-          "Quickly submit reports with minimal data entry using Excel sheets.",
-      },
+      // {
+      //   id: "submit-reports-quickly",
+      //   label: "Submit Reports Quickly",
+      //   description:
+      //     "Quickly submit reports with minimal data entry using Excel sheets.",
+      // },
       {
         id: "real-estate-upload",
         label: "Real Estate Upload",
         description: "Upload Real Estate Reports",
       },
-      {
-        id: "upload-assets",
-        label: "Upload Assets",
-        description: "Upload asset files and attach them to existing reports.",
-      },
-      {
-        id: "multi-excel-upload",
-        label: "Multi-Excel Upload",
-        description: "Upload multiple Excel files and create reports in bulk.",
-      },
-      {
-        id: "duplicate-report",
-        label: "Upload Manual Report",
-        description:
-          "Fill report info, upload Excel assets, and send to Taqeem.",
-      },
-      {
-        id: "upload-report-elrajhi",
-        label: "Upload Report (El Rajhi)",
-        description:
-          "Upload El Rajhi reports, validate data, and process batches.",
-      },
+      // {
+      //   id: "upload-assets",
+      //   label: "Upload Assets",
+      //   description: "Upload asset files and attach them to existing reports.",
+      // },
+      // {
+      //   id: "multi-excel-upload",
+      //   label: "Multi-Excel Upload",
+      //   description: "Upload multiple Excel files and create reports in bulk.",
+      // },
+      // {
+      //   id: "duplicate-report",
+      //   label: "Upload Manual Report",
+      //   description:
+      //     "Fill report info, upload Excel assets, and send to Taqeem.",
+      // },
+      // {
+      //   id: "upload-report-elrajhi",
+      //   label: "Upload Report (El Rajhi)",
+      //   description:
+      //     "Upload El Rajhi reports, validate data, and process batches.",
+      // },
     ],
   },
   uploadSingleReport: {
