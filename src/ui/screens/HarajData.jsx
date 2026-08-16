@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = "http://167.71.231.64:3000";
+// const API_BASE_URL = "http://localhost:3000";
 const PRIVATE_COMMENT_MARKER =
   ":: \u0631\u062f \u062e\u0627\u0635. \u064a\u0638\u0647\u0631 \u0644\u0644\u0639\u0627\u0631\u0636 \u0641\u0642\u0637 ::";
 
