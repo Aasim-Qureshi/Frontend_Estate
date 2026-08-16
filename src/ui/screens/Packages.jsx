@@ -4,6 +4,7 @@ import { useSession } from "../context/SessionContext";
 
 const BANK_ACCOUNT_NUMBER = "0123456789";
 const API_BASE_URL = "http://167.71.231.64:3000";
+// const API_BASE_URL = "http://localhost:3000";
 const REQUESTS_PAGE_SIZE = 10;
 const DEDUCTION_HISTORY_LIMIT = 20;
 

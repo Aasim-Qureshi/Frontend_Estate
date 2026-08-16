@@ -688,7 +688,10 @@ def extract_record_values(record, approach_selections=None):
             "surroundingEnvironment", eval_data.get("surroundingEnvironment")
         ),
         "landSpace": _apply_default("landSpace", eval_data.get("landSpace")),
-        "propertyArea": eval_data.get("propertyArea"),  # evalData
+        "propertyArea": _apply_default(
+            "propertyArea",
+            eval_data.get("landSpace") or eval_data.get("propertyArea"),
+        ),
         "authorized_land_cover_percentage": _apply_default(
             "authorized_land_cover_percentage", eval_data.get("authorizedLandCoverPct")
         ),

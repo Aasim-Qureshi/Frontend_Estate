@@ -29,6 +29,20 @@ import { useSession } from "../context/SessionContext";
 import { useNavStatus } from "../context/NavStatusContext";
 import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 
+// ─── API host config ───────────────────────────────────────────────────────
+// Flip this ONE flag to switch every request in this file between the cloud
+// server and your local dev server — no other line needs to change.
+const USE_LOCAL_API = false;
+
+const CLOUD_HOST = "167.71.231.64";
+const LOCAL_HOST = "localhost";
+const API_HOST = USE_LOCAL_API ? LOCAL_HOST : CLOUD_HOST;
+
+// Transactions service (previously hardcoded to port 3000 in several places)
+const TRANSACTIONS_API_BASE = `http://${API_HOST}:3000`;
+// Locations/companies service (previously hardcoded to port 5000 in several places)
+const LOCATIONS_API_BASE = `http://${API_HOST}:5000`;
+
 // ─── Option dictionaries (mirrors TransactionEvaluationPage.tsx) ──────────
 const VALUATION_PURPOSES = {
   "1": "التمويل", "2": "الشراء", "3": "البيع", "4": "الرهن", "5": "محاسبة",
@@ -101,8 +115,7 @@ const useTransactions = () => {
     setError(null);
     try {
       const res = await fetch(
-        // "http://167.71.231.64:3000/api/transactions?limit=100",
-        "http://localhost:3000/api/transactions?limit=100",
+        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100`,
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -1407,11 +1420,14 @@ const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
     evalDataPatch.cityName = chosenCity?.titleAr || "";
 
     try {
-      const res = await fetch(`http://localhost:5000/api/transactions/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ evalData: evalDataPatch, ...topLevelPatch }),
-      });
+      const res = await fetch(
+        `${TRANSACTIONS_API_BASE}/api/transactions/${report.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ evalData: evalDataPatch, ...topLevelPatch }),
+        },
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json();
       onSaved?.(updated);
@@ -1867,16 +1883,49 @@ export default function RealEstateUpload({ onViewChange }) {
   const [companyModalError, setCompanyModalError] = useState("");
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsError, setLocationsError] = useState("");
+
+  const fetchLocations = async () => {
+    setLocationsLoading(true);
+    setLocationsError("");
+
+    const [regionsResult, citiesResult] = await Promise.allSettled([
+      fetch(`${LOCATIONS_API_BASE}/api/locations/regions`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+      fetch(`${LOCATIONS_API_BASE}/api/locations/cities`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+    ]);
+
+    if (regionsResult.status === "fulfilled" && Array.isArray(regionsResult.value)) {
+      setRegions(regionsResult.value);
+    } else {
+      console.error("[RealEstateUpload] regions fetch failed:", regionsResult.reason);
+      setRegions([]);
+    }
+
+    if (citiesResult.status === "fulfilled" && Array.isArray(citiesResult.value)) {
+      setCities(citiesResult.value);
+    } else {
+      console.error("[RealEstateUpload] cities fetch failed:", citiesResult.reason);
+      setCities([]);
+    }
+
+    if (regionsResult.status === "rejected" || citiesResult.status === "rejected") {
+      setLocationsError(
+        "Couldn't load regions/cities — region and city fields will show as text until you retry.",
+      );
+    }
+
+    setLocationsLoading(false);
+  };
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/locations/regions")
-      .then((r) => r.json())
-      .then(setRegions)
-      .catch((err) => console.error("[RealEstateUpload] regions fetch failed:", err));
-    fetch("http://localhost:5000/api/locations/cities")
-      .then((r) => r.json())
-      .then(setCities)
-      .catch((err) => console.error("[RealEstateUpload] cities fetch failed:", err));
+    fetchLocations();
   }, []);
 
   const waitForManualTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
