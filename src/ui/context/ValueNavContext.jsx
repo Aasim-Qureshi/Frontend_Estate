@@ -98,7 +98,7 @@ const resolvePreferredCompanyStorageKey = (user, isGuest) => {
 };
 
 export const ValueNavProvider = ({ children }) => {
-  const { user, token, isGuest } = useSession();
+  const { user, token, isGuest, isLoading: sessionLoading } = useSession();
   const { t } = useTranslation();
   const { taqeemStatus, setCompanyStatus, setTaqeemStatus } = useNavStatus();
   const [selectedCard, setSelectedCard] = useState(null);
@@ -155,10 +155,7 @@ export const ValueNavProvider = ({ children }) => {
     getUserDefaultCompanyOfficeId(user),
   );
   const [companySyncDone, setCompanySyncDone] = useState(false);
-  const [autoLoadedCompanies, setAutoLoadedCompanies] = useState({
-    equipment: false,
-    "real-estate": false,
-  });
+
 
   useEffect(() => {
     setDefaultCompanyOfficeId(getUserDefaultCompanyOfficeId(user));
@@ -293,7 +290,6 @@ export const ValueNavProvider = ({ children }) => {
     setSelectedCompanyState(null);
     setCompaniesByType({ equipment: [], "real-estate": [] });
     setCompanyError("");
-    setAutoLoadedCompanies({ equipment: false, "real-estate": false });
     setDefaultCompanyOfficeId("");
   }, [resetNavigation, setSelectedCompanyState]);
 
@@ -340,17 +336,16 @@ export const ValueNavProvider = ({ children }) => {
           : window.electronAPI.getCompanies?.();
 
       if (!effectiveToken) {
-        console.log(
-          "[loadSavedCompanies] BRANCH: no token → automation fallback",
-        );
-        if (!fetchAutomationCompanies()) {
+        console.log("[loadSavedCompanies] BRANCH: no token → automation fallback");
+        const automationPromise = fetchAutomationCompanies();
+        if (!automationPromise) {
           setCompanyError("");
           return companiesByTypeRef.current[type] || [];
         }
         setLoadingCompanies(true);
         setCompanyError("");
         try {
-          const data = await fetchAutomationCompanies();
+          const data = await automationPromise;   // reuse the same promise
           if (data?.status === "SUCCESS") {
             const fetched = (data.data || []).map(normalizeCompany);
             if (fetched.length) setCompaniesForType(type, fetched);
@@ -485,23 +480,30 @@ export const ValueNavProvider = ({ children }) => {
   );
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (user) {
       loadSavedCompanies();
     } else {
       setCompaniesByType({ equipment: [], "real-estate": [] });
       setCompanyError("");
-      setAutoLoadedCompanies(false);
+      // setAutoLoadedCompanies({ equipment: false, "real-estate": false }); // fixed
     }
-  }, [user, loadSavedCompanies]);
+  }, [user, loadSavedCompanies, sessionLoading]);
+
+  const dbLoadAttempted = useRef({ equipment: false, "real-estate": false });
 
   useEffect(() => {
+    if (sessionLoading) return;
+    const type = domainToType(selectedDomain);
     if (
       taqeemStatus?.state === "success" &&
-      (!companies || companies.length === 0)
+      (!companies || companies.length === 0) &&
+      !dbLoadAttempted.current[type]
     ) {
-      loadSavedCompanies(domainToType(selectedDomain));
+      dbLoadAttempted.current[type] = true;
+      loadSavedCompanies(type);
     }
-  }, [companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
+  }, [sessionLoading, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
 
   useEffect(() => {
     if (taqeemStatus?.state !== "success") {
@@ -549,11 +551,6 @@ export const ValueNavProvider = ({ children }) => {
     };
   }, [setCompanyStatus, setTaqeemStatus, taqeemStatus?.state, t]);
 
-  useEffect(() => {
-    if (taqeemStatus?.state !== "success") {
-      setAutoLoadedCompanies({ equipment: false, "real-estate": false });
-    }
-  }, [taqeemStatus?.state]);
 
   const persistDefaultCompany = useCallback(
     async (officeId) => {
@@ -744,76 +741,76 @@ export const ValueNavProvider = ({ children }) => {
     ],
   );
 
-  useEffect(() => {
-    const type = domainToType(selectedDomain);
-    const currentList = companiesByType[type] || [];
-    const shouldAutoFetch =
-      taqeemStatus?.state === "success" &&
-      !loadingCompanies &&
-      !autoLoadedCompanies[type] &&
-      currentList.length === 0;
-    if (!shouldAutoFetch) return;
+  // useEffect(() => {
+  //   const type = domainToType(selectedDomain);
+  //   const currentList = companiesByType[type] || [];
+  //   const shouldAutoFetch =
+  //     taqeemStatus?.state === "success" &&
+  //     !loadingCompanies &&
+  //     !autoLoadedCompanies[type] &&
+  //     currentList.length === 0;
+  //   if (!shouldAutoFetch) return;
 
-    const fetcher =
-      type === "real-estate"
-        ? window?.electronAPI?.getCompaniesRealEstate
-        : window?.electronAPI?.getCompanies;
-    if (!fetcher) return;
+  //   const fetcher =
+  //     type === "real-estate"
+  //       ? window?.electronAPI?.getCompaniesRealEstate
+  //       : window?.electronAPI?.getCompanies;
+  //   if (!fetcher) return;
 
-    setAutoLoadedCompanies((prev) => ({ ...prev, [type]: true }));
-    (async () => {
-      setLoadingCompanies(true);
-      setCompanyError("");
-      try {
-        const data = await fetcher();
-        if (data?.status === "SUCCESS") {
-          const normalized = (data.data || []).map(normalizeCompany);
-          let synced = normalized;
-          if (syncCompanies && normalized.length > 0) {
-            try {
-              const syncedRes = await syncCompanies(
-                normalized.map((c) => ({ ...c, type: c.type || type })),
-                type,
-              );
-              if (Array.isArray(syncedRes) && syncedRes.length > 0) {
-                synced = syncedRes.map(normalizeCompany);
-              }
-            } catch (err) {
-              console.warn("Failed to sync companies", err);
-            }
-          }
-          await replaceCompanies(synced, {
-            quiet: true,
-            skipNavigation: true,
-            autoSelect: true,
-            type,
-          });
-          setCompanyStatus(
-            "info",
-            t("sidebar.company.selectToContinue", {
-              defaultValue: "Select a company to view main links.",
-            }),
-          );
-        } else {
-          setCompanyError(data?.error || t("navigation.loadCompaniesFailed"));
-        }
-      } catch (err) {
-        setCompanyError(err?.message || t("navigation.loadCompaniesFailed"));
-      } finally {
-        setLoadingCompanies(false);
-      }
-    })();
-  }, [
-    autoLoadedCompanies,
-    companiesByType,
-    loadingCompanies,
-    replaceCompanies,
-    selectedDomain,
-    setCompanyStatus,
-    syncCompanies,
-    taqeemStatus?.state,
-    t,
-  ]);
+  //   setAutoLoadedCompanies((prev) => ({ ...prev, [type]: true }));
+  //   (async () => {
+  //     setLoadingCompanies(true);
+  //     setCompanyError("");
+  //     try {
+  //       const data = await fetcher();
+  //       if (data?.status === "SUCCESS") {
+  //         const normalized = (data.data || []).map(normalizeCompany);
+  //         let synced = normalized;
+  //         if (syncCompanies && normalized.length > 0) {
+  //           try {
+  //             const syncedRes = await syncCompanies(
+  //               normalized.map((c) => ({ ...c, type: c.type || type })),
+  //               type,
+  //             );
+  //             if (Array.isArray(syncedRes) && syncedRes.length > 0) {
+  //               synced = syncedRes.map(normalizeCompany);
+  //             }
+  //           } catch (err) {
+  //             console.warn("Failed to sync companies", err);
+  //           }
+  //         }
+  //         await replaceCompanies(synced, {
+  //           quiet: true,
+  //           skipNavigation: true,
+  //           autoSelect: true,
+  //           type,
+  //         });
+  //         setCompanyStatus(
+  //           "info",
+  //           t("sidebar.company.selectToContinue", {
+  //             defaultValue: "Select a company to view main links.",
+  //           }),
+  //         );
+  //       } else {
+  //         setCompanyError(data?.error || t("navigation.loadCompaniesFailed"));
+  //       }
+  //     } catch (err) {
+  //       setCompanyError(err?.message || t("navigation.loadCompaniesFailed"));
+  //     } finally {
+  //       setLoadingCompanies(false);
+  //     }
+  //   })();
+  // }, [
+  //   autoLoadedCompanies,
+  //   companiesByType,
+  //   loadingCompanies,
+  //   replaceCompanies,
+  //   selectedDomain,
+  //   setCompanyStatus,
+  //   syncCompanies,
+  //   taqeemStatus?.state,
+  //   t,
+  // ]);
 
   useEffect(() => {
     if (taqeemStatus?.state !== "success") {

@@ -91,7 +91,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
 
   const domainButtons = [
     { id: "real-estate", label: "Real Estate", icon: Home },
-    { id: "equipments", label: "Equipment", icon: Truck },
+    // { id: "equipments", label: "Equipment", icon: Truck },
   ];
 
   const defaultUploadTab =
@@ -106,8 +106,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
       ? [{ id: "uploadSingleReport", label: "Upload Single Report" }]
       : []),
     ...(isAdmin ? [{ id: "taqeemInfo", label: "Taqeem Info" }] : []),
-    { id: "deleteReport", label: "Delete Report" },
-    { id: "myReports", label: "My Reports" },
+    // { id: "deleteReport", label: "Delete Report" },
+    // { id: "myReports", label: "My Reports" },
   ];
 
   const adminLinks = [
@@ -615,7 +615,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
                   onClick={() => {
                     if (blocked) return;
                     if (item.id === "uploadReports") {
-                      goToSubmitReportsQuickly();
+                      goToRealEstateUpload();
                       return;
                     }
                     setActiveGroup(item.id);

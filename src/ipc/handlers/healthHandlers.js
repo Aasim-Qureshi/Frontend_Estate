@@ -4,7 +4,7 @@ const httpClient = require('../../api/httpClient');
 const healthHandlers = {
     async handleHealth(event) {
         try {
-            // call /health on localhost:3000
+
             const res = await httpClient.get('/health');
 
             // Return a normalized payload to the renderer

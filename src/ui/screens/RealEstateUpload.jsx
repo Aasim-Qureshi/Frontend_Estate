@@ -69,14 +69,18 @@ const EDIT_FIELDS = [
   { key: "valuationPurpose", src: "report", label: "Valuation Purpose", type: "select", options: VALUATION_PURPOSES },
   { key: "valuationHypothesis", src: "report", label: "Value Premise", type: "select", options: VALUATION_HYPOTHESES },
   { key: "valuationBasis", src: "report", label: "Value Base", type: "select", options: VALUATION_BASES },
+
   { key: "evalDate", src: "evalData", label: "Valuation Date", type: "date" },
   { key: "reportDate", src: "evalData", label: "Report Issuing Date", type: "date" },
   { key: "finalAssetValue", src: "evalData", label: "Final Value", type: "number" },
   { key: "propertyType", src: "evalData", label: "Asset Type", type: "text" },
+
+  { key: "landUse", src: "evalData", label: "Land Use", type: "text" },
   { key: "assetCategoryId", src: "evalData", label: "Asset Usage/Sector", type: "select", options: ASSET_CATEGORIES },
   { key: "evalDate", src: "evalData", label: "Inspection Date", type: "date", dupKey: "inspectionDate" },
   { key: "lat", src: "evalData", label: "Latitude", type: "text" },
   { key: "lng", src: "evalData", label: "Longitude", type: "text" },
+
   { key: "deedNumber", src: "evalData", label: "Certificate No.", type: "text" },
   { key: "ownershipType", src: "report", label: "Ownership Type", type: "select", options: OWNERSHIP_TYPES },
   { key: "streetFronts", src: "evalData", label: "Street Facing Fronts", type: "select", options: STREET_FRONTS },
