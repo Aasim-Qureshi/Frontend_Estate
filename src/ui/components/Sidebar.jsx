@@ -106,8 +106,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
       ? [{ id: "uploadSingleReport", label: "Upload Single Report" }]
       : []),
     ...(isAdmin ? [{ id: "taqeemInfo", label: "Taqeem Info" }] : []),
-    { id: "deleteReport", label: "Delete Report" },
-    { id: "myReports", label: "My Reports" },
+    // { id: "deleteReport", label: "Delete Report" },
+    // { id: "myReports", label: "My Reports" },
   ];
 
   const adminLinks = [
