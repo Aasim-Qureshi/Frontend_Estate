@@ -480,15 +480,18 @@ export const ValueNavProvider = ({ children }) => {
   );
 
   useEffect(() => {
-    if (sessionLoading) return;
-    if (user) {
-      loadSavedCompanies();
-    } else {
-      setCompaniesByType({ equipment: [], "real-estate": [] });
-      setCompanyError("");
-      // setAutoLoadedCompanies({ equipment: false, "real-estate": false }); // fixed
-    }
-  }, [user, loadSavedCompanies, sessionLoading]);
+      if (sessionLoading) return;
+      if (user) {
+        // Fetch both company types up front so the Apps view (which isn't
+        // scoped to a single domain) always shows the full list, instead of
+        // only whichever domain the user happened to visit first.
+        loadSavedCompanies("equipment");
+        loadSavedCompanies("real-estate");
+      } else {
+        setCompaniesByType({ equipment: [], "real-estate": [] });
+        setCompanyError("");
+      }
+    }, [user, loadSavedCompanies, sessionLoading]);
 
   const dbLoadAttempted = useRef({ equipment: false, "real-estate": false });
 
