@@ -1421,7 +1421,7 @@ const ExpandedDetail = ({ report, onSaved, regions = [], cities = [] }) => {
 
     try {
       const res = await fetch(
-        `${TRANSACTIONS_API_BASE}/api/transactions/${report.id}`,
+        `${LOCATIONS_API_BASE}/api/transactions/${report.id}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },

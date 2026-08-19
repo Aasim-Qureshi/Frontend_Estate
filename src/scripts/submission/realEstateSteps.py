@@ -1,5 +1,6 @@
 import sys
 from datetime import date
+from typing import Any
 
 
 field_map_1 = {
@@ -431,6 +432,25 @@ def _fmt_value(value):
         return None
     return str(round(value))
 
+def _clean_numeric_str(value):
+    """Strips thousands-separator commas (and surrounding whitespace) from a
+    numeric-looking string before it's typed into a Taqeem text field.
+    Non-numeric or empty values are passed through unchanged so we don't
+    accidentally mangle a legitimately non-numeric field."""
+    if value is None:
+        return value
+    s = str(value).strip()
+    if s == "":
+        return value
+    cleaned = s.replace(",", "")
+    try:
+        # Confirm it's actually numeric before committing to the cleaned form —
+        # avoids corrupting fields that only look numeric-ish.
+        float(cleaned)
+    except (ValueError, TypeError):
+        return value
+    return cleaned
+
 def _round_int_str(value):
     """Rounds a numeric-ish value to the nearest integer, returned as a string.
     Non-numeric or empty values are passed through unchanged."""
@@ -687,13 +707,19 @@ def extract_record_values(record, approach_selections=None):
         "surroundingEnvironment": _apply_default(
             "surroundingEnvironment", eval_data.get("surroundingEnvironment")
         ),
-        "landSpace": _apply_default("landSpace", eval_data.get("landSpace")),
-        "propertyArea": _apply_default(
-            "propertyArea",
-            eval_data.get("landSpace") or eval_data.get("propertyArea"),
+        "landSpace": _clean_numeric_str(
+            _apply_default("landSpace", eval_data.get("landSpace"))
         ),
-        "authorized_land_cover_percentage": _apply_default(
-            "authorized_land_cover_percentage", eval_data.get("authorizedLandCoverPct")
+        "propertyArea": _clean_numeric_str(
+            _apply_default(
+                "propertyArea",
+                eval_data.get("landSpace") or eval_data.get("propertyArea"),
+            )
+        ),
+        "authorized_land_cover_percentage": _clean_numeric_str(
+            _apply_default(
+                "authorized_land_cover_percentage", eval_data.get("authorizedLandCoverPct")
+            )
         ),
         "authorized_height": _apply_default(
             "authorized_height", eval_data.get("elevation")
