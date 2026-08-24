@@ -150,6 +150,11 @@ export const SessionProvider = ({ children }) => {
     safeRemove(localStorageRef, USER_STORAGE_KEY);
     safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
     void clearPersistedRefreshToken();
+    if (window?.electronAPI?.clearPersistedAuthState) {
+      void window.electronAPI.clearPersistedAuthState();
+    } else {
+      void clearPersistedRefreshToken();
+    }
   };
 
   const updateUser = (userData) => {

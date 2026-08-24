@@ -307,127 +307,55 @@ export const ValueNavProvider = ({ children }) => {
   }, []);
 
   const loadSavedCompanies = useCallback(
-    async (type = "equipment", overrides = {}) => {
-      if (!window?.electronAPI?.apiRequest) {
-        setCompanyError(t("navigation.companyFetchUnavailable"));
-        return [];
-      }
-      // NEW: allow callers to pass a just-created token/user, bypassing
-      // stale-closure issues right after login()/guest-session creation.
-      const effectiveToken = overrides.token || token;
-      const effectiveUser = overrides.user || user;
-      const effectiveAuthHeaders = overrides.token
-        ? { Authorization: `Bearer ${overrides.token}` }
-        : authHeaders;
+      async (type = "equipment", overrides = {}) => {
+        const effectiveToken = overrides.token || token;
+        const effectiveUser = overrides.user || user;
 
-      console.log("[loadSavedCompanies] called", {
-        type,
-        hasOverrideToken: !!overrides.token,
-        hasContextToken: !!token,
-        effectiveTokenPreview: effectiveToken
-          ? effectiveToken.slice(0, 12) + "…"
-          : null,
-        effectiveUser,
-      });
-
-      const fetchAutomationCompanies = () =>
-        type === "real-estate"
-          ? window.electronAPI.getCompaniesRealEstate?.()
-          : window.electronAPI.getCompanies?.();
-
-      if (!effectiveToken) {
-        console.log("[loadSavedCompanies] BRANCH: no token → automation fallback");
-        const automationPromise = fetchAutomationCompanies();
-        if (!automationPromise) {
+        // Guests (and anyone without a real token/user) never auto-fetch.
+        // Fetching for real users only happens via the explicit modal flow.
+        if (!effectiveToken || !effectiveUser || isGuest) {
           setCompanyError("");
           return companiesByTypeRef.current[type] || [];
         }
+
+        if (!window?.electronAPI?.apiRequest) {
+          setCompanyError(t("navigation.companyFetchUnavailable"));
+          return [];
+        }
+
+        const effectiveAuthHeaders = overrides.token
+          ? { Authorization: `Bearer ${overrides.token}` }
+          : authHeaders;
+
         setLoadingCompanies(true);
         setCompanyError("");
         try {
-          const data = await automationPromise;   // reuse the same promise
-          if (data?.status === "SUCCESS") {
-            const fetched = (data.data || []).map(normalizeCompany);
-            if (fetched.length) setCompaniesForType(type, fetched);
-            return fetched;
-          }
-          setCompanyError(data?.error || t("navigation.loadCompaniesFailed"));
-          return [];
+          const res = await window.electronAPI.apiRequest(
+            "GET",
+            `/api/companes/me?type=${type}`,
+            {},
+            effectiveAuthHeaders,
+          );
+          applyCompaniesMeta(extractCompaniesMeta(res));
+          const list = normalizeCompanyList(res).map(normalizeCompany);
+          const current = companiesByTypeRef.current[type] || [];
+          if (list.length > 0 || current.length > 0)
+            setCompaniesForType(type, list);
+          return list;
         } catch (err) {
-          setCompanyError(err?.message || t("navigation.loadCompaniesFailed"));
+          setCompanyError(
+            err?.response?.data?.message ||
+              err?.message ||
+              t("navigation.loadCompaniesFailed"),
+          );
           return [];
         } finally {
           setLoadingCompanies(false);
         }
-      }
+      },
+      [applyCompaniesMeta, authHeaders, extractCompaniesMeta, normalizeCompanyList, setCompaniesForType, t, token, user, isGuest],
+    );
 
-      if (!effectiveUser) {
-        console.log(
-          "[loadSavedCompanies] BRANCH: token but no user → automation fallback",
-        );
-        setCompanyError("");
-        const fetcher = fetchAutomationCompanies();
-        if (!fetcher) return [];
-        setLoadingCompanies(true);
-        try {
-          const data = await fetcher;
-          if (data?.status === "SUCCESS") {
-            const fetched = (data.data || []).map(normalizeCompany);
-            if (fetched.length) setCompaniesForType(type, fetched);
-            return fetched;
-          }
-          return [];
-        } catch {
-          return [];
-        } finally {
-          setLoadingCompanies(false);
-        }
-      }
-
-      setLoadingCompanies(true);
-      setCompanyError("");
-      try {
-        console.log("headers", effectiveAuthHeaders);
-        const res = await window.electronAPI.apiRequest(
-          "GET",
-          `/api/companes/me?type=${type}`,
-          {},
-          effectiveAuthHeaders,
-        );
-        console.log(
-          "[loadSavedCompanies] DB response for type",
-          type,
-          ":",
-          res,
-        );
-        applyCompaniesMeta(extractCompaniesMeta(res));
-        const list = normalizeCompanyList(res).map(normalizeCompany);
-        const current = companiesByTypeRef.current[type] || [];
-        if (list.length > 0 || current.length > 0)
-          setCompaniesForType(type, list);
-        return list;
-      } catch (err) {
-        setCompanyError(
-          err?.response?.data?.message ||
-            err?.message ||
-            t("navigation.loadCompaniesFailed"),
-        );
-        return [];
-      } finally {
-        setLoadingCompanies(false);
-      }
-    },
-    [
-      applyCompaniesMeta,
-      authHeaders,
-      extractCompaniesMeta,
-      normalizeCompanyList,
-      setCompaniesForType,
-      t,
-      token,
-      user,
-    ],
-  );
   const syncCompanies = useCallback(
     async (items = [], defaultType = "equipment", overrides = {}) => {
       if (!window?.electronAPI?.apiRequest) {
@@ -481,32 +409,29 @@ export const ValueNavProvider = ({ children }) => {
 
   useEffect(() => {
       if (sessionLoading) return;
-      if (user) {
-        // Fetch both company types up front so the Apps view (which isn't
-        // scoped to a single domain) always shows the full list, instead of
-        // only whichever domain the user happened to visit first.
+      if (user && !isGuest) {
         loadSavedCompanies("equipment");
         loadSavedCompanies("real-estate");
       } else {
         setCompaniesByType({ equipment: [], "real-estate": [] });
         setCompanyError("");
       }
-    }, [user, loadSavedCompanies, sessionLoading]);
+    }, [user, isGuest, loadSavedCompanies, sessionLoading]);
 
   const dbLoadAttempted = useRef({ equipment: false, "real-estate": false });
 
   useEffect(() => {
-    if (sessionLoading) return;
-    const type = domainToType(selectedDomain);
-    if (
-      taqeemStatus?.state === "success" &&
-      (!companies || companies.length === 0) &&
-      !dbLoadAttempted.current[type]
-    ) {
-      dbLoadAttempted.current[type] = true;
-      loadSavedCompanies(type);
-    }
-  }, [sessionLoading, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
+      if (sessionLoading || isGuest) return;
+      const type = domainToType(selectedDomain);
+      if (
+        taqeemStatus?.state === "success" &&
+        (!companies || companies.length === 0) &&
+        !dbLoadAttempted.current[type]
+      ) {
+        dbLoadAttempted.current[type] = true;
+        loadSavedCompanies(type);
+      }
+    }, [sessionLoading, isGuest, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
 
   useEffect(() => {
     if (taqeemStatus?.state !== "success") {
