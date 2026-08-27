@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 
 const SessionContext = createContext();
 const USER_STORAGE_KEY = "user";
-const TOKEN_STORAGE_KEY = "token";
 
 const getSessionStorage = () => {
   if (typeof window === "undefined") return null;
@@ -40,43 +39,27 @@ export const useSession = () => {
   return context;
 };
 
+/**
+ * Auth is now Spark Vision's cookie session (sv_identity / sv_session /
+ * sv_csrf), managed entirely by the main-process API handler
+ * (packageHandlers.js) — it reads those cookies back onto every request and
+ * writes/clears them from Set-Cookie responses. This context no longer
+ * stores or tracks a bearer token at all; it only mirrors the `user` object
+ * for the renderer to read synchronously.
+ */
 export const SessionProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
 
-  const clearPersistedRefreshToken = async () => {
-    if (!window?.electronAPI?.clearRefreshToken) return;
-
-    const candidateBaseUrls = [
-      process.env.BACKEND_URL,
-      process.env.REACT_APP_BACKEND_URL,
-      "http://167.71.231.64:3000",
-      // "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "https://future-electron-backend.onrender.com",
-    ].filter(Boolean);
-
-    const uniqueBaseUrls = Array.from(new Set(candidateBaseUrls));
-    await Promise.allSettled(
-      uniqueBaseUrls.map((baseUrl) =>
-        window.electronAPI.clearRefreshToken({
-          baseUrl,
-          name: "refreshToken",
-        }),
-      ),
-    );
-  };
-
   // Initialize session from sessionStorage on mount.
-  // Also clear legacy auth keys left in localStorage from older app versions.
+  // Also clear legacy auth keys left in storage from older app versions
+  // (the old system stored a JWT under "token"; Spark Vision has none).
   useEffect(() => {
     const sessionStorageRef = getSessionStorage();
     const localStorageRef = getLocalStorage();
 
     const savedUser = sessionStorageRef?.getItem(USER_STORAGE_KEY);
-    const savedToken = sessionStorageRef?.getItem(TOKEN_STORAGE_KEY);
 
     if (savedUser) {
       try {
@@ -94,17 +77,14 @@ export const SessionProvider = ({ children }) => {
       }
     }
 
-    if (savedToken && savedToken !== "undefined" && savedToken !== "null") {
-      setToken(savedToken);
-    }
-
+    safeRemove(sessionStorageRef, "token");
     safeRemove(localStorageRef, USER_STORAGE_KEY);
-    safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
+    safeRemove(localStorageRef, "token");
 
     setIsLoading(false);
   }, []);
 
-  const login = (userData, accessToken) => {
+  const login = (userData) => {
     const sessionStorageRef = getSessionStorage();
     const localStorageRef = getLocalStorage();
 
@@ -126,16 +106,6 @@ export const SessionProvider = ({ children }) => {
       JSON.stringify(normalizedUser),
     );
     safeRemove(localStorageRef, USER_STORAGE_KEY);
-
-    if (accessToken) {
-      setToken(accessToken);
-      safeSet(sessionStorageRef, TOKEN_STORAGE_KEY, accessToken);
-      safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
-    } else {
-      setToken(null);
-      safeRemove(sessionStorageRef, TOKEN_STORAGE_KEY);
-      safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
-    }
   };
 
   const logout = () => {
@@ -143,17 +113,20 @@ export const SessionProvider = ({ children }) => {
     const localStorageRef = getLocalStorage();
 
     setUser(null);
-    setToken(null);
     setIsGuest(false);
     safeRemove(sessionStorageRef, USER_STORAGE_KEY);
-    safeRemove(sessionStorageRef, TOKEN_STORAGE_KEY);
     safeRemove(localStorageRef, USER_STORAGE_KEY);
-    safeRemove(localStorageRef, TOKEN_STORAGE_KEY);
-    void clearPersistedRefreshToken();
-    if (window?.electronAPI?.clearPersistedAuthState) {
-      void window.electronAPI.clearPersistedAuthState();
-    } else {
-      void clearPersistedRefreshToken();
+
+    // Let Spark Vision clear its own sv_session cookie (it responds with a
+    // Set-Cookie that expires it; packageHandlers.js's cookie-removal logic
+    // then removes it from Electron's cookie store). Fire-and-forget: the
+    // renderer's user state is already cleared above regardless of outcome.
+    if (window?.electronAPI?.apiRequest) {
+      void window.electronAPI
+        .apiRequest("POST", "/api/auth/logout")
+        .catch((err) => {
+          console.warn("[Session] Spark Vision logout call failed:", err);
+        });
     }
   };
 
@@ -171,7 +144,6 @@ export const SessionProvider = ({ children }) => {
     <SessionContext.Provider
       value={{
         user,
-        token,
         isLoading,
         login,
         logout,

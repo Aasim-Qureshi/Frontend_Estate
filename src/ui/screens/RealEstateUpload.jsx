@@ -32,7 +32,7 @@ import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 // ─── API host config ───────────────────────────────────────────────────────
 // Flip this ONE flag to switch every request in this file between the cloud
 // server and your local dev server — no other line needs to change.
-const USE_LOCAL_API = false;
+const USE_LOCAL_API = true;
 
 const CLOUD_HOST = "167.71.231.64";
 const LOCAL_HOST = "localhost";
@@ -105,17 +105,19 @@ const EDIT_FIELDS = [
 ];
 
 // ─── Data fetching ─────────────────────────────────────────────────────────
-const useTransactions = (enabled) => {
+const useTransactions = (enabled, userId) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
 
   const fetchReports = async () => {
-    if (!enabled) return;
+    if (!enabled || !userId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${TRANSACTIONS_API_BASE}/api/transactions?limit=100`);
+      const res = await fetch(
+        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100&userId=${encodeURIComponent(userId)}`,
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const items = (json.items ?? []).map((t) => ({
@@ -138,7 +140,7 @@ const useTransactions = (enabled) => {
   };
 
   useEffect(() => {
-    if (enabled) fetchReports();
+    if (enabled && userId) fetchReports();
     else {
       setReports([]);
       setLoading(false);
@@ -862,22 +864,22 @@ async function performTaqeemActions({
   report,
   queuedActions,
   approachSelections,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
   setTaqeemStatus,
-  onProgress, // (patch) => void — merged into the report's taqeem state
-  onAnimating, // (stepKeys[]) => void — drives the progress-bar spinner
+  onProgress,
+  onAnimating,
 }) {
   const authStatus = await ensureTaqeemAuthorized(
-    token,
+    null,
     onViewChange,
     isTaqeemLoggedIn,
     0, // assetCount — no point deduction for real estate
     login,
     setTaqeemStatus,
-    { isGuest: !token },
+    { isGuest },
   );
 
   const ok =
@@ -972,7 +974,7 @@ const ActionSelector = ({
   taqeemState,
   onStateChange,
   onAnimatingChange,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
@@ -1015,7 +1017,7 @@ const ActionSelector = ({
       report,
       queuedActions: queued,
       approachSelections: resolvedApproachSelections,
-      token,
+      isGuest,
       login,
       onViewChange,
       isTaqeemLoggedIn,
@@ -1704,7 +1706,7 @@ const ReportRow = ({
   report,
   selected,
   onToggle,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
@@ -1717,7 +1719,6 @@ const ReportRow = ({
   onReportSaved,
   regions,
   cities,
-
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -1839,7 +1840,7 @@ const ReportRow = ({
               taqeemState={taqeemState}
               onStateChange={onStateChange}
               onAnimatingChange={onAnimatingChange}
-              token={token}
+              isGuest={isGuest}
               login={login}
               onViewChange={onViewChange}
               isTaqeemLoggedIn={isTaqeemLoggedIn}
@@ -1871,8 +1872,10 @@ export default function RealEstateUpload({ onViewChange }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const { token, login, user, isGuest } = useSession();
-  const isLoggedIn = !!token && !!user && !isGuest;
+  const { login, user, isGuest } = useSession();
+
+  const isLoggedIn = !!user && !isGuest;
+  const userId = user?.id || user?._id || null;
   const { taqeemStatus, setTaqeemStatus } = useNavStatus();
   const isTaqeemLoggedIn = taqeemStatus?.state === "success";
   const [authError, setAuthError] = useState("");
@@ -1977,8 +1980,7 @@ export default function RealEstateUpload({ onViewChange }) {
         if (syncCompanies) {
           try {
             const result = await syncCompanies(tagged, "real-estate", {
-              token,               // use the real session token directly
-              userId: user?._id || user?.id,
+              userId,
             });
             if (Array.isArray(result) && result.length > 0) {
               synced = result.map((c) => ({ ...c, type: c.type || "real-estate" }));
@@ -2033,7 +2035,7 @@ export default function RealEstateUpload({ onViewChange }) {
     loading,
     error: fetchError,
     refetch,
-  } = useTransactions(isLoggedIn);
+  } = useTransactions(isLoggedIn, userId);
 
   const {
     selectedCompany,
@@ -2052,62 +2054,11 @@ export default function RealEstateUpload({ onViewChange }) {
   }, [chooseDomain, isLoggedIn]);
 
   const ensureGuestSession = async () => {
-    if (token) {
-      console.log("[ensureGuestSession] using existing context token", {
-        token,
-        user,
-      });
-      return { token, userId: user?._id || user?.id };
+    if (isLoggedIn) {
+      return { userId };
     }
-    if (!window?.electronAPI?.apiRequest) {
-      console.log("[ensureGuestSession] no electronAPI.apiRequest available");
-      return null;
-    }
-
-    try {
-      const tokenObj = await window.electronAPI.getToken?.();
-      console.log("[ensureGuestSession] getToken() returned:", tokenObj);
-
-      if (tokenObj?.token) {
-        const restoredUser =
-          tokenObj.user ||
-          (tokenObj.userId
-            ? { id: tokenObj.userId, _id: tokenObj.userId }
-            : null);
-        console.log("[ensureGuestSession] restoring persisted session", {
-          hasUser: !!tokenObj.user,
-          hasUserId: !!tokenObj.userId,
-          restoredUser,
-        });
-        if (restoredUser) login?.(restoredUser, tokenObj.token);
-        return {
-          token: tokenObj.token,
-          userId: tokenObj.userId || restoredUser?._id,
-        };
-      }
-
-      console.log(
-        "[ensureGuestSession] nothing persisted — minting NEW guest user",
-      );
-      const result = await window.electronAPI.apiRequest(
-        "POST",
-        "/api/users/guest",
-        {},
-        {},
-      );
-      console.log("[ensureGuestSession] guest creation result:", result);
-      if (result?.token && result?.userId) {
-        const guestUser = result?.user || {
-          id: result.userId,
-          _id: result.userId,
-          guest: true,
-        };
-        login?.(guestUser, result.token);
-        return { token: result.token, userId: result.userId };
-      }
-    } catch (err) {
-      console.warn("[RealEstateUpload] Failed to ensure guest session:", err);
-    }
+    // Spark Vision has no guest/bootstrap concept — this whole flow is
+    // legacy and effectively a no-op now.
     return null;
   };
 
@@ -2220,7 +2171,7 @@ export default function RealEstateUpload({ onViewChange }) {
         report,
         queuedActions: [actionId],
         approachSelections,
-        token,
+        isGuest,
         login,
         onViewChange,
         isTaqeemLoggedIn,
@@ -2395,7 +2346,7 @@ export default function RealEstateUpload({ onViewChange }) {
                   onReportSaved={() => refetch()}
                   selected={selectedIds.has(report.id)}
                   onToggle={toggleOne}
-                  token={token}
+                  isGuest={isGuest}
                   login={login}
                   onViewChange={onViewChange}
                   isTaqeemLoggedIn={isTaqeemLoggedIn}
