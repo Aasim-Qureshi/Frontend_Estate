@@ -393,6 +393,49 @@ const authHandlers = {
       return { status: "ERROR", error: error.message || String(error) };
     }
   },
+
+  async handleClearPersistedAuthState(event) {
+    const AUTH_COOKIE_NAMES = ["refreshToken", "accessToken", "token"];
+
+    const buildCookieRemovalUrl = (cookie) => {
+      const host = String(cookie?.domain || "").replace(/^\./, "");
+      if (!host) return null;
+      const scheme = cookie?.secure ? "https" : "http";
+      const rawPath = String(cookie?.path || "/");
+      const pathPart = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+      return `${scheme}://${host}${pathPart}`;
+    };
+
+    let removedCount = 0;
+    try {
+      for (const cookieName of AUTH_COOKIE_NAMES) {
+        const cookies = await session.defaultSession.cookies.get({
+          name: cookieName,
+        });
+        if (!Array.isArray(cookies) || cookies.length === 0) continue;
+
+        const removals = cookies.map(async (cookie) => {
+          const cookieUrl = buildCookieRemovalUrl(cookie);
+          if (!cookieUrl) return false;
+          await session.defaultSession.cookies.remove(cookieUrl, cookie.name);
+          return true;
+        });
+
+        const results = await Promise.allSettled(removals);
+        results.forEach((result) => {
+          if (result.status === "fulfilled" && result.value === true) {
+            removedCount += 1;
+          }
+        });
+      }
+      console.log(`[MAIN] Cleared ${removedCount} persisted auth cookie(s) via logout.`);
+      return { status: "SUCCESS", removedCount };
+    } catch (error) {
+      console.error("[MAIN] Failed to clear persisted auth state:", error);
+      return { status: "ERROR", error: error.message || String(error), removedCount };
+    }
+  },
+
   async handleOpenTaqeemLogin(event, opts = {}) {
     const loginUrl =
       opts.url ||

@@ -118,6 +118,11 @@ function registerIpcHandlers() {
       "authHandlers.handleClearRefreshToken",
     );
     safeHandle(
+      "auth-clear-persisted-state",
+      authHandlers.handleClearPersistedAuthState,
+      "authHandlers.handleClearPersistedAuthState"
+    );
+    safeHandle(
       "get-token",
       authHandlers.getRefreshToken,
       "authHandlers.getRefreshToken",

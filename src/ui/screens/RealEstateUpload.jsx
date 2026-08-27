@@ -32,7 +32,7 @@ import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 // ─── API host config ───────────────────────────────────────────────────────
 // Flip this ONE flag to switch every request in this file between the cloud
 // server and your local dev server — no other line needs to change.
-const USE_LOCAL_API = false;
+const USE_LOCAL_API = true;
 
 const CLOUD_HOST = "167.71.231.64";
 const LOCAL_HOST = "localhost";
@@ -105,27 +105,24 @@ const EDIT_FIELDS = [
 ];
 
 // ─── Data fetching ─────────────────────────────────────────────────────────
-const useTransactions = () => {
+const useTransactions = (enabled, userId) => {
   const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
 
   const fetchReports = async () => {
+    if (!enabled || !userId) return;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100`,
+        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100&userId=${encodeURIComponent(userId)}`,
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      console.log(json);
       const items = (json.items ?? []).map((t) => ({
         ...t,
         report_status: t.report_status ?? "UNKNOWN",
-        // DB stores this as `reportId` (camelCase) — that IS the Taqeem ID.
-        // Fall back through the other historical field names just in case
-        // different endpoints/versions serialize it differently.
         taqeemId: t.taqeemId ?? t.reportId ?? t.report_id ?? null,
         taqeemSubmitted:
           t.taqeemSubmitted ?? !!(t.taqeemId ?? t.reportId ?? t.report_id),
@@ -143,8 +140,12 @@ const useTransactions = () => {
   };
 
   useEffect(() => {
-    fetchReports();
-  }, []);
+    if (enabled && userId) fetchReports();
+    else {
+      setReports([]);
+      setLoading(false);
+    }
+  }, [enabled]);
 
   return { reports, loading, error, refetch: fetchReports };
 };
@@ -863,22 +864,22 @@ async function performTaqeemActions({
   report,
   queuedActions,
   approachSelections,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
   setTaqeemStatus,
-  onProgress, // (patch) => void — merged into the report's taqeem state
-  onAnimating, // (stepKeys[]) => void — drives the progress-bar spinner
+  onProgress,
+  onAnimating,
 }) {
   const authStatus = await ensureTaqeemAuthorized(
-    token,
+    null,
     onViewChange,
     isTaqeemLoggedIn,
     0, // assetCount — no point deduction for real estate
     login,
     setTaqeemStatus,
-    { isGuest: !token },
+    { isGuest },
   );
 
   const ok =
@@ -973,7 +974,7 @@ const ActionSelector = ({
   taqeemState,
   onStateChange,
   onAnimatingChange,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
@@ -1016,7 +1017,7 @@ const ActionSelector = ({
       report,
       queuedActions: queued,
       approachSelections: resolvedApproachSelections,
-      token,
+      isGuest,
       login,
       onViewChange,
       isTaqeemLoggedIn,
@@ -1705,7 +1706,7 @@ const ReportRow = ({
   report,
   selected,
   onToggle,
-  token,
+  isGuest,
   login,
   onViewChange,
   isTaqeemLoggedIn,
@@ -1718,7 +1719,6 @@ const ReportRow = ({
   onReportSaved,
   regions,
   cities,
-
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -1840,7 +1840,7 @@ const ReportRow = ({
               taqeemState={taqeemState}
               onStateChange={onStateChange}
               onAnimatingChange={onAnimatingChange}
-              token={token}
+              isGuest={isGuest}
               login={login}
               onViewChange={onViewChange}
               isTaqeemLoggedIn={isTaqeemLoggedIn}
@@ -1872,7 +1872,10 @@ export default function RealEstateUpload({ onViewChange }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const { token, login, user } = useSession();
+  const { login, user, isGuest } = useSession();
+
+  const isLoggedIn = !!user && !isGuest;
+  const userId = user?.id || user?._id || null;
   const { taqeemStatus, setTaqeemStatus } = useNavStatus();
   const isTaqeemLoggedIn = taqeemStatus?.state === "success";
   const [authError, setAuthError] = useState("");
@@ -1971,19 +1974,13 @@ export default function RealEstateUpload({ onViewChange }) {
       }
 
       const data = await window.electronAPI.getCompaniesRealEstate();
-      if (
-        data?.status === "SUCCESS" &&
-        Array.isArray(data.data) &&
-        data.data.length > 0
-      ) {
+      if (data?.status === "SUCCESS" && Array.isArray(data.data) && data.data.length > 0) {
         const tagged = data.data.map((c) => ({ ...c, type: "real-estate" }));
-        const freshSession = await ensureGuestSession();
         let synced = tagged;
         if (syncCompanies) {
           try {
             const result = await syncCompanies(tagged, "real-estate", {
-              token: freshSession?.token,
-              userId: freshSession?.userId,
+              userId,
             });
             if (Array.isArray(result) && result.length > 0) {
               synced = result.map((c) => ({ ...c, type: c.type || "real-estate" }));
@@ -1993,12 +1990,7 @@ export default function RealEstateUpload({ onViewChange }) {
             synced = tagged;
           }
         }
-        await replaceCompanies(synced, {
-          type: "real-estate",
-          quiet: true,
-          skipNavigation: true,
-          autoSelect: true,
-        });
+        await replaceCompanies(synced, { type: "real-estate", quiet: true, skipNavigation: true, autoSelect: true });
         setShowCompanyModal(false);
       } else {
         setCompanyModalError(data?.error || "No real estate companies found.");
@@ -2043,7 +2035,7 @@ export default function RealEstateUpload({ onViewChange }) {
     loading,
     error: fetchError,
     refetch,
-  } = useTransactions();
+  } = useTransactions(isLoggedIn, userId);
 
   const {
     selectedCompany,
@@ -2059,103 +2051,38 @@ export default function RealEstateUpload({ onViewChange }) {
 
   useEffect(() => {
     chooseDomain("real-estate");
-  }, [chooseDomain]);
+  }, [chooseDomain, isLoggedIn]);
 
   const ensureGuestSession = async () => {
-    if (token) {
-      console.log("[ensureGuestSession] using existing context token", {
-        token,
-        user,
-      });
-      return { token, userId: user?._id || user?.id };
+    if (isLoggedIn) {
+      return { userId };
     }
-    if (!window?.electronAPI?.apiRequest) {
-      console.log("[ensureGuestSession] no electronAPI.apiRequest available");
-      return null;
-    }
-
-    try {
-      const tokenObj = await window.electronAPI.getToken?.();
-      console.log("[ensureGuestSession] getToken() returned:", tokenObj);
-
-      if (tokenObj?.token) {
-        const restoredUser =
-          tokenObj.user ||
-          (tokenObj.userId
-            ? { id: tokenObj.userId, _id: tokenObj.userId }
-            : null);
-        console.log("[ensureGuestSession] restoring persisted session", {
-          hasUser: !!tokenObj.user,
-          hasUserId: !!tokenObj.userId,
-          restoredUser,
-        });
-        if (restoredUser) login?.(restoredUser, tokenObj.token);
-        return {
-          token: tokenObj.token,
-          userId: tokenObj.userId || restoredUser?._id,
-        };
-      }
-
-      console.log(
-        "[ensureGuestSession] nothing persisted — minting NEW guest user",
-      );
-      const result = await window.electronAPI.apiRequest(
-        "POST",
-        "/api/users/guest",
-        {},
-        {},
-      );
-      console.log("[ensureGuestSession] guest creation result:", result);
-      if (result?.token && result?.userId) {
-        const guestUser = result?.user || {
-          id: result.userId,
-          _id: result.userId,
-          guest: true,
-        };
-        login?.(guestUser, result.token);
-        return { token: result.token, userId: result.userId };
-      }
-    } catch (err) {
-      console.warn("[RealEstateUpload] Failed to ensure guest session:", err);
-    }
+    // Spark Vision has no guest/bootstrap concept — this whole flow is
+    // legacy and effectively a no-op now.
     return null;
   };
 
 
 
   useEffect(() => {
-    const hasRealEstateSelection = selectedCompany?.type === "real-estate";
-    if (hasRealEstateSelection) return;
+      if (!isLoggedIn) return;
+      const hasRealEstateSelection = selectedCompany?.type === "real-estate";
+      if (hasRealEstateSelection) return;
 
-    (async () => {
-      try {
-        const freshSession = await ensureGuestSession();
-
-        const loaded = await ensureCompaniesLoaded("real-estate", {
-          token: freshSession?.token,
-          user: freshSession?.userId ? { _id: freshSession.userId } : undefined,
-        });
-
-        if (loaded && loaded.length > 0) {
-          await autoSelectDefaultCompany({
-            type: "real-estate",
-            skipNavigation: true,
-            companiesList: loaded,
-          });
-          return;
+      (async () => {
+        try {
+          const loaded = await ensureCompaniesLoaded("real-estate");
+          if (loaded && loaded.length > 0) {
+            await autoSelectDefaultCompany({ type: "real-estate", skipNavigation: true, companiesList: loaded });
+            return;
+          }
+          setShowCompanyModal(true); // real user, explicit modal control from here
+        } catch (err) {
+          console.warn("[RealEstateUpload] Failed to load real estate companies on mount", err);
         }
+      })();
+    }, [selectedCompany?.type, isLoggedIn]);
 
-        // Nothing saved yet — don't silently trigger a Taqeem fetch/login.
-        // Ask the user first.
-        setShowCompanyModal(true);
-      } catch (err) {
-        console.warn(
-          "[RealEstateUpload] Failed to load real estate companies on mount",
-          err,
-        );
-      }
-    })();
-  }, [selectedCompany?.type]);
   const filtered = allReports.filter((r) => {
       const matchStatus = statusFilter
         ? getProgressStatus(getTaqeemState(r)) === statusFilter
@@ -2244,7 +2171,7 @@ export default function RealEstateUpload({ onViewChange }) {
         report,
         queuedActions: [actionId],
         approachSelections,
-        token,
+        isGuest,
         login,
         onViewChange,
         isTaqeemLoggedIn,
@@ -2264,8 +2191,16 @@ export default function RealEstateUpload({ onViewChange }) {
     }, {});
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6 space-y-4">
-      {/* ── Page Header ── */}
-      {/* ── Loading / Error ── */}
+
+    {!isLoggedIn ? (
+      <div className="flex flex-col items-center justify-center py-32 text-slate-400">
+        <User className="w-8 h-8 mb-3 text-slate-300" />
+        <p className="text-sm font-semibold text-slate-500">
+          Please Log In to continue
+        </p>
+      </div>
+    ) : (
+          <>
       {loading && (
         <div className="flex items-center justify-center py-20 text-slate-400">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
@@ -2411,7 +2346,7 @@ export default function RealEstateUpload({ onViewChange }) {
                   onReportSaved={() => refetch()}
                   selected={selectedIds.has(report.id)}
                   onToggle={toggleOne}
-                  token={token}
+                  isGuest={isGuest}
                   login={login}
                   onViewChange={onViewChange}
                   isTaqeemLoggedIn={isTaqeemLoggedIn}
@@ -2447,6 +2382,8 @@ export default function RealEstateUpload({ onViewChange }) {
           </div>
         </>
       )}
+          </>
+        )}
       {showCompanyModal && (
         <RealEstateCompanyFetchModal
           busy={companyModalBusy}

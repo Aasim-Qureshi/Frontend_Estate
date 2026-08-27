@@ -1759,7 +1759,7 @@ const Layout = ({ children, currentView, onViewChange }) => {
                             </p>
                         </div>
                     )}
-                    <div className={`relative z-10 ${blocked ? 'pointer-events-none opacity-60' : ''}`}>
+                    <div className={`relative z-10 h-full ${blocked ? 'pointer-events-none opacity-60' : ''}`}>
                         <PageChrome />
                         {children}
                     </div>

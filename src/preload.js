@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     };
     return safeInvoke("auth-clear-refresh-token", payload);
   },
+  clearPersistedAuthState: () => safeInvoke("auth-clear-persisted-state"),
 
   // Reports
   validateReport: (reportId, userId = null, companyOfficeId = null) =>

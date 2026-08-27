@@ -98,7 +98,7 @@ const resolvePreferredCompanyStorageKey = (user, isGuest) => {
 };
 
 export const ValueNavProvider = ({ children }) => {
-  const { user, token, isGuest, isLoading: sessionLoading } = useSession();
+const { user, isGuest, isLoading: sessionLoading } = useSession();
   const { t } = useTranslation();
   const { taqeemStatus, setCompanyStatus, setTaqeemStatus } = useNavStatus();
   const [selectedCard, setSelectedCard] = useState(null);
@@ -168,7 +168,7 @@ export const ValueNavProvider = ({ children }) => {
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
-    console.log("[syncCompanies] user at call time:", user, "token:", token);
+    console.log("[syncCompanies] user at call time:", user);
     if (!user && !isGuest) return;
     if (preferredCompanyKey) return;
     const legacyKey = "nav:preferred-company-url";
@@ -184,10 +184,7 @@ export const ValueNavProvider = ({ children }) => {
     }
   }, [isGuest, preferredCompanyKey, setPreferredCompanyKey, user]);
 
-  const authHeaders = useMemo(
-    () => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
+
   const preferredCompanyMatches = useCallback(
     (company) => {
       if (!preferredCompanyKey || !company) return false;
@@ -308,97 +305,26 @@ export const ValueNavProvider = ({ children }) => {
 
   const loadSavedCompanies = useCallback(
     async (type = "equipment", overrides = {}) => {
+      const effectiveUserId = overrides.userId || user?.id || user?._id;
+
+      // Guests (and anyone without a real user id) never auto-fetch.
+      // Fetching for real users only happens via the explicit modal flow.
+      if (!effectiveUserId || isGuest) {
+        setCompanyError("");
+        return companiesByTypeRef.current[type] || [];
+      }
+
       if (!window?.electronAPI?.apiRequest) {
         setCompanyError(t("navigation.companyFetchUnavailable"));
         return [];
-      }
-      // NEW: allow callers to pass a just-created token/user, bypassing
-      // stale-closure issues right after login()/guest-session creation.
-      const effectiveToken = overrides.token || token;
-      const effectiveUser = overrides.user || user;
-      const effectiveAuthHeaders = overrides.token
-        ? { Authorization: `Bearer ${overrides.token}` }
-        : authHeaders;
-
-      console.log("[loadSavedCompanies] called", {
-        type,
-        hasOverrideToken: !!overrides.token,
-        hasContextToken: !!token,
-        effectiveTokenPreview: effectiveToken
-          ? effectiveToken.slice(0, 12) + "…"
-          : null,
-        effectiveUser,
-      });
-
-      const fetchAutomationCompanies = () =>
-        type === "real-estate"
-          ? window.electronAPI.getCompaniesRealEstate?.()
-          : window.electronAPI.getCompanies?.();
-
-      if (!effectiveToken) {
-        console.log("[loadSavedCompanies] BRANCH: no token → automation fallback");
-        const automationPromise = fetchAutomationCompanies();
-        if (!automationPromise) {
-          setCompanyError("");
-          return companiesByTypeRef.current[type] || [];
-        }
-        setLoadingCompanies(true);
-        setCompanyError("");
-        try {
-          const data = await automationPromise;   // reuse the same promise
-          if (data?.status === "SUCCESS") {
-            const fetched = (data.data || []).map(normalizeCompany);
-            if (fetched.length) setCompaniesForType(type, fetched);
-            return fetched;
-          }
-          setCompanyError(data?.error || t("navigation.loadCompaniesFailed"));
-          return [];
-        } catch (err) {
-          setCompanyError(err?.message || t("navigation.loadCompaniesFailed"));
-          return [];
-        } finally {
-          setLoadingCompanies(false);
-        }
-      }
-
-      if (!effectiveUser) {
-        console.log(
-          "[loadSavedCompanies] BRANCH: token but no user → automation fallback",
-        );
-        setCompanyError("");
-        const fetcher = fetchAutomationCompanies();
-        if (!fetcher) return [];
-        setLoadingCompanies(true);
-        try {
-          const data = await fetcher;
-          if (data?.status === "SUCCESS") {
-            const fetched = (data.data || []).map(normalizeCompany);
-            if (fetched.length) setCompaniesForType(type, fetched);
-            return fetched;
-          }
-          return [];
-        } catch {
-          return [];
-        } finally {
-          setLoadingCompanies(false);
-        }
       }
 
       setLoadingCompanies(true);
       setCompanyError("");
       try {
-        console.log("headers", effectiveAuthHeaders);
         const res = await window.electronAPI.apiRequest(
           "GET",
-          `/api/companes/me?type=${type}`,
-          {},
-          effectiveAuthHeaders,
-        );
-        console.log(
-          "[loadSavedCompanies] DB response for type",
-          type,
-          ":",
-          res,
+          `/api/companes/me?type=${type}&userId=${encodeURIComponent(effectiveUserId)}`,
         );
         applyCompaniesMeta(extractCompaniesMeta(res));
         const list = normalizeCompanyList(res).map(normalizeCompany);
@@ -417,35 +343,23 @@ export const ValueNavProvider = ({ children }) => {
         setLoadingCompanies(false);
       }
     },
-    [
-      applyCompaniesMeta,
-      authHeaders,
-      extractCompaniesMeta,
-      normalizeCompanyList,
-      setCompaniesForType,
-      t,
-      token,
-      user,
-    ],
+    [applyCompaniesMeta, extractCompaniesMeta, normalizeCompanyList, setCompaniesForType, t, user, isGuest],
   );
+
   const syncCompanies = useCallback(
     async (items = [], defaultType = "equipment", overrides = {}) => {
       if (!window?.electronAPI?.apiRequest) {
         throw new Error(t("navigation.companySyncUnavailable"));
       }
 
-      const effectiveUserId = overrides.userId || user?._id || user?.id;
-      const effectiveToken = overrides.token || token;
+      const effectiveUserId = overrides.userId || user?.id || user?._id;
 
-      if (!effectiveUserId && !effectiveToken) {
+      if (!effectiveUserId) {
         throw new Error(t("navigation.loginRequiredToSaveCompanies"));
       }
 
-      const headers = effectiveToken
-        ? { Authorization: `Bearer ${effectiveToken}` }
-        : authHeaders;
-
       const payload = {
+        userId: effectiveUserId,
         companies: items.map((item) => ({
           ...item,
           type: item.type || defaultType,
@@ -456,11 +370,10 @@ export const ValueNavProvider = ({ children }) => {
         "POST",
         "/api/companes/sync",
         payload,
-        headers,
       );
       applyCompaniesMeta(extractCompaniesMeta(res));
       const list = normalizeCompanyList(res);
-      const fresh = await loadSavedCompanies(defaultType);
+      const fresh = await loadSavedCompanies(defaultType, { userId: effectiveUserId });
       if (fresh.length === 0 && list.length > 0) {
         setCompaniesForType(defaultType, list.map(normalizeCompany));
       }
@@ -468,45 +381,40 @@ export const ValueNavProvider = ({ children }) => {
     },
     [
       applyCompaniesMeta,
-      authHeaders,
       extractCompaniesMeta,
       loadSavedCompanies,
       normalizeCompanyList,
       setCompaniesForType,
       t,
-      token,
       user,
     ],
   );
 
   useEffect(() => {
       if (sessionLoading) return;
-      if (user) {
-        // Fetch both company types up front so the Apps view (which isn't
-        // scoped to a single domain) always shows the full list, instead of
-        // only whichever domain the user happened to visit first.
+      if (user && !isGuest) {
         loadSavedCompanies("equipment");
         loadSavedCompanies("real-estate");
       } else {
         setCompaniesByType({ equipment: [], "real-estate": [] });
         setCompanyError("");
       }
-    }, [user, loadSavedCompanies, sessionLoading]);
+    }, [user, isGuest, loadSavedCompanies, sessionLoading]);
 
   const dbLoadAttempted = useRef({ equipment: false, "real-estate": false });
 
   useEffect(() => {
-    if (sessionLoading) return;
-    const type = domainToType(selectedDomain);
-    if (
-      taqeemStatus?.state === "success" &&
-      (!companies || companies.length === 0) &&
-      !dbLoadAttempted.current[type]
-    ) {
-      dbLoadAttempted.current[type] = true;
-      loadSavedCompanies(type);
-    }
-  }, [sessionLoading, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
+      if (sessionLoading || isGuest) return;
+      const type = domainToType(selectedDomain);
+      if (
+        taqeemStatus?.state === "success" &&
+        (!companies || companies.length === 0) &&
+        !dbLoadAttempted.current[type]
+      ) {
+        dbLoadAttempted.current[type] = true;
+        loadSavedCompanies(type);
+      }
+    }, [sessionLoading, isGuest, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
 
   useEffect(() => {
     if (taqeemStatus?.state !== "success") {
@@ -559,14 +467,15 @@ export const ValueNavProvider = ({ children }) => {
     async (officeId) => {
       const normalizedOffice = String(officeId || "").trim();
       if (!normalizedOffice) return null;
-      if (!token || !window?.electronAPI?.apiRequest) return normalizedOffice;
+
+      const effectiveUserId = user?.id || user?._id;
+      if (!effectiveUserId || !window?.electronAPI?.apiRequest) return normalizedOffice;
 
       try {
         const response = await window.electronAPI.apiRequest(
           "POST",
           "/api/users/taqeem/default-company",
-          { officeId: normalizedOffice },
-          authHeaders,
+          { userId: effectiveUserId, officeId: normalizedOffice },
         );
         const resolved = String(response?.officeId || normalizedOffice).trim();
         setDefaultCompanyOfficeId(resolved);
@@ -580,7 +489,7 @@ export const ValueNavProvider = ({ children }) => {
         return null;
       }
     },
-    [authHeaders, setCompanyStatus, t, token],
+    [setCompanyStatus, t, user],
   );
 
   const setSelectedCompany = useCallback(
