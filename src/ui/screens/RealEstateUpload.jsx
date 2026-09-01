@@ -32,7 +32,7 @@ import { ensureTaqeemAuthorized } from "../../shared/helper/taqeemAuthWrap";
 // ─── API host config ───────────────────────────────────────────────────────
 // Flip this ONE flag to switch every request in this file between the cloud
 // server and your local dev server — no other line needs to change.
-const USE_LOCAL_API = true;
+const USE_LOCAL_API = false;
 
 const CLOUD_HOST = "167.71.231.64";
 const LOCAL_HOST = "localhost";

@@ -166,7 +166,7 @@ const packageHandlers = {
       const envUrl = process.env.SPARK_VISION_BACKEND_URL || process.env.BACKEND_URL;
       if (envUrl) candidates.push(envUrl.replace(/\/$/, ""));
       candidates.push(
-        // "http://167.71.231.64:5000",
+        "http://167.71.231.64:5000",
         "http://localhost:5000",
         // "http://127.0.0.1:5000",
       );
@@ -174,7 +174,7 @@ const packageHandlers = {
       const envUrl = process.env.BACKEND_URL;
       if (envUrl) candidates.push(envUrl.replace(/\/$/, ""));
       candidates.push(
-        // "http://167.71.231.64:3000",
+        "http://167.71.231.64:3000",
         "http://localhost:3000",
         // "http://127.0.0.1:3000",
         // "https://future-electron-backend.onrender.com",
