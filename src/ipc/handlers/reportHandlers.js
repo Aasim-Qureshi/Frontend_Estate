@@ -1265,37 +1265,25 @@ const reportHandlers = {
     }
   },
 
-  async handleRealEstateFormFill(
-    event,
-    record_id,
-    pdfPath = null,
-    approachSelections,
-  ) {
+  async handleRealEstateFormFill(event, record_id, pdfPath = null, approachSelections, facilityId = null) {
     try {
-      console.log(
-        "[MAIN] Received real estate form fill request:",
-        record_id,
-        pdfPath,
-      );
+      console.log("[MAIN] Received real estate form fill request:", record_id, pdfPath, facilityId);
       const result = await pythonAPI.report.realEstateFormFill(
-        record_id,
-        pdfPath,
-        approachSelections,
+        record_id, pdfPath, approachSelections, facilityId,
       );
       console.log("[MAIN] Real estate form fill result:", result);
       return result;
     } catch (err) {
-      console.error(
-        "[MAIN] Real estate form fill error:",
-        err && err.stack ? err.stack : err,
-      );
+      console.error("[MAIN] Real estate form fill error:", err && err.stack ? err.stack : err);
       return { status: "FAILED", error: err.message || String(err) };
     }
   },
 
-  async handleRealEstateFormFillBulk(event, recordIds, pdfPaths, approachSelections) {
+  async handleRealEstateFormFillBulk(event, recordIds, pdfPaths, approachSelections, facilityId = null) {
     try {
-      return await pythonAPI.report.realEstateFormFillBulk(recordIds, pdfPaths, approachSelections);
+      return await pythonAPI.report.realEstateFormFillBulk(
+        recordIds, pdfPaths, approachSelections, facilityId,
+      );
     } catch (err) {
       return { status: "FAILED", error: err.message || String(err) };
     }

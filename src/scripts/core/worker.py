@@ -25,7 +25,7 @@ from scripts.delete.reportDelete import (
     stop_delete_report,
 )
 from scripts.loginFlow.companyNavigate import navigate_to_company
-from scripts.loginFlow.getCompanies import get_companies, get_companies_real_estate
+from scripts.loginFlow.getCompanies import get_companies
 from scripts.loginFlow.getProfile import get_profile
 from scripts.loginFlow.login import startLogin, submitOtp
 from scripts.loginFlow.newLogin import public_login_flow
@@ -900,21 +900,13 @@ async def handle_command(cmd):
 
     elif action == "get-companies":
         try:
-            result = await asyncio.wait_for(get_companies(), timeout=900.0)
+            browser = await get_browser()
+            result = await asyncio.wait_for(get_companies(browser), timeout=180.0)
         except asyncio.TimeoutError:
-            result = {
-                "status": "FAILED",
-                "error": "get-companies timed out after 15 minutes (browser may be stuck).",
-                "data": [],
-            }
-        result["commandId"] = cmd.get("commandId")
-
-        print(json.dumps(result), flush=True)
-
-    elif action == "get-companies-real-estate":
-        result = await get_companies_real_estate()
+            result = {"status": "FAILED", "error": "get-companies timed out.", "data": []}
         result["commandId"] = cmd.get("commandId")
         print(json.dumps(result), flush=True)
+
 
     elif action == "get-profile":
         try:
@@ -1107,27 +1099,20 @@ async def handle_command(cmd):
         print(json.dumps(result), flush=True)
 
     elif action == "submit-real-estate-report":
-        from scripts.submission.realEstateFormFiller import (
-            debug_scrape_region_city_codes,
-            run_real_estate_form_fill,
-        )
+        from scripts.submission.taqeemNew.flow import run_taqeem_new_flow
 
         browser = await get_browser()
         record_id = cmd.get("recordId")
         pdf_path = cmd.get("pdfPath")
-        approach_selections = cmd.get("approachSelections")
 
-        result = await run_real_estate_form_fill(
+        result = await run_taqeem_new_flow(
             browser,
-            record_id,
+            record_id=record_id,
             pdf_path=pdf_path,
-            approach_selections=approach_selections,
+            approaches=cmd.get("approachSelections"),
+            facility_id=cmd.get("facilityId"),
         )
-        # result = await debug_scrape_region_city_codes(
-        #     browser, record_id, pdf_path=pdf_path
-        # )
         result["commandId"] = cmd.get("commandId")
-
         print(json.dumps(result), flush=True)
 
     elif action == "submit-real-estate-reports-bulk":

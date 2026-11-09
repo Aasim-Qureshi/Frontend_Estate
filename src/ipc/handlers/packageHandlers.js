@@ -193,7 +193,7 @@ const packageHandlers = {
         url: fullUrl,
         headers: { "Content-Type": "application/json", ...authHeaders, ...headers },
         data,
-        timeout: 10000,
+        timeout: 1000000,
         validateStatus: () => true,
       };
 

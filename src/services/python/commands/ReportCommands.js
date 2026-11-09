@@ -494,25 +494,17 @@ class ReportCommands {
     });
   }
 
-  async realEstateFormFill(
-    recordId,
-    pdfPath = null,
-    approachSelections = null,
-  ) {
-    return this._sendCommand({
-      action: "submit-real-estate-report",
-      recordId,
-      pdfPath,
-      approachSelections,
-    });
+  async realEstateFormFill(recordId, pdfPath = null, approachSelections = null, facilityId = null) {
+    return this._sendCommand({ action: "submit-real-estate-report", recordId, pdfPath, approachSelections, facilityId });
   }
 
-  async realEstateFormFillBulk(recordIds, pdfPaths = null, approachSelections = null) {
+  async realEstateFormFillBulk(recordIds, pdfPaths = null, approachSelections = null, facilityId = null) {
     return this._sendCommand({
       action: "submit-real-estate-reports-bulk",
       recordIds,
       pdfPaths,
       approachSelections,
+      facilityId,
     });
   }
 }

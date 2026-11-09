@@ -258,8 +258,6 @@ async function bootstrapAndSync({
     return loginFlow;
   }
 
-  // Manual login in browser was completed successfully.
-  // Keep the toggle ON even if we still need a system account login.
   console.info(
     "[taqeemAuth] bootstrapAndSync: manual Taqeem login CHECK received from worker",
     {
@@ -273,11 +271,11 @@ async function bootstrapAndSync({
   const resolvedTaqeemUser = String(
     loginFlow?.user_id || fallbackTaqeemUser || "",
   ).trim();
-  // public_login_flow intentionally returns user_id=null after manual CHECK login.
-  // Do not block automation or show a fake "phone login" conflict — server link is optional.
+
+  // No username available: server link is optional, the browser session is enough.
   if (!resolvedTaqeemUser) {
     console.info(
-      "[taqeemAuth] bootstrapAndSync: Taqeem CHECK login OK but no username in worker/cache; skipping new-bootstrap/sync.",
+      "[taqeemAuth] bootstrapAndSync: no username in worker/cache; skipping new-bootstrap/sync.",
       { hadCachedUser: Boolean(cachedSnapshot?.user) },
     );
     setTaqeemStatus?.("success", "Taqeem login: On");
@@ -324,7 +322,19 @@ async function bootstrapAndSync({
     if (payload?.status === "TAQEEM_ALREADY_USED") {
       return handleConflict(payload);
     }
-    throw error;
+    // Server-side failure (e.g. "Package not found"). The Taqeem browser is
+    // still logged in, so keep the status On and continue without the link.
+    console.warn(
+      "[taqeemAuth] new-bootstrap failed; continuing without server link:",
+      payload?.error || error?.message || error,
+    );
+    setTaqeemStatus?.("success", "Taqeem login: On");
+    return {
+      status: "AUTHORIZED",
+      skippedServerBootstrap: true,
+      taqeemUser: resolvedTaqeemUser,
+      loginFlow,
+    };
   }
 
   if (bootstrapResponse?.status === "TAQEEM_ALREADY_USED") {
@@ -338,22 +348,31 @@ async function bootstrapAndSync({
     login(loginPayload, resolvedToken);
   }
 
-  const syncResult = await syncTaqeemSnapshot({
-    token: resolvedToken,
-    taqeemUser: resolvedTaqeemUser,
-    selectedCompanyOfficeId,
-    profileData: cachedSnapshot.profile,
-    companies: cachedSnapshot.companies,
-    cachedUser: cachedSnapshot.user,
-    skipProfileFetch: Boolean(cachedSnapshot.profile),
-    skipCompaniesFetch:
-      Array.isArray(cachedSnapshot.companies) &&
-      cachedSnapshot.companies.length > 0,
-  });
+  // Snapshot sync is best-effort; a failure here must not break the login.
+  let syncResult = null;
+  try {
+    syncResult = await syncTaqeemSnapshot({
+      token: resolvedToken,
+      taqeemUser: resolvedTaqeemUser,
+      selectedCompanyOfficeId,
+      profileData: cachedSnapshot.profile,
+      companies: cachedSnapshot.companies,
+      cachedUser: cachedSnapshot.user,
+      skipProfileFetch: Boolean(cachedSnapshot.profile),
+      skipCompaniesFetch:
+        Array.isArray(cachedSnapshot.companies) &&
+        cachedSnapshot.companies.length > 0,
+    });
+  } catch (syncErr) {
+    console.warn(
+      "[taqeemAuth] syncTaqeemSnapshot failed; continuing:",
+      syncErr?.message || syncErr,
+    );
+  }
 
   if (syncResult?.status === "TAQEEM_ALREADY_USED") {
     console.warn(
-      "[taqeemAuth] bootstrapAndSync: syncTaqeemSnapshot TAQEEM_ALREADY_USED — Taqeem browser is still usable; not blocking automation.",
+      "[taqeemAuth] bootstrapAndSync: syncTaqeemSnapshot TAQEEM_ALREADY_USED, not blocking automation.",
       syncResult,
     );
     emitTaqeemConflict({

@@ -122,31 +122,10 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
       storage: "local",
     },
   );
-  const domainToType = (domain) =>
-    domain === "real-estate" ? "real-estate" : "equipment";
+  const [companies, setCompanies] = useState([]);
+  const companiesRef = useRef(companies);
+  useEffect(() => { companiesRef.current = companies; }, [companies]);
 
-  const [companiesByType, setCompaniesByType] = useState({
-    equipment: [],
-    "real-estate": [],
-  });
-  const companiesByTypeRef = useRef(companiesByType);
-  useEffect(() => {
-    companiesByTypeRef.current = companiesByType;
-  }, [companiesByType]);
-
-  // Derived "active" list for whatever domain is selected
-  const companies = companiesByType[domainToType(selectedDomain)] || [];
-
-  // Type -> domain id used by getDomainLabel/breadcrumbs
-  const typeToDomainId = (type) =>
-    type === "real-estate" ? "real-estate" : "equipments";
-
-
-
-
-  const setCompaniesForType = useCallback((type, list) => {
-    setCompaniesByType((prev) => ({ ...prev, [type]: list }));
-  }, []);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [companyError, setCompanyError] = useState("");
   const [activeGroup, setActiveGroup] = useState(null);
@@ -234,18 +213,6 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
     [t],
   );
 
-  const companiesGrouped = useMemo(
-    () =>
-      Object.entries(companiesByType)
-        .filter(([, list]) => Array.isArray(list) && list.length > 0)
-        .map(([type, list]) => ({
-          type,
-          domainId: typeToDomainId(type),
-          label: getDomainLabel(typeToDomainId(type)),
-          companies: list,
-        })),
-    [companiesByType, getDomainLabel],
-  );
 
   const normalizeCompanyList = useCallback((payload) => {
     if (!payload) return [];
@@ -285,7 +252,7 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
   const resetAll = useCallback(() => {
     resetNavigation();
     setSelectedCompanyState(null);
-    setCompaniesByType({ equipment: [], "real-estate": [] });
+    setCompanies([]);
     setCompanyError("");
     setDefaultCompanyOfficeId("");
   }, [resetNavigation, setSelectedCompanyState]);
@@ -304,16 +271,13 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
   }, []);
 
   const loadSavedCompanies = useCallback(
-    async (type = "equipment", overrides = {}) => {
+    async (overrides = {}) => {
       const effectiveUserId = overrides.userId || user?.id || user?._id;
 
-      // Guests (and anyone without a real user id) never auto-fetch.
-      // Fetching for real users only happens via the explicit modal flow.
       if (!effectiveUserId || isGuest) {
         setCompanyError("");
-        return companiesByTypeRef.current[type] || [];
+        return companiesRef.current;
       }
-
       if (!window?.electronAPI?.apiRequest) {
         setCompanyError(t("navigation.companyFetchUnavailable"));
         return [];
@@ -324,13 +288,11 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
       try {
         const res = await window.electronAPI.apiRequest(
           "GET",
-          `/api/companes/me?type=${type}&userId=${encodeURIComponent(effectiveUserId)}`,
+          `/api/companes/me?userId=${encodeURIComponent(effectiveUserId)}`,
         );
         applyCompaniesMeta(extractCompaniesMeta(res));
         const list = normalizeCompanyList(res).map(normalizeCompany);
-        const current = companiesByTypeRef.current[type] || [];
-        if (list.length > 0 || current.length > 0)
-          setCompaniesForType(type, list);
+        if (list.length > 0 || companiesRef.current.length > 0) setCompanies(list);
         return list;
       } catch (err) {
         setCompanyError(
@@ -343,79 +305,52 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
         setLoadingCompanies(false);
       }
     },
-    [applyCompaniesMeta, extractCompaniesMeta, normalizeCompanyList, setCompaniesForType, t, user, isGuest],
+    [applyCompaniesMeta, extractCompaniesMeta, normalizeCompanyList, t, user, isGuest],
   );
 
   const syncCompanies = useCallback(
-    async (items = [], defaultType = "equipment", overrides = {}) => {
+    async (items = [], overrides = {}) => {
       if (!window?.electronAPI?.apiRequest) {
         throw new Error(t("navigation.companySyncUnavailable"));
       }
-
       const effectiveUserId = overrides.userId || user?.id || user?._id;
-
       if (!effectiveUserId) {
         throw new Error(t("navigation.loginRequiredToSaveCompanies"));
       }
 
-      const payload = {
-        userId: effectiveUserId,
-        companies: items.map((item) => ({
-          ...item,
-          type: item.type || defaultType,
-        })),
-      };
-
       const res = await window.electronAPI.apiRequest(
         "POST",
         "/api/companes/sync",
-        payload,
+        { userId: effectiveUserId, companies: items },
       );
       applyCompaniesMeta(extractCompaniesMeta(res));
       const list = normalizeCompanyList(res);
-      const fresh = await loadSavedCompanies(defaultType, { userId: effectiveUserId });
+      const fresh = await loadSavedCompanies({ userId: effectiveUserId });
       if (fresh.length === 0 && list.length > 0) {
-        setCompaniesForType(defaultType, list.map(normalizeCompany));
+        setCompanies(list.map(normalizeCompany));
       }
       return list;
     },
-    [
-      applyCompaniesMeta,
-      extractCompaniesMeta,
-      loadSavedCompanies,
-      normalizeCompanyList,
-      setCompaniesForType,
-      t,
-      user,
-    ],
+    [applyCompaniesMeta, extractCompaniesMeta, loadSavedCompanies, normalizeCompanyList, t, user],
   );
-
   useEffect(() => {
-      if (sessionLoading) return;
-      if (user && !isGuest) {
-        loadSavedCompanies("equipment");
-        loadSavedCompanies("real-estate");
-      } else {
-        setCompaniesByType({ equipment: [], "real-estate": [] });
-        setCompanyError("");
-      }
-    }, [user, isGuest, loadSavedCompanies, sessionLoading]);
+    if (sessionLoading) return;
+    if (user && !isGuest) {
+      loadSavedCompanies();
+    } else {
+      setCompanies([]);
+      setCompanyError("");
+    }
+  }, [user, isGuest, loadSavedCompanies, sessionLoading]);
 
-  const dbLoadAttempted = useRef({ equipment: false, "real-estate": false });
-
+  const dbLoadAttempted = useRef(false);
   useEffect(() => {
-      if (sessionLoading || isGuest) return;
-      const type = domainToType(selectedDomain);
-      if (
-        taqeemStatus?.state === "success" &&
-        (!companies || companies.length === 0) &&
-        !dbLoadAttempted.current[type]
-      ) {
-        dbLoadAttempted.current[type] = true;
-        loadSavedCompanies(type);
-      }
-    }, [sessionLoading, isGuest, companies, loadSavedCompanies, selectedDomain, taqeemStatus?.state]);
-
+    if (sessionLoading || isGuest) return;
+    if (taqeemStatus?.state === "success" && companies.length === 0 && !dbLoadAttempted.current) {
+      dbLoadAttempted.current = true;
+      loadSavedCompanies();
+    }
+  }, [sessionLoading, isGuest, companies, loadSavedCompanies, taqeemStatus?.state]);
   useEffect(() => {
     if (taqeemStatus?.state !== "success") {
       return;
@@ -527,45 +462,11 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
           await persistDefaultCompany(selectedOfficeId);
         }
       }
-      if (!window?.electronAPI?.navigateToCompany) {
-        if (!quiet)
-          setCompanyStatus(
-            "info",
-            `Company: ${normalized.name || t("sidebar.company.fallback")}`,
-          );
-        return normalized;
-      }
-
-      try {
-        const payload = {
-          name: normalized.name,
-          url: normalized.url,
-          officeId: normalized.officeId || normalized.office_id,
-          sectorId: normalized.sectorId || normalized.sector_id,
-          skipNavigation,
-        };
-        const result = await window.electronAPI.navigateToCompany(payload);
-        if (result?.status === "SUCCESS") {
-          const chosen = normalizeCompany(result.selectedCompany || normalized);
-          setSelectedCompanyState(chosen);
-          if (!quiet)
-            setCompanyStatus(
-              "success",
-              `Company: ${chosen.name || t("sidebar.company.fallback")}`,
-            );
-          return chosen;
-        }
-        if (!quiet)
-          setCompanyStatus(
-            "error",
-            result?.error || t("navigation.loadCompaniesFailed"),
-          );
-      } catch (err) {
-        if (!quiet)
-          setCompanyStatus(
-            "error",
-            err?.message || t("navigation.loadCompaniesFailed"),
-          );
+      if (!quiet) {
+        setCompanyStatus(
+          "success",
+          `Company: ${normalized.name || t("sidebar.company.fallback")}`,
+        );
       }
       return normalized;
     },
@@ -583,7 +484,6 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
     async (company, options = {}) => {
       const {
         applySelection = true,
-        skipNavigation = true,
         quiet = false,
         persistDefault = false,
       } = options;
@@ -591,7 +491,7 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
       setPreferredCompanyKey(getCompanyKey(normalized));
       if (!normalized) {
         if (applySelection) {
-          await setSelectedCompany(null, { skipNavigation, quiet });
+          await setSelectedCompany(null, { quiet });
         }
         return null;
       }
@@ -608,7 +508,6 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
 
       if (applySelection) {
         await setSelectedCompany(normalized, {
-          skipNavigation,
           quiet,
           setAsDefault: true,
           onlyIfUnset: false,
@@ -622,9 +521,8 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
 
   const replaceCompanies = useCallback(
     async (list = [], options = {}) => {
-      const type = options.type || "equipment";
       const normalized = Array.isArray(list) ? list.map(normalizeCompany) : [];
-      setCompaniesForType(type, normalized);
+      setCompanies(normalized);
       setCompanyError("");
       const autoSelect = options.autoSelect !== false;
       if (autoSelect && normalized.length > 0) {
@@ -648,7 +546,6 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
     [
       defaultCompanyOfficeId,
       preferredCompanyMatches,
-      setCompaniesForType,
       setSelectedCompany,
     ],
   );
@@ -740,44 +637,27 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
     taqeemStatus?.state,
   ]);
 
-  useEffect(() => {
-    if (!selectedCompany || !companies || companies.length === 0) return;
-    const key = getCompanyKey(selectedCompany);
-    if (!key) return;
-    const match = companies.find((company) => getCompanyKey(company) === key);
-    if (match && match !== selectedCompany) {
-      setSelectedCompanyState(normalizeCompany(match));
-    }
-  }, [companies, selectedCompany, setSelectedCompanyState]);
 
   const ensureCompaniesLoaded = useCallback(
-    async (type = "equipment", overrides = {}) => {
-      const existing = companiesByType[type];
-      if (existing && existing.length > 0) return existing;
-      return loadSavedCompanies(type, overrides);
+    async (overrides = {}) => {
+      if (companiesRef.current.length > 0) return companiesRef.current;
+      return loadSavedCompanies(overrides);
     },
-    [companiesByType, loadSavedCompanies],
+    [loadSavedCompanies],
   );
 
   const autoSelectDefaultCompany = useCallback(
     async (options = {}) => {
-      const {
-        type = "equipment",
-        skipNavigation = true,
-        quiet = false,
-        companiesList = null,
-      } = options;
+      const { skipNavigation = true, quiet = false, companiesList = null } = options;
       const availableCompanies =
         companiesList && companiesList.length > 0
           ? companiesList
-          : companiesByType[type] && companiesByType[type].length > 0
-            ? companiesByType[type]
-            : await ensureCompaniesLoaded(type);
+          : companiesRef.current.length > 0
+            ? companiesRef.current
+            : await ensureCompaniesLoaded();
       const normalizedOfficeId = String(defaultCompanyOfficeId || "").trim();
       const defaultCompany = normalizedOfficeId
-        ? availableCompanies.find(
-            (c) => getCompanyOfficeId(c) === normalizedOfficeId,
-          )
+        ? availableCompanies.find((c) => getCompanyOfficeId(c) === normalizedOfficeId)
         : null;
       const preferredCandidate =
         availableCompanies.find((c) => preferredCompanyMatches(c)) || null;
@@ -785,24 +665,25 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
       if (!candidate) return null;
       return setSelectedCompany(candidate, { skipNavigation, quiet });
     },
-    [
-      companiesByType,
-      defaultCompanyOfficeId,
-      ensureCompaniesLoaded,
-      preferredCompanyMatches,
-      setSelectedCompany,
-    ],
+    [defaultCompanyOfficeId, ensureCompaniesLoaded, preferredCompanyMatches, setSelectedCompany],
   );
 
   useEffect(() => {
     if (!companies || companies.length === 0) return;
     if (selectedCompany) return;
     autoSelectDefaultCompany({
-      type: domainToType(selectedDomain),
       skipNavigation: true,
       quiet: true,
     }).catch(() => {});
   }, [autoSelectDefaultCompany, companies, selectedCompany]);
+
+  useEffect(() => {
+    if (!selectedCompany || companies.length === 0) return;
+    const key = getCompanyKey(selectedCompany);
+    if (!companies.some((c) => getCompanyKey(c) === key)) {
+      setSelectedCompanyState(null);
+    }
+  }, [companies, selectedCompany, setSelectedCompanyState]);
 
   const syncNavForView = useCallback(
     (viewId) => {
@@ -899,7 +780,6 @@ const { user, isGuest, isLoading: sessionLoading } = useSession();
         defaultCompanyOfficeId,
         companies,
         loadingCompanies,
-        companiesGrouped,
         companyError,
         activeGroup,
         activeTab,

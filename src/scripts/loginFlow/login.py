@@ -170,7 +170,7 @@ async def startLogin(page, email, password, method, auto_otp=False):
                 if sms_option:
                     await sms_option.select_option()
                     await asyncio.sleep(0.5)
-                    
+
         email_input = await wait_for_element(page, "#username", 30)
         if not email_input:
             msg = {"status": "FAILED", "error": "Email input not found"}
@@ -276,16 +276,16 @@ async def submitOtp(page, otp, record_id=None):
         await verify_btn.click()
         await asyncio.sleep(3)
         error_message = await wait_for_element(page, "#input-error-otp-code", timeout=1)
-        
+
         # Convert debug prints to JSON messages
         debug_msg = {"type": "DEBUG", "message": "Looking for error message"}
         print(json.dumps(debug_msg), flush=True)
-        
+
         if error_message:
             error_text = error_message.text
             debug_msg = {"type": "DEBUG", "message": f"Error message found: {error_text}"}
             print(json.dumps(debug_msg), flush=True)
-            
+
             msg = {"status": "OTP_FAILED", "message": "Try Again", "recoverable": True}
             print(json.dumps(msg), flush=True)
             return msg

@@ -29,7 +29,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   submitOtp: (otp) => safeInvoke("submit-otp", otp),
   checkStatus: () => safeInvoke("check-status"),
   getCompanies: () => safeInvoke("get-companies"),
-  getCompaniesRealEstate: () => safeInvoke("get-companies-real-estate"),
   navigateToCompany: (company) => safeInvoke("navigate-to-company", company),
   register: (userData) => safeInvoke("register", userData),
   openTaqeemLogin: (opts = {}) => safeInvoke("open-taqeem-login", opts),
@@ -373,20 +372,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     safeInvoke("download-image", { url, filename }),
   showImageWindow: (url) => safeInvoke("show-image-window", url),
 
-  submitRealEstateReport: (
-    recordId,
-    pdfPath = null,
-    approachSelections = null,
-  ) =>
-    safeInvoke(
-      "submit-real-estate-report",
-      recordId,
-      pdfPath,
-      approachSelections,
-    ),
-
-    submitRealEstateReportsBulk: (recordIds, pdfPaths = null, approachSelections = null) =>
-      safeInvoke("submit-real-estate-reports-bulk", recordIds, pdfPaths, approachSelections),
+  submitRealEstateReport: (recordId, pdfPath = null, approachSelections = null, facilityId = null) =>
+    safeInvoke("submit-real-estate-report", recordId, pdfPath, approachSelections, facilityId),
+  submitRealEstateReportsBulk: (recordIds, pdfPaths = null, approachSelections = null, facilityId = null) =>
+    safeInvoke("submit-real-estate-reports-bulk", recordIds, pdfPaths, approachSelections, facilityId),
   downloadRealEstatePdf: (reportId) =>
     safeInvoke("download-real-estate-pdf", reportId),
 });

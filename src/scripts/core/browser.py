@@ -3,6 +3,7 @@ import json
 import os
 import profile
 import sys
+import time
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,18 +18,36 @@ load_dotenv()
 browser = None
 page = None
 refresh_task = None
-TAQEEM_APP_PREFIX = "https://qima.taqeem.gov.sa/"
-TAQEEM_AUTH_URL_MARKERS = (
-    "sso.taqeem.gov.sa/realms/rel_taqeem/login-actions/authenticate",
-    "sso.taqeem.gov.sa/realms/rel_taqeem/protocol/openid-connect/auth",
-    "/login-actions/authenticate",
-    "/protocol/openid-connect/auth",
+# --- Taqeem URLs (taken from login_flow.py) ---
+LOGIN_URL = (
+    "https://sso.taqeem.gov.sa/realms/REL_TAQEEM/protocol/openid-connect/auth"
+    "?client_id=cli-web&redirect_uri=https%3A%2F%2Feservices-evaluators.taqeem.gov.sa%2F"
+    "&state=c84eb62e-bf9d-45ff-9e6e-a8089bfa734e&response_mode=fragment"
+    "&response_type=code&scope=openid&nonce=8d845815-a680-4c60-9d6e-3b798de08fc1"
+    "&code_challenge=H5y2KOEDbIZ9w4tUqG84jaVCXNRCn20YMlcn_ZqRNuw&code_challenge_method=S256"
 )
+# state/nonce/code_challenge are single-use; the app root redirects to a fresh SSO URL.
+FALLBACK_URL = "https://eservices-evaluators.taqeem.gov.sa/"
+APP_HOST = "eservices-evaluators.taqeem.gov.sa"
+SSO_HOST = "sso.taqeem.gov.sa"
+
+TAQEEM_APP_PREFIX = "https://qima.taqeem.gov.sa/"   # old UI
+REPORTS_URL = "https://eservices-evaluators.taqeem.gov.sa/my-reports"
+
 _last_known_taqeem_session = {
     "authenticated": False,
     "url": "",
 }
-
+async def inspect_old_taqeem_login(browser_instance=None) -> str:
+    """Old-style check: URL if any tab is on the old app, else ''."""
+    active = browser_instance or browser
+    if active is None or not _browser_transport_alive(active):
+        return ""
+    for tab in _collect_browser_tabs(active):
+        url = await _read_tab_url(tab)
+        if url.lower().startswith(TAQEEM_APP_PREFIX):
+            return url
+    return ""
 
 def _remember_taqeem_authenticated(url: str = ""):
     global _last_known_taqeem_session
@@ -311,6 +330,55 @@ async def _read_tab_url(tab):
 
     return str(url or "").strip()
 
+async def _read_tab_greeting(tab) -> str:
+    """Return the text of the first <h1> ('مرحبًا ...') or '' if absent/unreadable."""
+    if tab is None:
+        return ""
+    try:
+        text = await asyncio.wait_for(
+            tab.evaluate(
+                "(document.querySelector('h1') || {}).innerText || ''"
+            ),
+            timeout=6.0,
+        )
+    except (asyncio.TimeoutError, Exception):
+        return ""
+    return str(text or "").strip()
+
+
+def _is_app_url(url: str) -> bool:
+    """On the evaluators site, judged by hostname (the URL fragment can mention SSO)."""
+    try:
+        host = (urlparse(url or "").hostname or "").lower()
+    except Exception:
+        return False
+    return host == APP_HOST
+
+_old_portal_redirect = {"count": 0, "last": 0.0}
+
+
+async def _redirect_old_to_new(tab, max_attempts: int = 5, cooldown: float = 8.0) -> bool:
+    """Send a tab sitting on the old qima portal to the new my-reports page.
+    Rate-limited so repeated status polls don't spam navigations.
+    Returns False once max_attempts is exhausted."""
+    st = _old_portal_redirect
+    now = time.time()
+    if st["count"] >= max_attempts:
+        return False
+    if now - st["last"] < cooldown:
+        return True  # a redirect was just issued; let it finish
+    st["count"] += 1
+    st["last"] = now
+    print(
+        json.dumps({"type": "DEBUG",
+                    "message": f"Old portal detected, navigating to new portal (attempt {st['count']})"}),
+        flush=True,
+    )
+    try:
+        await tab.get(REPORTS_URL)
+    except Exception as e:
+        print(json.dumps({"type": "WARN", "message": f"redirect failed: {e}"}), flush=True)
+    return True
 
 async def inspect_taqeem_browser_session(browser_instance=None):
     active_browser = browser_instance or browser
@@ -361,6 +429,8 @@ async def inspect_taqeem_browser_session(browser_instance=None):
     checked_urls = []
     found_auth_page = False
     found_any_page = False
+    found_app_page_without_greeting = False
+    old_portal_tab = None
 
     for candidate in pages:
         url = await _read_tab_url(candidate)
@@ -370,22 +440,49 @@ async def inspect_taqeem_browser_session(browser_instance=None):
         found_any_page = True
         checked_urls.append(url)
         current_url = url.lower()
-
         if current_url.startswith(TAQEEM_APP_PREFIX):
-            _remember_taqeem_authenticated(url)
-            return {
-                "status": "SUCCESS",
-                "message": "User is logged in",
-                "browserOpen": True,
-                "url": url,
-                "checkedUrls": checked_urls,
-                "page": candidate,
-            }
+            old_portal_tab = candidate
+            continue
 
-        if any(marker in current_url for marker in TAQEEM_AUTH_URL_MARKERS):
+        if _is_app_url(current_url):
+            greeting = await _read_tab_greeting(candidate)
+            on_reports = "/my-reports" in current_url
+            if greeting or on_reports:
+                _remember_taqeem_authenticated(url)
+                return {
+                    "status": "SUCCESS",
+                    "message": "User is logged in",
+                    "browserOpen": True,
+                    "url": url,
+                    "greeting": greeting,
+                    "checkedUrls": checked_urls,
+                    "page": candidate,
+                }
+            # On the app host but no <h1> yet: still loading / redirecting
+            found_app_page_without_greeting = True
+            continue
+
+        if SSO_HOST in current_url:
             found_auth_page = True
 
-    if found_auth_page:
+    if old_portal_tab is not None:
+        can_retry = await _redirect_old_to_new(old_portal_tab)
+        if can_retry:
+            return {
+                "status": "FAILED",
+                "error": "Logged in on the old portal; redirecting to the new portal",
+                "browserOpen": True,
+                "redirecting": True,
+                "checkedUrls": checked_urls,
+            }
+        return {
+            "status": "FAILED",
+            "error": "Still on the old portal after repeated redirects to the new portal",
+            "browserOpen": True,
+            "checkedUrls": checked_urls,
+        }
+
+    if found_auth_page and not found_app_page_without_greeting:
         _remember_taqeem_logged_out()
         return {
             "status": "NOT_LOGGED_IN",
@@ -393,6 +490,7 @@ async def inspect_taqeem_browser_session(browser_instance=None):
             "browserOpen": True,
             "checkedUrls": checked_urls,
         }
+
 
     if _has_last_known_taqeem_session():
         return _build_preserved_session_result(
@@ -480,6 +578,7 @@ async def new_window(url):
 
 async def closeBrowser():
     global browser, page, refresh_task
+    _old_portal_redirect["count"] = 0
 
     if refresh_task:
         refresh_task.cancel()

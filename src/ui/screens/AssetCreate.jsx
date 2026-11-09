@@ -13,7 +13,6 @@ import {
     Database,
     FileCheck,
     Pause,
-    Resume,
     StopCircle,
     Info
 } from "lucide-react";

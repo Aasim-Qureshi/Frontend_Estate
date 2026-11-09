@@ -116,7 +116,7 @@ const useTransactions = (enabled, userId) => {
     setError(null);
     try {
       const res = await fetch(
-        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100&userId=${encodeURIComponent(userId)}`,
+        `${TRANSACTIONS_API_BASE}/api/transactions?limit=100&memberOfUserId=${encodeURIComponent(userId)}`,
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -145,7 +145,7 @@ const useTransactions = (enabled, userId) => {
       setReports([]);
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, userId]);
 
   return { reports, loading, error, refetch: fetchReports };
 };
@@ -386,7 +386,7 @@ const getProgressIndex = (report, queuedActions = []) => {
 // (see ActionSelector's setAnimating calls).
 const STEP_KEYS = [null, "submitted", "sent", "approved"];
 
-const StepProgress = ({ submitted, sent, approved, animating = [] }) => {
+const StepProgress = ({ submitted, sent, approved, animating = [], failed = null }) => {
   const steps = [
     { label: "New" },
     { label: "Submitted" },
@@ -397,78 +397,75 @@ const StepProgress = ({ submitted, sent, approved, animating = [] }) => {
   const currentIdx = approved ? 3 : sent ? 2 : submitted ? 1 : 0;
 
   return (
-    <div className="flex items-center gap-2 flex-1">
-      {steps.map((step, i) => {
-        const done = i <= currentIdx;
-        const isLoading = STEP_KEYS[i] && animating.includes(STEP_KEYS[i]);
+      <div className="flex items-center gap-2 flex-1">
+        {steps.map((step, i) => {
+          const isFailed = !!failed && STEP_KEYS[i] === failed.stepKey;
+          const done = i <= currentIdx && !isFailed;
+          const isLoading = STEP_KEYS[i] && animating.includes(STEP_KEYS[i]);
+          const accent = isFailed ? "#e11d48" : "#6366f1";
 
-        return (
-          <React.Fragment key={i}>
-            {i > 0 && (
-              <div className="h-px flex-1 bg-slate-100">
-                <div
-                  style={{
-                    height: "100%",
-                    background: done ? "#6366f1" : "transparent",
-                    transition: "width 600ms ease",
-                    width: done ? "100%" : "0%",
-                  }}
-                />
-              </div>
-            )}
-            <div className="flex flex-col items-center gap-1 shrink-0">
-              <div
-                className="flex items-center justify-center rounded-full border"
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderColor: isLoading || done ? "#6366f1" : "#e2e8f0",
-                  background: isLoading ? "#fff" : done ? "#6366f1" : "#fff",
-                }}
-              >
-                {isLoading ? (
-                  <Loader2
-                    className="animate-spin"
-                    style={{ width: 12, height: 12, color: "#6366f1" }}
+          return (
+            <React.Fragment key={i}>
+              {i > 0 && (
+                <div className="h-px flex-1 bg-slate-100">
+                  <div
+                    style={{
+                      height: "100%",
+                      background: done ? "#6366f1" : "transparent",
+                      transition: "width 600ms ease",
+                      width: done ? "100%" : "0%",
+                    }}
                   />
-                ) : done ? (
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="2,6 5,9 10,3" />
-                  </svg>
-                ) : (
-                  <span
-                    style={{ fontSize: 10, fontWeight: 700, color: "#cbd5e1" }}
-                  >
-                    {i + 1}
-                  </span>
-                )}
-              </div>
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  color: isLoading || done ? "#6366f1" : "#94a3b8",
-                  whiteSpace: "nowrap",
-                }}
+                </div>
+              )}
+              <div
+                className="flex flex-col items-center gap-1 shrink-0"
+                title={isFailed ? failed.message : undefined}
               >
-                {step.label}
-              </span>
-            </div>
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-};
+                <div
+                  className="flex items-center justify-center rounded-full border"
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderColor: isFailed || isLoading || done ? accent : "#e2e8f0",
+                    background: isFailed ? "#e11d48" : isLoading ? "#fff" : done ? "#6366f1" : "#fff",
+                  }}
+                >
+                  {isLoading ? (
+                    <Loader2 className="animate-spin" style={{ width: 12, height: 12, color: "#6366f1" }} />
+                  ) : isFailed ? (
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white"
+                         strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="3" y1="3" x2="9" y2="9" />
+                      <line x1="9" y1="3" x2="3" y2="9" />
+                    </svg>
+                  ) : done ? (
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white"
+                         strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="2,6 5,9 10,3" />
+                    </svg>
+                  ) : (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#cbd5e1" }}>{i + 1}</span>
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 600,
+                    color: isFailed ? "#e11d48" : isLoading || done ? "#6366f1" : "#94a3b8",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isFailed ? "Failed" : step.label}
+                </span>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
+
 const ACTIONS = [
   { id: "submit", label: "Submit to Taqeem", requires: null },
   { id: "send", label: "Send to Approver", requires: "submit" },
@@ -719,55 +716,6 @@ function getUsedApproachMethods(evalData) {
   if (cost > 0) used.cost = cost;
   return used;
 }
-const RealEstateCompanyFetchModal = ({ busy, error, onContinue, onCancel }) => (
-  <div
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
-    onClick={busy ? undefined : onCancel}
-  >
-    <div
-      className="w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl p-5"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-start gap-3 mb-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100">
-          <Building2 className="w-4 h-4 text-indigo-600" />
-        </div>
-        <div>
-          <p className="text-[13px] font-bold text-slate-800">
-            No real estate companies found
-          </p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            We couldn't find any saved real estate companies. Continue to fetch
-            them from Taqeem — you may need to log in first.
-          </p>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
-          {error}
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <button
-          onClick={onCancel}
-          disabled={busy}
-          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onContinue}
-          disabled={busy}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-        >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Continue"}
-        </button>
-      </div>
-    </div>
-  </div>
-);
 // ─── Approach role picker (primary / secondary / unused) ─────────────────────
 const APPROACH_LABELS = {
   market: "Comparison Approach",
@@ -860,10 +808,28 @@ const ApproachSelectionModal = ({ usedMethods, onConfirm, onCancel }) => {
 // ─── Shared Taqeem action runner — used by both the single-row selector
 // and the bulk action bar, so behavior (and the Python/IPC call) is
 // identical either way. ─────────────────────────────────────────────────
+
+
+// Normalises whatever the Electron bridge returns from the Python flow.
+// Python returns {status: "FAILED", step, error} on failure.
+const getSubmitFailure = (submitResult) => {
+  if (!submitResult) return { step: "unknown", error: "No response from the submit process." };
+  const r = submitResult?.results?.[0] ?? submitResult?.data ?? submitResult;
+  const status = String(r?.status ?? submitResult?.status ?? "").toUpperCase();
+  if (["FAILED", "ERROR"].includes(status) || submitResult?.success === false || r?.error) {
+    return {
+      step: r?.step || submitResult?.step || "unknown",
+      error: r?.error || submitResult?.error || "Submission failed.",
+    };
+  }
+  return null;
+};
+
 async function performTaqeemActions({
   report,
   queuedActions,
   approachSelections,
+  selectedCompany,
   isGuest,
   login,
   onViewChange,
@@ -872,15 +838,18 @@ async function performTaqeemActions({
   onProgress,
   onAnimating,
 }) {
-  const authStatus = await ensureTaqeemAuthorized(
-    null,
-    onViewChange,
-    isTaqeemLoggedIn,
-    0, // assetCount — no point deduction for real estate
-    login,
-    setTaqeemStatus,
-    { isGuest },
-  );
+
+  const authStatus = isTaqeemLoggedIn
+    ? { success: true, status: "SUCCESS" }
+    : await ensureTaqeemAuthorized(
+        null,
+        onViewChange,
+        isTaqeemLoggedIn,
+        0, // assetCount — no point deduction for real estate
+        login,
+        setTaqeemStatus,
+        { isGuest },
+      );
 
   const ok =
     authStatus === true ||
@@ -895,52 +864,78 @@ async function performTaqeemActions({
       "BOOTSTRAP_GRANTED",
     ].includes(String(authStatus?.status || "").toUpperCase());
 
-  if (!ok) return { ok: false };
+  if (!ok) {
+    // Login problem: show a cross on the first queued step.
+    const firstKey = { submit: "submitted", send: "sent", approve: "approved" }[queuedActions[0]];
+    onProgress({ failed: { stepKey: firstKey, message: "Taqeem login/authorization failed." } });
+    return { ok: false };
+  }
+
+  const facilityId = selectedCompany?.facilityId || selectedCompany?.officeId || null;
+  if (queuedActions.includes("submit") && !facilityId) {
+    onProgress({
+      failed: { stepKey: "submitted", message: "No company selected." },
+    });
+    return { ok: false };
+  }
 
   if (queuedActions.includes("submit")) {
+    onProgress({ failed: null });            // clear any previous cross on retry
     onAnimating(["submitted"]);
     let submitResult = null;
+    let failure = null;
     try {
       let pdfPath = null;
 
       if (window?.electronAPI?.downloadRealEstatePdf) {
-        const pdfResult = await window.electronAPI.downloadRealEstatePdf(
-          report.id,
-        );
+        const pdfResult = await window.electronAPI.downloadRealEstatePdf(report.id);
         if (pdfResult?.status === "SUCCESS" && pdfResult.filePath) {
           pdfPath = pdfResult.filePath;
         } else {
-          console.warn(
-            "[RealEstateUpload] PDF download failed, submitting without report_asset_file:",
-            pdfResult?.error,
-          );
+          console.warn("[RealEstateUpload] PDF download failed:", pdfResult?.error);
         }
       }
 
+      const used = getUsedApproachMethods(report.evalData || {});
+      const approaches = Object.entries(approachSelections || {})
+        .filter(([key, role]) => role && used[key])
+        .map(([key, role]) => ({ key, role, value: Math.round(used[key]) }));
+
       if (window?.electronAPI?.submitRealEstateReport) {
-        submitResult = await window.electronAPI.submitRealEstateReport(
-          report.id,
-          pdfPath,
-          approachSelections,
-        );
+        submitResult = await window.electronAPI.submitRealEstateReport(report.id, pdfPath, approaches, facilityId);
+        failure = getSubmitFailure(submitResult);
       } else {
-        console.log(
-          "[RealEstateUpload] submitRealEstateReport not available, recordId:",
-          report.id,
-        );
+        console.log("[RealEstateUpload] submitRealEstateReport not available, recordId:", report.id);
       }
     } catch (err) {
       console.error("[RealEstateUpload] submitRealEstateReport error:", err);
+      failure = { step: "exception", error: err?.message || String(err) };
+    }
+
+    if (failure) {
+      onProgress({
+        submitted: false,
+        failed: {
+          stepKey: "submitted",
+          message: failure.step && failure.step !== "unknown"
+            ? `${failure.step}: ${failure.error}`
+            : failure.error,
+        },
+      });
+      onAnimating([]);
+      return { ok: false };                  // don't continue to send/approve
     }
 
     const newTaqeemId =
       submitResult?.report_id ??
       submitResult?.results?.[0]?.report_id ??
       submitResult?.data?.report_id ??
+      submitResult?.taqeem_report_id ??
       null;
 
     onProgress({
       submitted: true,
+      failed: null,
       ...(newTaqeemId ? { taqeemId: newTaqeemId, idFetched: true } : {}),
     });
     onAnimating([]);
@@ -1021,6 +1016,7 @@ const ActionSelector = ({
       login,
       onViewChange,
       isTaqeemLoggedIn,
+      selectedCompany,
       setTaqeemStatus,
       onProgress: onStateChange,
       onAnimating: onAnimatingChange,
@@ -1034,7 +1030,7 @@ const ActionSelector = ({
   const handleGo = () => {
     if (!queued.length) return;
 
-    if (!selectedCompany || selectedCompany.type !== "real-estate") {
+    if (!selectedCompany) {
       setShowCompanyRequired(true);
       return;
     }
@@ -1702,6 +1698,45 @@ const TableHeader = ({ allSelected, onToggleAll }) => (
     </div>
   </div>
 );
+
+// Renders a UUID as three short monospace lines so it doesn't eat horizontal space.
+// abb91b2b-cb26-4b4c-b91c-500e55b43082  ->  abb91b2b-cb26 / 4b4c-b91c / 500e55b43082
+const TaqeemIdCell = ({ id }) => {
+  if (!id) return <span className="text-slate-300">—</span>;
+
+  const str = String(id);
+  const parts = str.split("-");
+
+  // Not a standard UUID (e.g. old numeric IDs): show as-is, wrapping if needed.
+  if (parts.length !== 5) {
+    return (
+      <span
+        title={str}
+        className="text-[12px] font-mono text-slate-700 break-all text-center"
+      >
+        {str}
+      </span>
+    );
+  }
+
+  const lines = [
+    `${parts[0]}-${parts[1]}`,
+    `${parts[2]}-${parts[3]}`,
+    parts[4],
+  ];
+
+  return (
+    <div
+      title={str}
+      className="flex flex-col items-center font-mono text-[10px] leading-[1.35] text-slate-600 select-all"
+    >
+      {lines.map((line, i) => (
+        <span key={i}>{line}</span>
+      ))}
+    </div>
+  );
+};
+
 const ReportRow = ({
   report,
   selected,
@@ -1734,6 +1769,14 @@ const ReportRow = ({
         dot: "bg-emerald-400",
         pill: "bg-emerald-50 text-emerald-700 border-emerald-200",
       };
+
+    if (taqeemState.failed)
+      return {
+        label: "Failed",
+        dot: "bg-rose-400",
+        pill: "bg-rose-50 text-rose-700 border-rose-200",
+      };
+
     if (taqeemState.sent)
       return {
         label: "Sent",
@@ -1811,11 +1854,7 @@ const ReportRow = ({
           </div>
 
           <div className="shrink-0 w-28 hidden lg:flex justify-center">
-            <p className="text-[12px] font-mono text-slate-700">
-              {taqeemState.taqeemId || (
-                <span className="text-slate-300">—</span>
-              )}
-            </p>
+            <TaqeemIdCell id={taqeemState.taqeemId} />
           </div>
           <div
             className="flex-1 flex items-center min-w-0"
@@ -1826,6 +1865,7 @@ const ReportRow = ({
               sent={taqeemState.sent}
               approved={taqeemState.approved}
               animating={animatingSteps}
+              failed={taqeemState.failed}
             />
           </div>
           <div
@@ -1850,6 +1890,13 @@ const ReportRow = ({
           </div>
         </div>
       </div>
+
+      {taqeemState.failed && (
+        <div className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          <span className="break-words">{taqeemState.failed.message}</span>
+        </div>
+      )}
 
       {expanded && (
         <div className="overflow-hidden">
@@ -1881,9 +1928,6 @@ export default function RealEstateUpload({ onViewChange }) {
   const [authError, setAuthError] = useState("");
   const [taqeemStates, setTaqeemStates] = useState({});
   const [animatingByReport, setAnimatingByReport] = useState({});
-  const [showCompanyModal, setShowCompanyModal] = useState(false);
-  const [companyModalBusy, setCompanyModalBusy] = useState(false);
-  const [companyModalError, setCompanyModalError] = useState("");
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
@@ -1931,77 +1975,6 @@ export default function RealEstateUpload({ onViewChange }) {
     fetchLocations();
   }, []);
 
-  const waitForManualTaqeemLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      const res = await window.electronAPI.checkStatus();
-      const statusText = String(res?.status || "").toUpperCase();
-      const loggedIn = res?.browserOpen && statusText.includes("SUCCESS");
-      const notLogged = statusText.includes("NOT_LOGGED_IN");
-      if (loggedIn) return res;
-      if (!res?.browserOpen && !notLogged) {
-        throw new Error("Login window closed.");
-      }
-      await new Promise((r) => setTimeout(r, intervalMs));
-    }
-    throw new Error("Timed out waiting for Taqeem login.");
-  };
-
-  const fetchRealEstateCompaniesViaTaqeem = async () => {
-    setCompanyModalBusy(true);
-    setCompanyModalError("");
-    try {
-      if (!isTaqeemLoggedIn) {
-        if (!window?.electronAPI?.openTaqeemLogin) {
-          throw new Error("Login handler unavailable.");
-        }
-        setTaqeemStatus("info", "Opening Taqeem login...");
-        const loginResult = await window.electronAPI.openTaqeemLogin({
-          automationOnly: true,
-          onlyIfClosed: true,
-          navigateIfOpen: false,
-        });
-        if (loginResult?.status !== "SUCCESS") {
-          throw new Error(loginResult?.error || "Taqeem login failed.");
-        }
-        setTaqeemStatus("info", "Waiting for you to finish login...");
-        await waitForManualTaqeemLogin();
-        setTaqeemStatus("success", "Taqeem login: On");
-      }
-
-      if (!window?.electronAPI?.getCompaniesRealEstate) {
-        throw new Error("Real estate company fetch unavailable.");
-      }
-
-      const data = await window.electronAPI.getCompaniesRealEstate();
-      if (data?.status === "SUCCESS" && Array.isArray(data.data) && data.data.length > 0) {
-        const tagged = data.data.map((c) => ({ ...c, type: "real-estate" }));
-        let synced = tagged;
-        if (syncCompanies) {
-          try {
-            const result = await syncCompanies(tagged, "real-estate", {
-              userId,
-            });
-            if (Array.isArray(result) && result.length > 0) {
-              synced = result.map((c) => ({ ...c, type: c.type || "real-estate" }));
-            }
-          } catch (syncErr) {
-            console.error("[RealEstateUpload] syncCompanies failed:", syncErr);
-            synced = tagged;
-          }
-        }
-        await replaceCompanies(synced, { type: "real-estate", quiet: true, skipNavigation: true, autoSelect: true });
-        setShowCompanyModal(false);
-      } else {
-        setCompanyModalError(data?.error || "No real estate companies found.");
-      }
-    } catch (err) {
-      setCompanyModalError(err?.message || "Failed to fetch companies from Taqeem.");
-      setTaqeemStatus("error", err?.message || "Taqeem login failed.");
-    } finally {
-      setCompanyModalBusy(false);
-    }
-  };
 
   const defaultTaqeemState = (report) => ({
     idFetched: !!report.taqeemId,
@@ -2009,6 +1982,7 @@ export default function RealEstateUpload({ onViewChange }) {
     sent: report.taqeemSent,
     approved: report.taqeemApproved,
     taqeemId: report.taqeemId,
+    failed: null,
   });
 
   const getTaqeemState = (report) =>
@@ -2037,51 +2011,7 @@ export default function RealEstateUpload({ onViewChange }) {
     refetch,
   } = useTransactions(isLoggedIn, userId);
 
-  const {
-    selectedCompany,
-    companies,
-    chooseDomain,
-    loadingCompanies,
-    companyError,
-    ensureCompaniesLoaded,
-    autoSelectDefaultCompany,
-    syncCompanies,
-    replaceCompanies,
-  } = useValueNav();
-
-  useEffect(() => {
-    chooseDomain("real-estate");
-  }, [chooseDomain, isLoggedIn]);
-
-  const ensureGuestSession = async () => {
-    if (isLoggedIn) {
-      return { userId };
-    }
-    // Spark Vision has no guest/bootstrap concept — this whole flow is
-    // legacy and effectively a no-op now.
-    return null;
-  };
-
-
-
-  useEffect(() => {
-      if (!isLoggedIn) return;
-      const hasRealEstateSelection = selectedCompany?.type === "real-estate";
-      if (hasRealEstateSelection) return;
-
-      (async () => {
-        try {
-          const loaded = await ensureCompaniesLoaded("real-estate");
-          if (loaded && loaded.length > 0) {
-            await autoSelectDefaultCompany({ type: "real-estate", skipNavigation: true, companiesList: loaded });
-            return;
-          }
-          setShowCompanyModal(true); // real user, explicit modal control from here
-        } catch (err) {
-          console.warn("[RealEstateUpload] Failed to load real estate companies on mount", err);
-        }
-      })();
-    }, [selectedCompany?.type, isLoggedIn]);
+  const { selectedCompany, loadingCompanies, companyError } = useValueNav();
 
   const filtered = allReports.filter((r) => {
       const matchStatus = statusFilter
@@ -2126,10 +2056,8 @@ export default function RealEstateUpload({ onViewChange }) {
   const clearSelection = () => setSelectedIds(new Set());
 
   const handleBulkAction = async (actionId, ids) => {
-    if (!selectedCompany || selectedCompany.type !== "real-estate") {
-      setAuthError(
-        "Select a Real Estate company from the sidebar before submitting reports to Taqeem.",
-      );
+    if (!selectedCompany) {
+      setAuthError("Select a company from the sidebar before submitting reports to Taqeem.");
       return;
     }
     setAuthError("");
@@ -2171,6 +2099,7 @@ export default function RealEstateUpload({ onViewChange }) {
         report,
         queuedActions: [actionId],
         approachSelections,
+        selectedCompany,
         isGuest,
         login,
         onViewChange,
@@ -2219,29 +2148,7 @@ export default function RealEstateUpload({ onViewChange }) {
           </button>
         </div>
       )}
-      {loadingCompanies && (
-        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-700">
-          <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
-          <span className="text-sm font-medium">
-            Fetching your real estate companies…
-          </span>
-        </div>
-      )}
-      {companyError && (
-        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span className="text-sm">{companyError}</span>
-        </div>
-      )}
-      {!loadingCompanies && !companyError && !selectedCompany && (
-        <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-700">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span className="text-sm font-medium">
-            Select a Real Estate company from the sidebar before submitting
-            reports to Taqeem.
-          </span>
-        </div>
-      )}
+
       {!loading && (
         <>
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2384,14 +2291,6 @@ export default function RealEstateUpload({ onViewChange }) {
       )}
           </>
         )}
-      {showCompanyModal && (
-        <RealEstateCompanyFetchModal
-          busy={companyModalBusy}
-          error={companyModalError}
-          onContinue={fetchRealEstateCompaniesViaTaqeem}
-          onCancel={() => setShowCompanyModal(false)}
-        />
-      )}
     </div>
   );
 }

@@ -29,10 +29,7 @@ import {
   isSuperAdminUser,
 } from "../utils/viewAccess";
 import { useTranslation } from "react-i18next";
-import {
-  emitTaqeemConflict,
-  syncTaqeemSnapshot,
-} from "../../shared/helper/taqeemSync";
+
 
 const { valueSystemGroups } = navigation;
 
@@ -58,7 +55,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
   const { taqeemStatus, setTaqeemStatus, setCompanyStatus } = useNavStatus();
   const {
     selectedCard,
-    selectedDomain,
     selectedCompany,
     companies,
     loadingCompanies,
@@ -68,7 +64,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
     setActiveTab,
     resetNavigation,
     chooseCard,
-    chooseDomain,
     ensureCompaniesLoaded,
     autoSelectDefaultCompany,
     replaceCompanies,
@@ -89,16 +84,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
     setTimeout(() => onViewChange(nextView), clickDelayMs);
   };
 
-  const domainButtons = [
-    { id: "real-estate", label: "Real Estate", icon: Home },
-    // { id: "equipments", label: "Equipment", icon: Truck },
-  ];
-
-  const defaultUploadTab =
-    getFirstAccessibleTabId(
-      valueSystemGroups.uploadReports?.tabs || [],
-      user,
-    ) || "submit-reports-quickly";
 
   const mainLinks = [
     { id: "uploadReports", label: "Upload Reports" },
@@ -145,97 +130,29 @@ const Sidebar = ({ currentView, onViewChange }) => {
       : []),
   ];
 
-  const goToSubmitReportsQuickly = async () => {
-    // Force the navigation state into Upload Reports -> Submit Reports Quickly
-    chooseCard("uploading-reports");
-    chooseDomain("equipments");
-    setActiveGroup("uploadReports");
-    setActiveTab(defaultUploadTab);
-    if (onViewChange) {
-      onViewChange(defaultUploadTab);
-    }
-
-    // Prime companies/default selection in the background
-    if (!selectedCompany) {
-      (async () => {
-        try {
-          const loadedCompanies = await ensureCompaniesLoaded("equipment");
-          await autoSelectDefaultCompany({
-            skipNavigation: true,
-            companiesList: loadedCompanies,
-          });
-        } catch (err) {
-          console.warn("Failed to prepare companies for upload reports", err);
-        }
-      })();
-    }
-  };
-
   const goToRealEstateUpload = async () => {
     chooseCard("uploading-reports");
-    chooseDomain("real-estate");
     setActiveGroup("uploadReports");
     delayViewChange("real-estate-upload"); // match whatever view id renders RealEstateUpload
 
     if (!selectedCompany) {
       (async () => {
         try {
-          const loadedCompanies = await ensureCompaniesLoaded("real-estate");
+          const loadedCompanies = await ensureCompaniesLoaded();
           await autoSelectDefaultCompany({
             skipNavigation: true,
             companiesList: loadedCompanies,
           });
         } catch (err) {
-          console.warn("Failed to prepare real estate companies", err);
+          console.warn("Failed to prepare companies", err);
         }
       })();
     }
   };
 
-  const ensureGuestSession = async () => {
-    if (token) return token;
-    if (!window?.electronAPI?.apiRequest) return null;
-
-    try {
-      const tokenObj = await window.electronAPI.getToken?.();
-      if (tokenObj?.token) {
-        const restoredUser =
-          tokenObj.user ||
-          (tokenObj.userId
-            ? { id: tokenObj.userId, _id: tokenObj.userId }
-            : null);
-        if (restoredUser) login?.(restoredUser, tokenObj.token);
-        return tokenObj.token;
-      }
-
-      const result = await window.electronAPI.apiRequest(
-        "POST",
-        "/api/users/guest",
-        {},
-        {},
-      );
-      if (result?.token && result?.userId) {
-        const guestUser = result?.user || {
-          id: result.userId,
-          _id: result.userId,
-          guest: true,
-        };
-        login?.(guestUser, result.token);
-        return result.token;
-      }
-    } catch (err) {
-      console.warn(
-        "Failed to ensure guest session for Taqeem sync:",
-        err?.message || err,
-      );
-    }
-    return null;
-  };
   const handleTaqeemLogin = async () => {
-    const waitForManualLogin = async (
-      timeoutMs = 180000,
-      intervalMs = 2000,
-    ) => {
+    const alreadyLoggedIn = taqeemStatus?.state === "success";
+    const waitForManualLogin = async (timeoutMs = 180000, intervalMs = 2000) => {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         const res = await window.electronAPI.checkStatus();
@@ -272,6 +189,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
           defaultValue: "Login to Taqeem to list your companies.",
         }),
       );
+
       if (!window?.electronAPI?.openTaqeemLogin) {
         throw new Error(
           t("sidebar.company.loginUnavailable", {
@@ -279,7 +197,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
           }),
         );
       }
-      chooseDomain("equipments");
+
       const loginResult = await window.electronAPI.openTaqeemLogin({
         automationOnly: true,
         onlyIfClosed: true,
@@ -302,7 +220,10 @@ const Sidebar = ({ currentView, onViewChange }) => {
       );
       await waitForManualLogin();
 
-      const activeToken = await ensureGuestSession();
+      setTaqeemStatus(
+        "success",
+        t("sidebar.company.loginSuccess", { defaultValue: "Taqeem login: On" }),
+      );
       setCompanyStatus(
         "info",
         t("sidebar.company.fetching", {
@@ -310,187 +231,58 @@ const Sidebar = ({ currentView, onViewChange }) => {
         }),
       );
 
-      let snapshot = null;
-      if (activeToken) {
-        try {
-          snapshot = await syncTaqeemSnapshot({
-            token: activeToken,
-            cachedUser: user || null,
-          });
-        } catch (err) {
-          snapshot = null;
-        }
-      }
-
-      if (snapshot?.status === "TAQEEM_ALREADY_USED") {
-        // Server may reject linking, but the Taqeem browser session is still valid.
-        // Continue to local getCompanies so the sidebar can list offices from automation.
-        console.warn(
-          "[Sidebar] syncTaqeemSnapshot returned TAQEEM_ALREADY_USED; continuing with local company fetch.",
-          snapshot,
-        );
-        emitTaqeemConflict({
-          ...snapshot,
-          taqeemUser:
-            snapshot?.taqeemUser ||
-            user?.taqeemUser ||
-            user?.taqeem?.username ||
-            null,
-        });
-      }
-
-      if (snapshot?.user && activeToken) {
-        login?.(snapshot.user, activeToken);
-      }
-
-      setTaqeemStatus(
-        "success",
-        t("sidebar.company.loginSuccess", { defaultValue: "Taqeem login: On" }),
-      );
-
-      const snapshotCompanies = Array.isArray(snapshot?.companies)
-        ? snapshot.companies
-        : [];
-      if (snapshotCompanies.length > 0) {
-        const prepared = snapshotCompanies.map((c) => ({
-          ...c,
-          type: c.type || "equipment",
-        }));
-        await replaceCompanies(prepared, {
-          quiet: true,
-          skipNavigation: true,
-          autoSelect: true,
-        });
-        setCompanyStatus(
-          "info",
-          t("sidebar.company.selectToContinue", {
-            defaultValue: "Select a company to view main links.",
+      if (!window?.electronAPI?.getCompanies) {
+        throw new Error(
+          t("sidebar.company.fetchUnavailable", {
+            defaultValue: "Company fetch unavailable.",
           }),
+        );
+      }
+
+      const data = await window.electronAPI.getCompanies();
+      const fetched =
+        data?.status === "SUCCESS" && Array.isArray(data.data) ? data.data : [];
+
+      if (fetched.length === 0) {
+        setCompanyStatus(
+          "error",
+          data?.error ||
+            t("sidebar.company.empty", { defaultValue: "No companies found." }),
         );
         return;
       }
 
-      if (window?.electronAPI?.getCompanies) {
-        const data = await window.electronAPI.getCompanies();
-        const fetched = Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data?.companies)
-            ? data.companies
-            : [];
-        if (fetched.length > 0) {
-          const prepared = fetched.map((c) => ({
-            ...c,
-            type: c.type || "equipment",
-          }));
-          let synced = prepared;
-          try {
-            const syncedRes = await syncCompanies(prepared, "equipment");
-            if (Array.isArray(syncedRes) && syncedRes.length > 0) {
-              synced = syncedRes;
-            }
-          } catch (err) {
-            console.warn("Failed to sync companies after Taqeem login", err);
-          }
-          await replaceCompanies(synced, {
-            quiet: true,
-            skipNavigation: true,
-            autoSelect: true,
-          });
-          setCompanyStatus(
-            "info",
-            t("sidebar.company.selectToContinue", {
-              defaultValue: "Select a company to view main links.",
-            }),
-          );
-        } else {
-          setCompanyStatus(
-            "error",
-            t("sidebar.company.empty", { defaultValue: "No companies found." }),
-          );
-        }
+      let synced = fetched;
+      try {
+        const res = await syncCompanies(fetched, {
+          userId: user?.id || user?._id,
+        });
+        if (Array.isArray(res) && res.length > 0) synced = res;
+      } catch (err) {
+        console.warn("Failed to sync companies after Taqeem login", err);
       }
-    } catch (err) {
-      setTaqeemStatus(
-        "error",
-        err?.message ||
-          t("sidebar.company.loginFailed", {
-            defaultValue: "Taqeem login failed.",
-          }),
-      );
+
+      await replaceCompanies(synced, { quiet: true, autoSelect: true });
       setCompanyStatus(
-        "error",
-        err?.message ||
-          t("sidebar.company.loginFailed", {
-            defaultValue: "Taqeem login failed.",
-          }),
+        "info",
+        t("sidebar.company.selectToContinue", {
+          defaultValue: "Select a company to view main links.",
+        }),
       );
-      alert(
+    } catch (err) {
+      const message =
         err?.message ||
-          t("sidebar.company.loginFailed", {
-            defaultValue: "Taqeem login failed.",
-          }),
-      );
+        t("sidebar.company.loginFailed", {
+          defaultValue: "Taqeem login failed.",
+        });
+      setTaqeemStatus("error", message);
+      setCompanyStatus("error", message);
+      alert(message);
     }
   };
 
-  const renderDomains = () => {
-    if (selectedCard !== "uploading-reports") return null;
-    return (
-      <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-2.5 py-2 ">
-        <ul className="space-y-1">
-          {domainButtons.map((item, index) => {
-            const Icon = item.icon;
-            const isActive = selectedDomain === item.id;
-            return (
-              <li key={item.id}>
-                <button
-                  onClick={async () => {
-                    chooseDomain(item.id);
-                    setActiveGroup(null);
-
-                    if (item.id === "real-estate") {
-                      await goToRealEstateUpload();
-                      return;
-                    }
-
-                    if (item.id === "equipments") {
-                      await goToSubmitReportsQuickly();
-                      return;
-                    }
-
-                    delayViewChange("apps");
-                  }}
-                  className={`group relative w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-start transition-none ${
-                    isActive
-                      ? "bg-cyan-600 text-white border border-cyan-500/70"
-                      : "bg-slate-900/80 text-slate-200 hover:bg-slate-800"
-                  }`}
-                >
-                  <span
-                    className={`absolute ${railEdgeClass} top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full ${
-                      isActive
-                        ? "bg-cyan-200"
-                        : "bg-transparent group-hover:bg-cyan-300/50"
-                    }`}
-                  />
-                  <Icon className="w-3.5 h-3.5 opacity-90" />
-                  <span className="text-[11px] font-semibold">
-                    {t(`sidebar.domains.${item.id}`, {
-                      defaultValue: item.label,
-                    })}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    );
-  };
-
   const renderCompanyList = () => {
-    if (selectedDomain !== "equipments" && selectedDomain !== "real-estate")
-      return null;
+    if (selectedCard !== "uploading-reports") return null;
     const showPlaceholder =
       !selectedCompany &&
       !loadingCompanies &&
@@ -585,8 +377,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
   };
 
   const renderMainLinks = () => {
-    if (selectedDomain !== "equipments" && selectedDomain !== "real-estate")
-      return null;
+    if (selectedCard !== "uploading-reports") return null;
     const hasCompanies = companies && companies.length > 0;
     if (hasCompanies && !selectedCompany) {
       return (
@@ -924,7 +715,6 @@ const Sidebar = ({ currentView, onViewChange }) => {
         </div>
 
         <nav className="flex-1 px-2.5 py-2 overflow-y-auto space-y-2">
-          {renderDomains()}
           {renderCompanyList()}
           {renderCompanyLinks()}
           {renderAdminLinks()}

@@ -1,523 +1,101 @@
 import asyncio
+import json
+import re
 import sys
 
-from scripts.core.browser import navigate
-from scripts.core.company_context import build_report_create_url, parse_company_url
-from scripts.core.utils import wait_for_element
+from scripts.submission.taqeemNew.flow import (
+    APP_HOST, REPORTS_URL, _click_text, _host, _wait_for_app_page,
+)
+
+FACILITY_TESTID = "createReportFacility"
+_ID_RE = re.compile(r"\d{5,}")
+
+_OPEN_JS = f"""
+(() => {{
+  const v = [...document.querySelectorAll("mat-select[data-testid='{FACILITY_TESTID}']")]
+    .filter(e => e.getBoundingClientRect().width > 0);
+  if (!v.length) return 'missing';
+  const s = v[v.length - 1];
+  if (s.getAttribute('aria-expanded') === 'true') return 'open';
+  (s.querySelector('.mat-mdc-select-trigger') || s).click();
+  return 'clicked';
+}})()
+"""
+
+_READ_JS = f"""
+(() => {{
+  const v = [...document.querySelectorAll("mat-select[data-testid='{FACILITY_TESTID}']")]
+    .filter(e => e.getBoundingClientRect().width > 0);
+  const s = v[v.length - 1];
+  const panel = s && document.getElementById(s.getAttribute('aria-controls') || '');
+  const root = panel || document.querySelector('.cdk-overlay-container');
+  return JSON.stringify([...root.querySelectorAll('mat-option')].map(o => ({{
+    text: (o.textContent || '').replace(/\\s+/g, ' ').trim(),
+    dis: o.getAttribute('aria-disabled') === 'true',
+    html: o.outerHTML.slice(0, 300)
+  }})));
+}})()
+"""
 
 
-async def _scrape_companies_for_sector(page, sidebar_id, sector_id):
-    """Generic sidebar company scraper, parameterized by sector/sidebar ul id."""
-    companies = []
-    companies_data = None
+def _fail(msg):
+    return {"status": "FAILED", "error": msg, "data": []}
 
+
+async def get_companies(browser):
+    page = None
     try:
-        companies_data = await page.evaluate(
-            f"""
-            () => {{
-                const section = document.querySelector('ul#{sidebar_id}');
-                if (!section) return [];
-                const links = Array.from(section.querySelectorAll('a[href]'));
-                let started = false;
-                const out = [];
-
-                for (const link of links) {{
-                    const href = link.getAttribute('href') || '';
-                    const text = (link.textContent || '').trim();
-                    if (!href || !text) continue;
-                    if (href.includes('membership/reports/sector/{sector_id}')) {{
-                        started = true;
-                        continue;
-                    }}
-                    if (href.includes('organization/joinPartner/sector/{sector_id}')) {{
-                        break;
-                    }}
-                    if (!started) continue;
-                    if (href.includes('organization/show/')) {{
-                        out.push({{ name: text, href }});
-                    }}
-                }}
-                return out;
-            }}
-            """
-        )
-    except Exception:
-        companies_data = None
-
-    if isinstance(companies_data, list):
-        for item in companies_data:
-            href = (item or {}).get("href")
-            text = repair_mojibake((item or {}).get("name") or "")
-            if not href or not text:
-                continue
-            parsed = parse_company_url(href)
-            companies.append(
-                {
-                    "name": text,
-                    "url": parsed.get("url") or href,
-                    "officeId": parsed.get("office_id"),
-                    "sectorId": parsed.get("sector_id") or sector_id,
-                }
-            )
-
-    try:
-        from bs4 import BeautifulSoup
-
-        html_content = await page.get_content()
-        soup = BeautifulSoup(html_content, "html.parser")
-        section = soup.find("ul", {"id": sidebar_id})
-        if section:
-            links = section.find_all("a", href=True)
-            reports_link_found = False
-            join_partner_found = False
-
-            for link in links:
-                href = link.get("href")
-                text = repair_mojibake(link.get_text(strip=True))
-                if not href or not text:
-                    continue
-                if f"membership/reports/sector/{sector_id}" in href:
-                    reports_link_found = True
-                    continue
-                if f"organization/joinPartner/sector/{sector_id}" in href:
-                    join_partner_found = True
-                    break
-                if reports_link_found and not join_partner_found:
-                    if "organization/show/" in href:
-                        parsed = parse_company_url(href)
-                        companies.append(
-                            {
-                                "name": text,
-                                "url": parsed.get("url") or href,
-                                "officeId": parsed.get("office_id"),
-                                "sectorId": parsed.get("sector_id") or sector_id,
-                            }
-                        )
-    except Exception:
-        pass
-
-    deduped = []
-    seen = set()
-    for company in companies:
-        key = str(
-            company.get("officeId") or company.get("url") or company.get("name") or ""
-        ).strip()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        deduped.append(company)
-
-    return deduped
-
-
-async def _get_companies_for_sector(
-    sidebar_id, sector_id, company_type, fetch_valuers=True
-):
-    try:
-        start_url = "https://qima.taqeem.gov.sa/"
-        final_home_url = "https://qima.taqeem.gov.sa/valuer/home"
-
-        page = await navigate(start_url)
+        page = await browser.get(REPORTS_URL, new_tab=True)
         await asyncio.sleep(3)
 
-        companies = await _scrape_companies_for_sector(page, sidebar_id, sector_id)
-        print(
-            f"[INFO] Total {company_type} companies found: {len(companies)}",
-            file=sys.stderr,
-        )
+        url = await _wait_for_app_page(page)
+        if _host(url) != APP_HOST:
+            return _fail(f"Not signed in on the evaluators site (landed on {url}).")
 
-        if fetch_valuers:
-            valuers_by_office = {}
-            for company in companies:
-                office_id = str(company.get("officeId") or "").strip()
-                csector = str(company.get("sectorId") or sector_id).strip() or sector_id
+        for n in (1, 2):
+            if not await _click_text(page, "إنشاء تقرير", timeout=30):
+                return _fail(f"Create-report button {n} not found")
+            await asyncio.sleep(2)
 
-                if not office_id:
-                    company["valuers"] = []
-                    continue
+        # Open the dropdown and read options, retrying while the dialog settles.
+        opts = []
+        for _ in range(15):
+            try:
+                state = await page.evaluate(_OPEN_JS)
+                if state != "missing":
+                    opts = json.loads(await page.evaluate(_READ_JS))
+                    print(f"[DEBUG] raw options: {opts[:3]}", file=sys.stderr)
+                    if any(o.get("text") for o in opts):
+                        break
+                    opts = []
+            except Exception as e:
+                print(f"[WARN] open/read retry: {e}", file=sys.stderr)
+            await asyncio.sleep(0.7)
 
-                if office_id in valuers_by_office:
-                    company["valuers"] = valuers_by_office[office_id]
-                    continue
+        if not opts:
+            return _fail("Facility dropdown not found or has no options")
 
-                company["officeId"] = office_id
-                company["sectorId"] = csector
-                company["valuers"] = await fetch_company_valuers(
-                    page, office_id=office_id, sector_id=csector
-                )
-                valuers_by_office[office_id] = company["valuers"]
-        else:
-            for company in companies:
-                company.setdefault("valuers", [])
+        companies, seen = [], set()
+        for o in opts:
+            text = (o.get("text") or "").strip()
+            if o.get("dis") or not text:
+                continue
+            m = _ID_RE.search(text)
+            fid = m.group(0) if m else text
+            if fid in seen:
+                continue
+            seen.add(fid)
+            companies.append({"name": text, "officeId": fid, "facilityId": fid})
 
-        for company in companies:
-            company["type"] = company_type
-
-        try:
-            await page.get(final_home_url)
-            await asyncio.sleep(0.8)
-        except Exception:
-            pass
-
+        print(f"[INFO] facilities found: {len(companies)}", file=sys.stderr)
+        if not companies:
+            return _fail("Dropdown opened but no options were read")
         return {"status": "SUCCESS", "data": companies}
     except Exception as e:
-        print(f"[ERROR] Error getting {company_type} companies: {e}", file=sys.stderr)
-        return {"status": "FAILED", "error": str(e)}
-
-
-async def get_companies():
-    """Equipment companies (sector 4)."""
-    return await _get_companies_for_sector("sidebarItem_5", "4", "equipment")
-
-
-async def get_companies_real_estate():
-    """Real-estate companies. VERIFY sidebar_id/sector_id against the live Taqeem sidebar DOM."""
-    return await _get_companies_for_sector("sidebarItem_2", "1", "real-estate")
-
-
-def repair_mojibake(value: str) -> str:
-    if not value or not isinstance(value, str):
-        return value
-    if any(ch in value for ch in ("\u00d8", "\u00d9", "\u00c3", "\u00c2")):
-        try:
-            return value.encode("latin1").decode("utf-8")
-        except Exception:
-            return value
-    return value
-
-
-def _normalize_valuers(items):
-    cleaned = []
-    seen = set()
-
-    for item in items or []:
-        valuer_id = repair_mojibake((item or {}).get("valuerId") or "")
-        valuer_name = repair_mojibake((item or {}).get("valuerName") or "")
-
-        valuer_id = str(valuer_id or "").strip()
-        valuer_name = str(valuer_name or "").strip()
-        lower_name = valuer_name.lower()
-
-        if not valuer_id or valuer_id in ("0", "-1"):
-            continue
-        if lower_name in ("", "select", "choose"):
-            continue
-        if valuer_name == "تحديد":
-            continue
-        if valuer_id in seen:
-            continue
-
-        seen.add(valuer_id)
-        cleaned.append(
-            {
-                "valuerId": valuer_id,
-                "valuerName": valuer_name,
-            }
-        )
-
-    return cleaned
-
-
-async def _extract_valuers_from_page(page):
-    selector_script = """
-        () => {
-            const selectors = [
-                '.addNewValuer select.valuer_id[name="valuer[0][id]"]',
-                '.addNewValuer select[data-type="id"][name="valuer[0][id]"]',
-                '.addNewValuer select[name="valuer[0][id]"]',
-                '.addNewValuer select.valuer_id[data-type="id"]',
-                '.addNewValuer select.valuer_id',
-                '.addNewValuer select[data-type="id"]',
-                '.addNewValuer select[name^="valuer"][name$="[id]"]',
-                'select.valuer_id[name="valuer[0][id]"]',
-                'select[data-type="id"][name="valuer[0][id]"]',
-                'select[name="valuer[0][id]"]',
-                'select.valuer_id[data-type="id"]',
-                'select.valuer_id',
-                'select[data-type="id"]',
-                'select[name^="valuer"][name$="[id]"]',
-            ];
-
-            const isVisible = (el) => {
-                if (!el) return false;
-                const style = window.getComputedStyle(el);
-                if (!style) return false;
-                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                return !!(el.offsetParent || el.getClientRects().length);
-            };
-
-            const parseOptions = (select) => {
-                if (!select) return [];
-                const parsed = [];
-                const options = Array.from(select.querySelectorAll('option'));
-                for (const opt of options) {
-                    const val = (opt.getAttribute('value') || '').trim();
-                    const text = (opt.textContent || '').trim();
-                    if (!val || val === '0' || val === '-1') continue;
-                    if (!text) continue;
-                    const lowerText = text.toLowerCase();
-                    if (lowerText === 'select' || lowerText === 'choose') continue;
-                    parsed.push({ valuerId: val, valuerName: text });
-                }
-                return parsed;
-            };
-
-            // First pass: visible selects only, strict selector priority.
-            for (const sel of selectors) {
-                const nodes = Array.from(document.querySelectorAll(sel)).filter(isVisible);
-                for (const node of nodes) {
-                    const parsed = parseOptions(node);
-                    if (parsed.length > 0) return parsed;
-                }
-            }
-
-            // Second pass: include hidden/template controls as fallback.
-            for (const sel of selectors) {
-                const nodes = Array.from(document.querySelectorAll(sel));
-                for (const node of nodes) {
-                    const parsed = parseOptions(node);
-                    if (parsed.length > 0) return parsed;
-                }
-            }
-
-            return [];
-        }
-    """
-
-    try:
-        raw = await page.evaluate(selector_script)
-    except Exception:
-        raw = []
-
-    return _normalize_valuers(raw)
-
-
-async def _extract_valuers_from_html(page):
-    try:
-        from bs4 import BeautifulSoup
-    except Exception:
-        return []
-
-    try:
-        html_content = await page.get_content()
-        soup = BeautifulSoup(html_content, "html.parser")
-    except Exception:
-        return []
-
-    selectors = [
-        ".addNewValuer select.valuer_id[name='valuer[0][id]']",
-        ".addNewValuer select[data-type='id'][name='valuer[0][id]']",
-        ".addNewValuer select[name='valuer[0][id]']",
-        ".addNewValuer select.valuer_id[data-type='id']",
-        ".addNewValuer select.valuer_id",
-        ".addNewValuer select[data-type='id']",
-        ".addNewValuer select[name^='valuer'][name$='[id]']",
-        "select.valuer_id[name='valuer[0][id]']",
-        "select[data-type='id'][name='valuer[0][id]']",
-        "select[name='valuer[0][id]']",
-        "select.valuer_id[data-type='id']",
-        "select.valuer_id",
-        "select[data-type='id']",
-        "select[name^='valuer'][name$='[id]']",
-    ]
-
-    for sel in selectors:
-        for select in soup.select(sel):
-            rows = []
-            for opt in select.find_all("option"):
-                val = (opt.get("value") or "").strip()
-                text = (opt.get_text() or "").strip()
-                rows.append({"valuerId": val, "valuerName": text})
-            normalized_rows = _normalize_valuers(rows)
-            if normalized_rows:
-                return normalized_rows
-
-    return []
-
-
-async def _wait_for_valuers(page, timeout_seconds=35):
-    loops = max(1, int(timeout_seconds / 0.6))
-    for _ in range(loops):
-        rows = await _extract_valuers_from_page(page)
-        if rows:
-            return rows
-        await asyncio.sleep(0.6)
-
-    return await _extract_valuers_from_html(page)
-
-
-async def _resolve_active_office_id(page):
-    script = """
-        () => {
-            const onlyDigits = (v) => String(v || '').trim().replace(/\\D+/g, '');
-            const fromUrl = () => {
-                try {
-                    const href = window.location.href || '';
-                    const url = new URL(href);
-                    const qpOffice = onlyDigits(url.searchParams.get('office'));
-                    if (qpOffice) return qpOffice;
-
-                    const path = (url.pathname || '').trim();
-                    const reportMatch = path.match(/\\/report\\/create\\/\\d+\\/(\\d+)/);
-                    if (reportMatch && reportMatch[1]) return onlyDigits(reportMatch[1]);
-                    const orgMatch = path.match(/\\/organization\\/show\\/\\d+\\/(\\d+)/);
-                    if (orgMatch && orgMatch[1]) return onlyDigits(orgMatch[1]);
-                } catch (_) {}
-                return '';
-            };
-
-            const fromDom = () => {
-                const selectors = [
-                    'input[name="office"]',
-                    'input[name="office_id"]',
-                    'input[name*="[office]"]',
-                    'input[name*="[office_id]"]',
-                    'select[name="office"]',
-                    'select[name="office_id"]',
-                    'select[name*="[office]"]',
-                    'select[name*="[office_id]"]',
-                    '#office',
-                    '#office_id',
-                ];
-                for (const sel of selectors) {
-                    const nodes = Array.from(document.querySelectorAll(sel));
-                    for (const node of nodes) {
-                        let val = '';
-                        if (node.tagName === 'SELECT') {
-                            val = node.value || '';
-                        } else {
-                            val = node.getAttribute('value') || node.value || '';
-                        }
-                        const digits = onlyDigits(val);
-                        if (digits) return digits;
-                    }
-                }
-
-                const activeLink = document.querySelector('ul#sidebarItem_5 a.active[href*="organization/show/"]');
-                if (activeLink) {
-                    const href = activeLink.getAttribute('href') || '';
-                    const m = href.match(/\\/organization\\/show\\/\\d+\\/(\\d+)/);
-                    if (m && m[1]) return onlyDigits(m[1]);
-                }
-                return '';
-            };
-
-            return fromUrl() || fromDom() || '';
-        }
-    """
-
-    try:
-        raw = await page.evaluate(script)
-    except Exception:
-        raw = ""
-
-    active_office = str(raw or "").strip()
-    if not active_office:
-        return None
-    return active_office
-
-
-async def fetch_company_valuers(page, office_id, sector_id="4"):
-    if not office_id:
-        return []
-
-    office_id = str(office_id or "").strip()
-    sector_id = str(sector_id or "4").strip() or "4"
-    target_url = build_report_create_url(sector_id, office_id)
-
-    try:
-        await page.get(target_url)
-    except Exception as nav_error:
-        print(
-            f"[WARN] Failed opening report-create URL {target_url}: {nav_error}",
-            file=sys.stderr,
-        )
-        return []
-
-    await asyncio.sleep(1.6)
-
-    # Ensure this page is for the expected office before scraping.
-    is_expected_office = False
-    for _ in range(25):
-        try:
-            current_url = await page.evaluate("window.location.href")
-            parsed_current = parse_company_url(current_url or "")
-            url_office = str(parsed_current.get("office_id") or "").strip()
-            dom_office = await _resolve_active_office_id(page)
-            dom_office = str(dom_office or "").strip()
-
-            # URL and DOM can differ temporarily while page is still initializing.
-            if (url_office and url_office == office_id) or (
-                dom_office and dom_office == office_id
-            ):
-                is_expected_office = True
-                break
-        except Exception:
-            pass
-        await asyncio.sleep(0.35)
-
-    if not is_expected_office:
-        try:
-            current_url = await page.evaluate("window.location.href")
-        except Exception:
-            current_url = target_url
-        print(
-            f"[WARN] Office mismatch after navigation. expected={office_id} url={current_url}",
-            file=sys.stderr,
-        )
-        return []
-
-    try:
-        await wait_for_element(
-            page,
-            ".addNewValuer select.valuer_id, .addNewValuer select[data-type='id'], select.valuer_id, select[data-type='id']",
-            timeout=25,
-        )
-    except Exception:
-        pass
-
-    valuers = await _wait_for_valuers(page, timeout_seconds=35)
-    if not valuers:
-        # Some report pages need adding a valuer row before the select becomes visible.
-        try:
-            await page.evaluate(
-                """
-                () => {
-                    const btn = document.querySelector('#duplicateValuer, [id*="duplicateValuer"], .duplicateValuer');
-                    if (btn) {
-                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                    }
-                }
-                """
-            )
-            await asyncio.sleep(1.2)
-        except Exception:
-            pass
-        valuers = await _wait_for_valuers(page, timeout_seconds=12)
-
-    if valuers:
-        # Final guard: do not accept data if office context drifted.
-        final_office = await _resolve_active_office_id(page)
-        final_office = str(final_office or "").strip()
-        if final_office and final_office != office_id:
-            print(
-                f"[WARN] Ignoring valuers due to office drift. expected={office_id} got={final_office} url={target_url}",
-                file=sys.stderr,
-            )
-            return []
-        print(
-            f"[INFO] Loaded {len(valuers)} valuers for office {office_id} via {target_url}",
-            file=sys.stderr,
-        )
-        return valuers
-
-    try:
-        current_url = await page.evaluate("window.location.href")
-    except Exception:
-        current_url = "unknown"
-
-    print(
-        f"[WARN] No valuers found for office {office_id} (sector={sector_id}) url={current_url}",
-        file=sys.stderr,
-    )
-    return []
+        return _fail(str(e))
+    finally:
+        if page:
+            try:
+                await page.close()
+            except Exception:
+                pass
